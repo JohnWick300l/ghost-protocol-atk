@@ -1,0 +1,322 @@
+{
+  "entities": {
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted administrator membership record for RBAC verification.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "role": {
+          "type": "string",
+          "description": "Administrative clearance level.",
+          "enum": ["admin", "owner"],
+          "minLength": 4,
+          "maxLength": 16
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when admin record was created."
+        }
+      },
+      "required": ["uid", "role", "createdAt"]
+    },
+    "PublicPilotProfile": {
+      "title": "PublicPilotProfile",
+      "description": "Publicly visible non-PII pilot profile for squadron roster and attribution.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the pilot.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Display name or callsign of the pilot.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "nickname": {
+          "type": "string",
+          "description": "Pilot squadron nickname badge.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "bikeModel": {
+          "type": "string",
+          "description": "Ultraviolette motorcycle model.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "city": {
+          "type": "string",
+          "description": "General city or town name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["ownerId", "fullName", "nickname", "bikeModel", "city", "createdAt", "updatedAt"]
+    },
+    "PrivatePilotInfo": {
+      "title": "PrivatePilotInfo",
+      "description": "Strictly isolated PII document readable only by the document owner or administrator.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the pilot.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified pilot email address.",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "phone": {
+          "type": "string",
+          "description": "Verified mobile phone number.",
+          "minLength": 6,
+          "maxLength": 24
+        },
+        "bikeRegistrationNumber": {
+          "type": "string",
+          "description": "Vehicle registration plate number.",
+          "minLength": 2,
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["ownerId", "email", "phone", "bikeRegistrationNumber", "createdAt", "updatedAt"]
+    },
+    "SharedModuleBundle": {
+      "title": "SharedModuleBundle",
+      "description": "Quota-optimized shared module snapshot for hybrid offline-first cloud synchronization.",
+      "type": "object",
+      "properties": {
+        "moduleId": {
+          "type": "string",
+          "description": "Identifier of the shared community module.",
+          "enum": [
+            "emergencies",
+            "rides",
+            "problems",
+            "discussions",
+            "polls",
+            "petitions",
+            "community_chargers",
+            "charger_reports",
+            "modifications",
+            "marketplace",
+            "service_reviews",
+            "jet_submissions",
+            "contributions",
+            "contribution_config"
+          ],
+          "minLength": 3,
+          "maxLength": 40,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the user who created the bundle.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "lastUpdatedBy": {
+          "type": "string",
+          "description": "UID of the user who performed the latest sync write.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "version": {
+          "type": "number",
+          "description": "Monotonically increasing sync revision counter."
+        },
+        "recordCount": {
+          "type": "number",
+          "description": "Total number of records in the module snapshot."
+        },
+        "payloadChecksum": {
+          "type": "string",
+          "description": "Deterministic hash of the synced items to prevent redundant writes.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "items": {
+          "type": "array",
+          "description": "Bounded list of shared community records (max 100 items per bundle)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "moduleId",
+        "ownerId",
+        "lastUpdatedBy",
+        "version",
+        "recordCount",
+        "payloadChecksum",
+        "items",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CommunityRecord": {
+      "title": "CommunityRecord",
+      "description": "Individual shared community item (SOS alert, discussion post, charger plug, review, or listing).",
+      "type": "object",
+      "properties": {
+        "recordId": {
+          "type": "string",
+          "description": "Unique identifier for the record.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "moduleId": {
+          "type": "string",
+          "description": "Target module category.",
+          "enum": [
+            "emergencies",
+            "rides",
+            "problems",
+            "discussions",
+            "polls",
+            "petitions",
+            "community_chargers",
+            "charger_reports",
+            "modifications",
+            "marketplace",
+            "service_reviews",
+            "jet_submissions",
+            "contributions"
+          ],
+          "minLength": 3,
+          "maxLength": 40
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the creator.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Public callsign or name of the author.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "title": {
+          "type": "string",
+          "description": "Headline or summary of the shared item.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "summary": {
+          "type": "string",
+          "description": "Body content or description bounded to prevent storage exhaustion.",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "status": {
+          "type": "string",
+          "description": "Lifecycle state of the record.",
+          "enum": ["active", "resolved", "archived"],
+          "minLength": 6,
+          "maxLength": 16
+        },
+        "upvotes": {
+          "type": "number",
+          "description": "Community upvote or verification tally."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "recordId",
+        "moduleId",
+        "ownerId",
+        "authorName",
+        "title",
+        "summary",
+        "status",
+        "upvotes",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Administrator registry for RBAC lookups."
+    },
+    "/users/{userId}/public/{profileId}": {
+      "schema": { "$ref": "#/entities/PublicPilotProfile" },
+      "description": "Public non-PII pilot profile subcollection."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/PrivatePilotInfo" },
+      "description": "Strictly isolated PII subcollection accessible only by owner or admin."
+    },
+    "/shared_modules/{moduleId}": {
+      "schema": { "$ref": "#/entities/SharedModuleBundle" },
+      "description": "Quota-optimized shared module bundles for hybrid sync."
+    },
+    "/community_records/{recordId}": {
+      "schema": { "$ref": "#/entities/CommunityRecord" },
+      "description": "Individual shared community items created by verified pilots."
+    }
+  }
+}

@@ -1,0 +1,2922 @@
+{
+  "users": [
+    {
+      "id": "u_admin",
+      "fullName": "Abinav Thejas K",
+      "email": "abinavthejas2001@gmail.com",
+      "mobile": "+91 98450 11099",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "motorcycleModel": "F77 MACH 2",
+      "variant": "Recon Laser Black (10.3 kWh)",
+      "registrationNumber": "KA 01 GP 0001",
+      "purchaseDate": "2024-05-15",
+      "bloodGroup": "O+",
+      "emergencyContact": {
+        "name": "Thejas K.",
+        "relationship": "Family",
+        "phone": "+91 98450 99887"
+      },
+      "role": "admin",
+      "verificationStatus": "verified",
+      "verificationNotes": "Founding squadron commander and master administrator.",
+      "verifiedAt": "2024-05-16T10:00:00Z",
+      "joinedAt": "2024-05-15T08:00:00Z",
+      "avatarUrl": "",
+      "optInSquadronAssist": true,
+      "privacySettings": {
+        "showStartingPoint": true,
+        "showCity": true,
+        "showMotorcycleDetails": true
+      },
+      "isOwner": true,
+      "originalName": "Abinav Thejas K",
+      "pilotNickname": "F77 PILOT",
+      "secondaryTag": "F77 PILOT",
+      "setupTokenHash": null,
+      "setupTokenIssuedAt": "2026-10-21T17:07:54.225Z",
+      "setupTokenExpiresAt": "2026-10-28T17:07:54.224Z",
+      "setupTokenUsedAt": "2026-10-21T17:10:08.240Z",
+      "passwordHash": "scrypt$16384$8$1$I3p9iucoSaX5LyZUhzU8gQ$ykrfKAA1Nx1AMdfXFYGNb_WhXmfZeHYBNaYi_h8y6xI1Lyq-mXJ3N3ffDmRtnXCTbN7wqGTGOdhbCvzWDkmExA",
+      "passwordUpdatedAt": "2026-10-21T17:10:08.240Z"
+    },
+    {
+      "id": "u_pilot07",
+      "fullName": "Vikram Sengupta",
+      "email": "vikram.sengupta@example.com",
+      "mobile": "+91 98860 22345",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "motorcycleModel": "F77 MACH 2",
+      "variant": "Shadow Grey (10.3 kWh)",
+      "registrationNumber": "KA 03 EV 4077",
+      "purchaseDate": "2024-06-20",
+      "bloodGroup": "B+",
+      "emergencyContact": {
+        "name": "Ananya Sengupta",
+        "relationship": "Spouse",
+        "phone": "+91 98860 77654"
+      },
+      "role": "verified_member",
+      "verificationStatus": "verified",
+      "verifiedAt": "2024-06-22T14:30:00Z",
+      "joinedAt": "2024-06-20T11:00:00Z",
+      "optInSquadronAssist": true,
+      "privacySettings": {
+        "showStartingPoint": true,
+        "showCity": true,
+        "showMotorcycleDetails": true
+      },
+      "originalName": "Vikram Sengupta",
+      "pilotNickname": "F77 PILOT",
+      "secondaryTag": "F77 PILOT",
+      "passwordHash": "scrypt$16384$8$1$I3p9iucoSaX5LyZUhzU8gQ$ykrfKAA1Nx1AMdfXFYGNb_WhXmfZeHYBNaYi_h8y6xI1Lyq-mXJ3N3ffDmRtnXCTbN7wqGTGOdhbCvzWDkmExA"
+    },
+    {
+      "id": "u_phantom",
+      "fullName": "Devika Nair",
+      "email": "devika.nair@example.com",
+      "mobile": "+91 97410 88231",
+      "city": "Mysuru",
+      "state": "Karnataka",
+      "motorcycleModel": "F77 Original",
+      "variant": "Airstrike White (7.1 kWh)",
+      "registrationNumber": "KA 09 MX 1290",
+      "purchaseDate": "2023-11-10",
+      "bloodGroup": "A+",
+      "emergencyContact": {
+        "name": "Rohan Nair",
+        "relationship": "Sibling",
+        "phone": "+91 97410 33412"
+      },
+      "role": "verified_member",
+      "verificationStatus": "suspended",
+      "verifiedAt": "2023-11-12T09:15:00Z",
+      "joinedAt": "2023-11-10T12:00:00Z",
+      "optInSquadronAssist": true,
+      "privacySettings": {
+        "showStartingPoint": false,
+        "showCity": true,
+        "showMotorcycleDetails": true
+      },
+      "originalName": "Devika Nair",
+      "pilotNickname": "F77 PILOT",
+      "secondaryTag": "F77 PILOT",
+      "passwordHash": "scrypt$16384$8$1$I60fJ1SGXBnRrgNd1372pA$TKRvEFXlLttCIBoyFnmsD5mhhhOSltftsEZarLPFsep4PL5AGYV5pvYC9HAYZbPhgnCbXTvxI0tOiO6rOwuB1w",
+      "verificationNotes": "Admin action performed by Abinav Thejas K"
+    },
+    {
+      "id": "u_rookie",
+      "fullName": "Karan Mehra",
+      "email": "karan.mehra@example.com",
+      "mobile": "+91 99001 55678",
+      "city": "Pune",
+      "state": "Maharashtra",
+      "motorcycleModel": "X47",
+      "variant": "Stealth Crossover Edition",
+      "registrationNumber": "MH 12 TC 8812",
+      "purchaseDate": "2025-01-14",
+      "bloodGroup": "AB+",
+      "emergencyContact": {
+        "name": "Sunil Mehra",
+        "relationship": "Parent",
+        "phone": "+91 99001 22334"
+      },
+      "role": "regular",
+      "verificationStatus": "pending",
+      "joinedAt": "2026-10-15T09:30:00Z",
+      "optInSquadronAssist": false,
+      "privacySettings": {
+        "showStartingPoint": false,
+        "showCity": true,
+        "showMotorcycleDetails": false
+      },
+      "originalName": "Karan Mehra",
+      "pilotNickname": "X47 PILOT",
+      "secondaryTag": "X47 PILOT"
+    },
+    {
+      "id": "u_1792788933366",
+      "originalName": "Test Pilot",
+      "fullName": "Test Pilot",
+      "customPrimaryName": null,
+      "pilotNickname": "X47 PILOT",
+      "customSecondaryTag": null,
+      "hideSecondaryTag": false,
+      "secondaryTag": "X47 PILOT",
+      "email": "testpilot@ultraviolette.com",
+      "passwordHash": "scrypt$16384$8$1$8NlCybTPlDCrHoDSa9mXpQ$-qFIJu9EKUhEI900Jgkp97Jap-BwtmYmnJZGB_yIoSqs9llTe8B5jXLimM25rlV7b8gapoIIGL2KWwHYhpLDAA",
+      "passwordUpdatedAt": "2026-10-23T20:55:33.365Z",
+      "mobile": "+91 9988776655",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "accountType": "customer",
+      "motorcycleModel": "X47 Venom",
+      "variant": "Standard Edition",
+      "registrationNumber": "KA 05 EV 9900",
+      "purchaseDate": "2026-10-23",
+      "rcDocumentUrl": "",
+      "rcDocumentName": "",
+      "rcExpiryDate": "",
+      "insuranceDocumentUrl": "",
+      "insuranceDocumentName": "",
+      "insuranceProvider": "",
+      "insurancePolicyNumber": "",
+      "insuranceExpiryDate": "",
+      "bloodGroup": "Prefer not to disclose",
+      "emergencyContact": {
+        "name": "Primary Contact",
+        "relationship": "Family",
+        "phone": "+91 9988776655"
+      },
+      "role": "regular",
+      "isOwner": false,
+      "verificationStatus": "verified",
+      "verificationNotes": "Registered Ultraviolette Customer account",
+      "joinedAt": "2026-10-23T20:55:33.365Z",
+      "optInSquadronAssist": false,
+      "communityChargerOptIn": true,
+      "communityChargerDetails": {
+        "pricingType": "Free",
+        "chargerType": "Only socket",
+        "town": "Tumakuru",
+        "latitude": 13.3409,
+        "longitude": 77.101
+      },
+      "privacySettings": {
+        "showStartingPoint": false,
+        "showCity": true,
+        "showMotorcycleDetails": true
+      }
+    }
+  ],
+  "rides": [
+    {
+      "id": "ride_01",
+      "name": "Operation Thunderhead: Nandi Foothills High-Speed Sortie",
+      "description": "Morning tactical formation ride focusing on regen calibration on switchbacks and battery thermal efficiency test.",
+      "rideDate": "2026-10-25",
+      "startTime": "05:30 IST",
+      "meetingPoint": "Hebbal Flyover Service Lane, Bengaluru",
+      "destination": "Nandi Hills Summit Parking Gate",
+      "plannedRoute": "Hebbal -> Bellary Road (NH 44) -> Devanahalli Bypass -> Karahalli Cross -> Nandi Hill Road",
+      "maxDistanceKm": 128.5,
+      "estimatedReturnTime": "10:30 IST",
+      "maxRiders": 12,
+      "rideLeaderId": "u_admin",
+      "rideLeaderName": "Abinav Thejas (Vanguard)",
+      "specialInstructions": "All riders must complete pre-ride checklist before 05:15 IST. Staggered formation. Intercom channel 4.",
+      "pace": "Spirited",
+      "chargingStops": [
+        {
+          "name": "Devanahalli Highway Fast Hub",
+          "location": "NH 44 Shell Fuel Station, Devanahalli",
+          "chargerType": "60 kW CCS2 / UV Supernova Pod",
+          "stopDurationMin": 20
+        }
+      ],
+      "checklistConfig": [
+        "Battery SoC > 90% and voltage delta verified",
+        "Tyre pressure verified (F: 32 PSI, R: 36 PSI cold)",
+        "Regen level pre-set (Level 5-7 recommended)",
+        "Bosch ABS diagnostic self-check passed on dash",
+        "Full ECE 22.06 / DOT riding gear equipped",
+        "Mobile phone fully charged with GP assistance active"
+      ],
+      "status": "In Progress",
+      "actualDepartureTime": "2026-10-18T05:35:00Z",
+      "participants": [
+        {
+          "id": "rp_1",
+          "userId": "u_admin",
+          "displayName": "Vanguard",
+          "motorcycleModel": "F77 MACH 2",
+          "variant": "Recon Laser Black",
+          "startingPoint": "Indiranagar 100ft Road",
+          "shareStartingPoint": true,
+          "intercomStatus": "Has an intercom",
+          "intercomModel": "Cardo Packtalk Edge (Channel 4)",
+          "notes": "Carrying portable tyre inflator and UV emergency tool pack",
+          "status": "Checked In",
+          "statusUpdatedAt": "2026-10-28T11:36:12.581Z",
+          "checklistCompleted": true,
+          "safeArrivalConfirmedAt": "2026-10-18T08:56:46.194Z"
+        },
+        {
+          "id": "rp_2",
+          "userId": "u_pilot07",
+          "displayName": "Apex",
+          "motorcycleModel": "F77 MACH 2",
+          "variant": "Shadow Grey",
+          "startingPoint": "Yelahanka Satellite Town",
+          "shareStartingPoint": true,
+          "intercomStatus": "Has an intercom",
+          "intercomModel": "Sena 50S Mesh",
+          "notes": "Joining formation at Hebbal junction",
+          "status": "Arrived at Destination",
+          "statusUpdatedAt": "2026-10-18T06:45:00Z",
+          "checklistCompleted": true
+        },
+        {
+          "id": "rp_3",
+          "userId": "u_phantom",
+          "displayName": "Phantom",
+          "motorcycleModel": "F77 Original",
+          "variant": "Airstrike White",
+          "startingPoint": "Koramangala 4th Block",
+          "shareStartingPoint": false,
+          "intercomStatus": "No intercom",
+          "notes": "Using visual hand signals in rear group",
+          "status": "Heading Home",
+          "statusUpdatedAt": "2026-10-18T07:15:00Z",
+          "checklistCompleted": true
+        }
+      ],
+      "announcements": [
+        {
+          "id": "ann_1",
+          "senderName": "Vanguard (Leader)",
+          "message": "All squadron riders check in. Moderate crosswinds reported past airport toll gate.",
+          "timestamp": "2026-10-18T05:40:00Z",
+          "urgent": false
+        }
+      ],
+      "createdAt": "2026-10-10T12:00:00Z"
+    },
+    {
+      "id": "ride_02",
+      "name": "Operation Western Pass: Sakleshpur Ridge Recon",
+      "description": "Multi-stage long distance sortie traversing the Western Ghats with designated fast-charging staging points.",
+      "rideDate": "2026-11-08",
+      "startTime": "05:00 IST",
+      "meetingPoint": "Nelamangala Expressway Toll Gate",
+      "destination": "Sakleshpur Valley Viewpoint",
+      "plannedRoute": "Nelamangala -> Kunigal Bypass -> Hassan (Supernova Stop) -> Sakleshpur Ghats",
+      "maxDistanceKm": 224,
+      "estimatedReturnTime": "19:30 IST",
+      "maxRiders": 16,
+      "rideLeaderId": "u_admin",
+      "rideLeaderName": "Abinav Thejas (Vanguard)",
+      "specialInstructions": "Strict battery management. Boost chargers will be staged at Hassan.",
+      "pace": "Moderate",
+      "chargingStops": [
+        {
+          "name": "Hassan Highway EV Hub",
+          "location": "BM Road, Hassan Bypass",
+          "chargerType": "UV Supernova Fast DC 30kW",
+          "stopDurationMin": 40
+        }
+      ],
+      "checklistConfig": [
+        "Battery SoC 100% with balanced cells",
+        "Belt tension and tooth inspection completed",
+        "Brake pads >= 3mm thickness checked",
+        "Rain liner and emergency thermal blanket packed"
+      ],
+      "status": "Registration Open",
+      "participants": [
+        {
+          "id": "rp_201",
+          "userId": "u_admin",
+          "displayName": "Vanguard",
+          "motorcycleModel": "F77 MACH 2",
+          "shareStartingPoint": true,
+          "intercomStatus": "Has an intercom",
+          "status": "Checked In",
+          "statusUpdatedAt": "2026-10-28T12:13:13.715Z",
+          "checklistCompleted": false
+        }
+      ],
+      "announcements": [],
+      "createdAt": "2026-10-14T08:00:00Z"
+    }
+  ],
+  "emergencies": [
+    {
+      "id": "emg_1792944682031",
+      "userId": "u_pilot07",
+      "requesterName": "Vikram Sengupta",
+      "requesterModel": "F77 MACH 2",
+      "category": "Motorcycle breakdown",
+      "description": "Rear tyre puncture near Shivajinagar bus terminus, need portable inflator.",
+      "locationName": "Shivajinagar Bus Terminus, Bengaluru",
+      "city": "Bengaluru",
+      "latitude": 12.9716,
+      "longitude": 77.5946,
+      "callbackPhone": "+91 98860 22345",
+      "photoUrl": "",
+      "status": "Resolved",
+      "notifiedCount": 3,
+      "notifiedCityUsers": [
+        {
+          "id": "u_admin",
+          "name": "Abinav Thejas K",
+          "city": "Bengaluru",
+          "role": "admin"
+        },
+        {
+          "id": "u_uv_employee",
+          "name": "UV Service Engineer",
+          "city": "Bengaluru",
+          "role": "uv_employee"
+        },
+        {
+          "id": "u_1792788933366",
+          "name": "Test Pilot",
+          "city": "Bengaluru",
+          "role": "regular"
+        }
+      ],
+      "adminAlerted": true,
+      "adminAlertedAt": "2026-10-25T16:11:22.030Z",
+      "adminNotifiedCount": 1,
+      "searchRadiusKm": 25,
+      "createdAt": "2026-10-25T16:11:22.030Z",
+      "updatedAt": "2026-10-27T16:39:34.027Z",
+      "accessLogs": [
+        {
+          "userId": "u_pilot07",
+          "userName": "Vikram Sengupta",
+          "accessedAt": "2026-10-25T16:11:22.030Z",
+          "reason": "Emergency SOS transmitted for city sector: Bengaluru"
+        },
+        {
+          "userId": "u_admin",
+          "userName": "ADMIN COMMAND DISPATCH",
+          "accessedAt": "2026-10-25T16:11:22.030Z",
+          "reason": "Priority Admin SOS Alert dispatched to 1 administrator(s)"
+        },
+        {
+          "userId": "system_city_broadcast",
+          "userName": "BENGALURU CITY NETWORK",
+          "accessedAt": "2026-10-25T16:11:22.030Z",
+          "reason": "City SOS alert broadcasted to 3 registered Bengaluru user(s): Abinav Thejas K, UV Service Engineer, Test Pilot"
+        },
+        {
+          "userId": "u_admin",
+          "userName": "Abinav Thejas K",
+          "accessedAt": "2026-10-27T16:39:31.617Z",
+          "reason": "Squadron verified member roadside assistance response"
+        }
+      ],
+      "responderId": "u_admin",
+      "responderName": "Abinav Thejas K",
+      "resolvedAt": "2026-10-27T16:39:34.027Z"
+    },
+    {
+      "id": "emg_1792401500873",
+      "userId": "u_admin",
+      "requesterName": "Abinav Thejas (Vanguard)",
+      "requesterModel": "F77 MACH 2",
+      "category": "Motorcycle breakdown",
+      "description": "gg",
+      "locationName": "GPS: 10.3682° N, 76.2260° E",
+      "latitude": 10.368186,
+      "longitude": 76.22599,
+      "callbackPhone": "+91 98450 11099",
+      "photoUrl": "",
+      "status": "Resolved",
+      "notifiedCount": 3,
+      "searchRadiusKm": 25,
+      "createdAt": "2026-10-19T09:18:20.873Z",
+      "updatedAt": "2026-10-23T18:55:43.562Z",
+      "accessLogs": [
+        {
+          "userId": "u_admin",
+          "userName": "Abinav Thejas (Vanguard)",
+          "accessedAt": "2026-10-19T09:18:20.873Z",
+          "reason": "Emergency request transmission"
+        },
+        {
+          "userId": "u_admin",
+          "userName": "Abinav Thejas K",
+          "accessedAt": "2026-10-23T18:55:38.955Z",
+          "reason": "Squadron verified member roadside assistance response"
+        }
+      ],
+      "responderId": "u_admin",
+      "responderName": "Abinav Thejas K",
+      "resolvedAt": "2026-10-23T18:55:43.562Z"
+    },
+    {
+      "id": "emg_01",
+      "userId": "u_pilot07",
+      "requesterName": "Vikram Sengupta (Apex)",
+      "requesterModel": "F77 MACH 2",
+      "category": "Puncture or tyre problem",
+      "description": "Rear tyre pressure dropped to 14 PSI after road debris near Electronic City Phase 1 exit. Sidewall intact, tyre puncture plug kit needed.",
+      "locationName": "Hosur Elevated Tollway Ramp, Electronic City, Bengaluru",
+      "latitude": 12.8452,
+      "longitude": 77.6602,
+      "callbackPhone": "+91 98860 22345",
+      "status": "Resolved",
+      "notifiedCount": 4,
+      "searchRadiusKm": 25,
+      "responderId": "u_admin",
+      "responderName": "Abinav Thejas (Vanguard)",
+      "createdAt": "2026-10-18T01:15:00Z",
+      "updatedAt": "2026-10-23T18:55:33.646Z",
+      "accessLogs": [
+        {
+          "userId": "u_admin",
+          "userName": "Abinav Thejas (Vanguard)",
+          "accessedAt": "2026-10-18T01:20:00Z",
+          "reason": "Squadron Lead Assistance Response & dispatch of portable inflator kit"
+        }
+      ],
+      "resolvedAt": "2026-10-23T18:55:33.646Z"
+    }
+  ],
+  "problems": [
+    {
+      "id": "prob_01",
+      "userId": "u_phantom",
+      "reporterName": "Devika Nair",
+      "motorcycleModel": "F77 Original",
+      "variant": "Airstrike White (7.1 kWh)",
+      "category": "Console & Software",
+      "title": "Violette AI Bluetooth BLE sync dropped during Android 15 OTA update",
+      "description": "After updating smartphone OS to Android 15, the motorcycle console pairs intermittently. Turn-by-turn navigation arrows flicker on the 5-inch TFT display.",
+      "firstObservedDate": "2026-09-28",
+      "mileageKm": 8420,
+      "warningMessageOrCode": "BLE-ERR-CONN-TIMEOUT (Dash Code 0x2A)",
+      "severity": "Moderate",
+      "isRecurring": true,
+      "troubleshootingAttempted": "Console reset performed by holding kill switch + mode button for 10 seconds. Repaired bluetooth key.",
+      "serviceVisits": "Visited Bengaluru Indiranagar UV Hangar on 2026-10-04. Service engineers flashed MCU firmware patch v3.2.1-rc4.",
+      "status": "Under Investigation",
+      "updates": [
+        {
+          "id": "up_1",
+          "authorName": "Devika Nair",
+          "date": "2026-10-05",
+          "note": "Firmware v3.2.1 fixed connection stability for 3 days, but drops resumed after cold ambient boot."
+        }
+      ],
+      "createdAt": "2026-09-29T11:00:00Z"
+    },
+    {
+      "id": "prob_02",
+      "userId": "u_pilot07",
+      "reporterName": "Vikram Sengupta",
+      "motorcycleModel": "F77 MACH 2",
+      "variant": "Laser Black (10.3 kWh)",
+      "category": "Charging System",
+      "title": "Thermal derate during fast charging when ambient exceeds 39°C",
+      "description": "When plugged into 60kW DC charger immediately after 45-minute highway ride in Combat mode, charge rate throttles from 1.5C to 0.4C with thermal warning icon.",
+      "firstObservedDate": "2026-08-14",
+      "mileageKm": 4200,
+      "warningMessageOrCode": "BMS-WARN-DELTA-TEMP (Code 0x5F)",
+      "severity": "Low",
+      "isRecurring": false,
+      "troubleshootingAttempted": "Allowed bike to cold-soak under shade for 15 minutes before plugging in. Charging rate recovered to full capacity.",
+      "serviceVisits": "Logged with UV telemetry engineering team during routine 5000km check.",
+      "status": "Resolved",
+      "resolvedDate": "2026-08-20",
+      "updates": [
+        {
+          "id": "up_2",
+          "authorName": "Vikram Sengupta",
+          "date": "2026-08-20",
+          "note": "Expected BMS thermal safety protocol behavior. Cooling cycle before DC fast charging is recommended by manufacturer."
+        }
+      ],
+      "createdAt": "2026-08-15T14:00:00Z"
+    }
+  ],
+  "jetSubmissions": [
+    {
+      "id": "js_1792573524803",
+      "clientRequestId": "jet_req_1792573525523",
+      "userId": "u_admin",
+      "authorName": "Abinav Thejas K",
+      "title": "RESET BIKE",
+      "motorcycleModel": "Both",
+      "variant": "",
+      "symptoms": "--",
+      "operatingConditions": "Normal operating conditions",
+      "troubleshootingAttempted": "None reported",
+      "serviceCentreFindings": "",
+      "resolutionOutcome": "PRESS O BUTTON , RIGHT LEFT BUTTON TOGTHER ... BIKE WILLL RESET",
+      "proposedSolution": "PRESS O BUTTON , RIGHT LEFT BUTTON TOGTHER ... BIKE WILLL RESET",
+      "sourceReferences": "Owner empirical testing",
+      "status": "Approved",
+      "createdAt": "2026-10-21T09:05:24.803Z",
+      "isPreset": true,
+      "presetUpdatedAt": "2026-10-22T16:31:35.020Z",
+      "presetUpdatedBy": "u_admin"
+    },
+    {
+      "id": "js_01",
+      "userId": "u_pilot07",
+      "authorName": "Vikram Sengupta (Apex)",
+      "title": "Regen Level 9 Calibration in Wet Monsoon Conditions",
+      "motorcycleModel": "F77 MACH 2",
+      "variant": "10.3 kWh Recon",
+      "symptoms": "Aggressive rear wheel slip during throttle roll-off on wet painted road markings when Dynamic Regen is set to Level 9 or 10.",
+      "operatingConditions": "Wet tarmac, ambient temperature 22°C, MRF SteelX tyres at 36 PSI.",
+      "troubleshootingAttempted": "Dialled down Dynamic Regen to Level 4 in Glide mode. Slip eliminated.",
+      "serviceCentreFindings": "Technician verified traction control sensitivity is tuned for linear deceleration; excessive regen on low-friction road paint can cause momentary rear wheel deceleration slip before ABS/TCS modulation.",
+      "resolutionOutcome": "Recommended rider practice: In wet weather, set Dynamic Regen to Level 3 or 4, switch traction control to Rain mode, and avoid harsh off-throttle over road paint.",
+      "proposedSolution": "Add wet-weather regen safety guideline to knowledge base.",
+      "status": "Approved",
+      "reviewerNotes": "Technically sound and directly matches Ultraviolette owner handbook safety advisory for wet road conditions.",
+      "reviewerId": "u_admin",
+      "createdAt": "2026-09-10T16:00:00Z",
+      "reviewedAt": "2026-09-12T10:00:00Z",
+      "isPreset": true,
+      "presetUpdatedAt": "2026-10-22T16:31:36.137Z",
+      "presetUpdatedBy": "u_admin"
+    }
+  ],
+  "modifications": [
+    {
+      "id": "mod_1792933695492",
+      "clientRequestId": "mod_req_1792933695534",
+      "userId": "u_admin",
+      "title": "6y6  66h",
+      "motorcycleModel": "F77",
+      "variant": "",
+      "component": "Aesthetics & Bodywork",
+      "difficulty": "Intermediate",
+      "costRange": "₹5,000 - ₹15,000",
+      "compatibilityStatus": "Verified Compatible",
+      "isOfficialAccessory": false,
+      "description": "ththt",
+      "partsUsed": "",
+      "installationGuide": "ththth",
+      "safetyConsiderations": "",
+      "warrantyConsiderations": "",
+      "authorName": "Abinav Thejas K",
+      "createdAt": "2026-10-25T13:08:15.492Z",
+      "imageUrl": "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20800%20500%22%20width%3D%22800%22%20height%3D%22500%22%3E%3Crect%20width%3D%22800%22%20height%3D%22500%22%20fill%3D%22%23090d16%22%2F%3E%3Ctext%20x%3D%2240%22%20y%3D%2270%22%20fill%3D%22%2300e5ff%22%20font-family%3D%22monospace%22%20font-size%3D%2222%22%20font-weight%3D%22bold%22%3EGHOST%20PROTOCOL%20%2F%2F%20MODIFICATION%20SPEC%3C%2Ftext%3E%3C%2Fsvg%3E",
+      "imageUrls": [
+        "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20800%20500%22%20width%3D%22800%22%20height%3D%22500%22%3E%3Crect%20width%3D%22800%22%20height%3D%22500%22%20fill%3D%22%23090d16%22%2F%3E%3Ctext%20x%3D%2240%22%20y%3D%2270%22%20fill%3D%22%2300e5ff%22%20font-family%3D%22monospace%22%20font-size%3D%2222%22%20font-weight%3D%22bold%22%3EGHOST%20PROTOCOL%20%2F%2F%20MODIFICATION%20SPEC%3C%2Ftext%3E%3C%2Fsvg%3E"
+      ],
+      "productLinks": [],
+      "shopName": "rgrgr",
+      "shopMapLink": "",
+      "shopNumber": "rgrgrgrg"
+    },
+    {
+      "id": "mod_1792930804163",
+      "clientRequestId": "mod_req_1792930804157",
+      "userId": "u_admin",
+      "title": "seat",
+      "motorcycleModel": "F77 MACH 2",
+      "variant": "",
+      "component": "Aesthetics & Bodywork",
+      "difficulty": "Intermediate",
+      "costRange": "₹5,000 - ₹15,000",
+      "compatibilityStatus": "Verified Compatible",
+      "isOfficialAccessory": false,
+      "description": "huhu hbvvy uhuhuhun huhub",
+      "partsUsed": "",
+      "installationGuide": "",
+      "safetyConsiderations": "",
+      "warrantyConsiderations": "",
+      "authorName": "Abinav Thejas K",
+      "createdAt": "2026-10-25T12:20:04.163Z",
+      "imageUrl": "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20800%20500%22%20width%3D%22800%22%20height%3D%22500%22%3E%3Crect%20width%3D%22800%22%20height%3D%22500%22%20fill%3D%22%23090d16%22%2F%3E%3Ctext%20x%3D%2240%22%20y%3D%2270%22%20fill%3D%22%2300e5ff%22%20font-family%3D%22monospace%22%20font-size%3D%2222%22%20font-weight%3D%22bold%22%3EGHOST%20PROTOCOL%20%2F%2F%20MODIFICATION%20SPEC%3C%2Ftext%3E%3C%2Fsvg%3E",
+      "imageUrls": [
+        "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20800%20500%22%20width%3D%22800%22%20height%3D%22500%22%3E%3Crect%20width%3D%22800%22%20height%3D%22500%22%20fill%3D%22%23090d16%22%2F%3E%3Ctext%20x%3D%2240%22%20y%3D%2270%22%20fill%3D%22%2300e5ff%22%20font-family%3D%22monospace%22%20font-size%3D%2222%22%20font-weight%3D%22bold%22%3EGHOST%20PROTOCOL%20%2F%2F%20MODIFICATION%20SPEC%3C%2Ftext%3E%3C%2Fsvg%3E"
+      ],
+      "productLinks": []
+    }
+  ],
+  "chargingStations": [
+    {
+      "id": "cs_01",
+      "name": "Ultraviolette Hangar Supernova Hub - Indiranagar",
+      "location": "100ft Road, HAL 2nd Stage, Indiranagar, Bengaluru",
+      "latitude": 12.9719,
+      "longitude": 77.6412,
+      "connectorTypes": [
+        "UV Supernova Dual DC (30 kW)",
+        "Type 2 AC (7.2 kW)",
+        "15A Standard Socket"
+      ],
+      "powerOutputKw": 30,
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for verified GHOST PROTOCOL members (via UV App RFID token)",
+      "lastVerifiedDate": "2026-10-17",
+      "userNotes": "Twin bays, illuminated, clean lounge with high-speed Wi-Fi and tire pressure station.",
+      "chargerType": "Supernova",
+      "chargerDetails": "No separate charger required — Integrated 30 kW Supernova DC Tether.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original (Supernova DC Port)",
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByRole": "admin",
+      "submittedByUserId": "u_admin",
+      "reportedBy": "Abinav Thejas (Vanguard) • Admin",
+      "chargerSource": "Supernova"
+    },
+    {
+      "id": "cs_02",
+      "name": "NH 44 Shell Devanahalli Highway EV Fast Station",
+      "location": "Opposite Kempegowda Airport Trumpet Interchange, NH 44, Bengaluru",
+      "latitude": 13.2085,
+      "longitude": 77.7082,
+      "connectorTypes": [
+        "CCS2 Dual Gun (60 kW)",
+        "Type 2 AC (22 kW)"
+      ],
+      "powerOutputKw": 60,
+      "isSupernova": false,
+      "isCommunityReported": true,
+      "verifiedByAdmin": true,
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "₹18.50 per kWh via Shell Recharge App",
+      "lastVerifiedDate": "2026-10-15",
+      "userNotes": "Compatible with F77 MACH 2 Boost adapter. 20% to 80% SoC achieved in 48 minutes.",
+      "chargerType": "Type 2",
+      "chargerDetails": "Ultraviolette (UV) Type 2 charging link and portable Boost/Standard charger required.",
+      "uvChargingLink": "https://www.ultraviolette.com/charging/type2-adapter",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original, Tesseract",
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByRole": "user",
+      "submittedByUserId": "u_pilot07",
+      "reportedBy": "Vikram Sengupta (Apex)",
+      "chargerSource": "3rd Party Station"
+    },
+    {
+      "id": "cs_03",
+      "name": "Mysuru Highway Squadron Waypoint (CCD Maddur)",
+      "location": "Bangalore-Mysore Expressway, Maddur Bypass, Karnataka",
+      "latitude": 12.5841,
+      "longitude": 77.0428,
+      "connectorTypes": [
+        "15A Industrial Weatherproof Socket",
+        "Tata Power 30kW CCS2"
+      ],
+      "powerOutputKw": 30,
+      "isSupernova": false,
+      "isCommunityReported": true,
+      "verifiedByAdmin": true,
+      "operatingStatus": "Operational",
+      "accessConditions": "Commercial Hours Only",
+      "pricing": "₹16.00 per kWh or free 15A socket with cafe purchase",
+      "lastVerifiedDate": "2026-10-12",
+      "userNotes": "Owner confirmed 15A socket works reliably on stock portable brick charger.",
+      "chargerType": "Socket",
+      "chargerDetails": "15A Standard Charger, Boost Charger, or On-Board Charger (OBC) required.",
+      "vehicleCompatibility": "All Ultraviolette Models (F77 MACH 2, Recon, Original, Shockwave, X47)",
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByRole": "user",
+      "submittedByUserId": "u_phantom",
+      "reportedBy": "Devika Nair (Phantom)",
+      "submittedByPhone": "+91 97410 88231",
+      "reservations": [
+        {
+          "id": "resv_1793176976996_utsr",
+          "chargerId": "cs_03",
+          "chargerName": "Mysuru Highway Squadron Waypoint (CCD Maddur)",
+          "ownerUserId": "u_phantom",
+          "ownerName": "Devika Nair (Phantom)",
+          "ownerPhone": "+91 97410 88231",
+          "riderUserId": "u_pilot07",
+          "riderName": "Vikram Sengupta",
+          "riderPhone": "+91 98860 22345",
+          "riderBikeModel": "F77 Recon",
+          "reservationDate": "2026-10-28",
+          "startTime": "10:00",
+          "endTime": "11:00",
+          "durationMinutes": 60,
+          "estimatedKwh": 30,
+          "pricingType": "Charged",
+          "chargingCostAmount": 16,
+          "chargingCostUnit": "per kWh",
+          "estimatedCost": 480,
+          "vehicleNotes": "Arriving on F77 Mach 2, need 90 min top-up",
+          "status": "Requested",
+          "createdAt": "2026-10-28T08:42:56.996Z",
+          "updatedAt": "2026-10-28T08:42:56.996Z"
+        }
+      ],
+      "chargerSource": "Community Provided Charger",
+      "pricingType": "Free",
+      "chargingCostAmount": 0,
+      "chargingCostUnit": "per session",
+      "availabilityStartTime": "06:30",
+      "availabilityEndTime": "22:30",
+      "availabilityDays": "Daily",
+      "availabilityTimeText": "06:30 – 22:30 (Daily)",
+      "requiresReservation": true
+    },
+    {
+      "id": "cs_04",
+      "name": "Pune-Mumbai Expressway Lonavala Type 6 Fast Pod",
+      "location": "Food Mall Waypoint KM 54, Mumbai-Pune Expressway, Lonavala, Maharashtra",
+      "latitude": 18.7557,
+      "longitude": 73.4091,
+      "chargerType": "Type 6",
+      "chargerDetails": "No separate charger required — Integrated Type 6 public connector.",
+      "vehicleCompatibility": "Tesseract, Shockwave & Type 6 Compatible UV Platforms",
+      "connectorTypes": [
+        "Type 6 Connector (6.0 kW)",
+        "15A Standard Socket"
+      ],
+      "powerOutputKw": 6,
+      "chargerSource": "3rd Party Station",
+      "isSupernova": false,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "₹14.00 per kWh",
+      "lastVerifiedDate": "2026-10-16",
+      "userNotes": "Covered two-wheeler bay near highway exit ramp.",
+      "reportedBy": "Abinav Thejas (Vanguard) • Admin"
+    },
+    {
+      "id": "cs_05",
+      "name": "Ultraviolette Space Station Supernova Hub - Worli",
+      "location": "Dr Annie Besant Road, Worli, Mumbai, Maharashtra",
+      "latitude": 19.0176,
+      "longitude": 72.8172,
+      "chargerType": "Supernova",
+      "chargerDetails": "No separate charger required — Direct Supernova DC Fast Tether.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "UV Supernova Dual DC (30 kW)",
+        "15A Standard Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for verified Ultraviolette owners",
+      "lastVerifiedDate": "2026-10-18",
+      "userNotes": "24/7 security guard on site, dedicated F77 parking bays.",
+      "reportedBy": "Abinav Thejas (Vanguard) • Admin"
+    },
+    {
+      "id": "cs_06",
+      "name": "ECR Mahabalipuram Coastal Squadron Hub",
+      "location": "East Coast Road (ECR), Mamallapuram, Chennai Corridor, Tamil Nadu",
+      "latitude": 12.6208,
+      "longitude": 80.1945,
+      "chargerType": "Type 2",
+      "uvChargingLink": "https://www.ultraviolette.com/charging/uv-link",
+      "chargerDetails": "Ultraviolette (UV) charging link and portable charger required.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "Type 2 AC (7.2 kW)",
+        "15A Socket"
+      ],
+      "powerOutputKw": 7.2,
+      "chargerSource": "Community Provided Charger",
+      "isSupernova": false,
+      "isCommunityReported": true,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_pilot07",
+      "submittedByRole": "user",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "₹15.00 per kWh",
+      "lastVerifiedDate": "2026-10-14",
+      "userNotes": "Popular weekend breakfast ride stop on ECR. Carry UV Type 2 link adapter.",
+      "reportedBy": "Vikram Sengupta (Apex)",
+      "submittedByPhone": "+91 98860 22345",
+      "pricingType": "Charged",
+      "chargingCostAmount": 15,
+      "chargingCostUnit": "per kWh",
+      "availabilityStartTime": "06:00",
+      "availabilityEndTime": "22:00",
+      "availabilityDays": "Daily",
+      "availabilityTimeText": "06:00 – 22:00 (Daily)",
+      "requiresReservation": true,
+      "reservations": [
+        {
+          "id": "resv_1793170074732_e4fl",
+          "chargerId": "cs_06",
+          "chargerName": "ECR Mahabalipuram Coastal Squadron Hub",
+          "ownerUserId": "u_pilot07",
+          "ownerName": "Vikram Sengupta (Apex)",
+          "ownerPhone": "+91 98860 22345",
+          "riderUserId": "u_admin",
+          "riderName": "Abinav Thejas K",
+          "riderPhone": "+91 98450 11099",
+          "riderBikeModel": "F77 MACH 2",
+          "reservationDate": "2026-10-28",
+          "startTime": "10:00",
+          "endTime": "11:00",
+          "durationMinutes": 60,
+          "estimatedKwh": 7.2,
+          "pricingType": "Charged",
+          "chargingCostAmount": 15,
+          "chargingCostUnit": "per kWh",
+          "estimatedCost": 108,
+          "status": "Approved",
+          "createdAt": "2026-10-28T06:47:54.732Z",
+          "updatedAt": "2026-10-28T06:47:57.588Z"
+        }
+      ]
+    },
+    {
+      "id": "cs_07",
+      "name": "Connaught Place Outer Circle EV Charging Bay",
+      "location": "Block M, Connaught Place, New Delhi, Delhi NCR",
+      "latitude": 28.6315,
+      "longitude": 77.2167,
+      "chargerType": "Socket",
+      "chargerDetails": "Charger or On-Board Charger (OBC) required — 15A industrial socket.",
+      "vehicleCompatibility": "All Ultraviolette Models (F77 MACH 2, Recon, Original, Tesseract)",
+      "connectorTypes": [
+        "15A Industrial Weatherproof Socket"
+      ],
+      "powerOutputKw": 3.3,
+      "chargerSource": "Community Provided Charger",
+      "isSupernova": false,
+      "isCommunityReported": true,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_phantom",
+      "submittedByRole": "user",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "₹10.00 per kWh metered socket",
+      "lastVerifiedDate": "2026-10-15",
+      "userNotes": "NDMC public EV parking bay with dedicated 15A earthing verified.",
+      "reportedBy": "Devika Nair (Phantom)",
+      "submittedByPhone": "+91 97410 88231",
+      "pricingType": "Charged",
+      "chargingCostAmount": 50,
+      "chargingCostUnit": "per hour",
+      "availabilityStartTime": "08:00",
+      "availabilityEndTime": "21:00",
+      "availabilityDays": "Daily",
+      "availabilityTimeText": "08:00 – 21:00 (Daily)",
+      "requiresReservation": true,
+      "reservations": []
+    },
+    {
+      "id": "cs_1792433171282",
+      "name": "Maddur Highway 15A Socket Point",
+      "location": "Bengaluru-Mysuru Expressway KM 82, Maddur, Karnataka 571428",
+      "latitude": 12.5841,
+      "longitude": 77.0428,
+      "chargerType": "Socket",
+      "chargerDetails": "Standard 15A AC Socket",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "15A Socket"
+      ],
+      "powerOutputKw": 3.3,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free / Commercial",
+      "lastVerifiedDate": "2026-10-19",
+      "userNotes": "",
+      "reportedBy": "Abinav Thejas (Vanguard)"
+    },
+    {
+      "id": "cs_1792435867592",
+      "name": "Café Coffee Day (CCD) — Kolar NH 75 Bypass",
+      "location": "NH 75 (Old Madras Road), Near R.L. Jalappa Hospital & Tamaka Industrial Area, Kolar, Karnataka 563103",
+      "latitude": 13.13305,
+      "longitude": 78.1715,
+      "chargerType": "Supernova",
+      "chargerDetails": "No separate charger required.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "Supernova (DC Fast)"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free / Commercial",
+      "lastVerifiedDate": "2026-10-19",
+      "userNotes": "",
+      "reportedBy": "Abinav Thejas (Vanguard)"
+    },
+    {
+      "id": "cs_11",
+      "name": "UV Supernova Hub — Channapatna Highway (NH 275)",
+      "location": "NH 275 Bypass, Beside Kamat Upachar, Channapatna, Karnataka 562160",
+      "latitude": 12.6518,
+      "longitude": 77.2067,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charger (2 bays, 24/7 highway access)",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Industrial Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / ₹14/kWh standard",
+      "lastVerifiedDate": "2026-10-19",
+      "userNotes": "Ideal mid-way charging stop at KM 60 on the Bengaluru–Mysuru highway corridor.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "cs_12",
+      "name": "Maddur Tiffany’s Highway Type 2 AC Pod (NH 275)",
+      "location": "Maddur Tiffany’s Compound, NH 275 Service Road, Maddur, Karnataka 571428",
+      "latitude": 12.5841,
+      "longitude": 77.0428,
+      "chargerType": "Type 2",
+      "chargerDetails": "7.2 kW Type 2 AC Smart Wallbox + 16A industrial backup socket in covered bike bay",
+      "vehicleCompatibility": "All F77 Variants (with Type 2 adapter or portable charger)",
+      "connectorTypes": [
+        "IEC 62196 Type 2 AC (7.2 kW)",
+        "16A 3-Pin Socket (230V AC)"
+      ],
+      "powerOutputKw": 7.2,
+      "chargerSource": "3rd Party Station",
+      "isSupernova": false,
+      "isCommunityReported": true,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_pilot07",
+      "submittedByRole": "user",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "₹16.00 per kWh",
+      "lastVerifiedDate": "2026-10-18",
+      "userNotes": "Reliable backup stop 25 km ahead of Channapatna with shaded parking and food court.",
+      "reportedBy": "Vikram Sengupta (Apex)"
+    },
+    {
+      "id": "cs_13",
+      "name": "UV Supernova Station — Mulbagal Highway Plaza (NH 75)",
+      "location": "NH 75 Bengaluru–Chennai Corridor, Near Nandi Grand Plaza, Mulbagal, Karnataka 563131",
+      "latitude": 13.1645,
+      "longitude": 78.3932,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charging Hub on NH 75 Eastbound/Westbound access road",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / ₹14/kWh standard",
+      "lastVerifiedDate": "2026-10-19",
+      "userNotes": "Located ~96 km from Bengaluru Indiranagar along NH 75 toward Tirupati and Chennai.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "cs_14",
+      "name": "Vellore Green Circle Supernova & Type 6 Hub (NH 48)",
+      "location": "NH 48 Service Road, Green Circle Junction, Vellore, Tamil Nadu 632004",
+      "latitude": 12.9349,
+      "longitude": 79.1469,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charger + Type 6 Ather Grid co-located bay",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "Type 2 AC (7.2 kW)"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / ₹15/kWh standard",
+      "lastVerifiedDate": "2026-10-19",
+      "userNotes": "Strategic ~205 km midpoint between Bengaluru and Chennai on NH 48.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "cs_15",
+      "name": "Sriperumbudur Toll Plaza Fast Pod (NH 48)",
+      "location": "NH 48 Chennai–Bengaluru Highway, Near Hyundai Gate, Sriperumbudur, Tamil Nadu 602105",
+      "latitude": 12.9675,
+      "longitude": 79.9479,
+      "chargerType": "Type 6",
+      "chargerDetails": "High-speed Type 6 DC Fast Charger (12 kW) + Type 2 7.2 kW AC",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (DC Fast)",
+        "IEC 62196 Type 2 AC"
+      ],
+      "powerOutputKw": 12,
+      "chargerSource": "3rd Party Station",
+      "isSupernova": false,
+      "isCommunityReported": true,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_phantom",
+      "submittedByRole": "user",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "₹17.00 per kWh",
+      "lastVerifiedDate": "2026-10-18",
+      "userNotes": "Located ~300 km from Bengaluru and ~42 km before central Chennai.",
+      "reportedBy": "Devika Nair (Phantom)"
+    },
+    {
+      "id": "cs_16",
+      "name": "UV Supernova Hub — Tumakuru Highway Bypass (NH 48)",
+      "location": "NH 48 Bengaluru–Pune Highway, Sira Road Junction, Tumakuru, Karnataka 572106",
+      "latitude": 13.3409,
+      "longitude": 77.101,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charging Bay at highway food plaza",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / ₹14/kWh standard",
+      "lastVerifiedDate": "2026-10-19",
+      "userNotes": "Primary northbound NH 48 stop ~75 km from Bengaluru.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "cs_17",
+      "name": "UV Supernova Hub — Krishnagiri Highway Junction (NH 48)",
+      "location": "NH 44 / NH 48 Chennai Highway Split, Near A2B Plaza, Krishnagiri, Tamil Nadu 635001",
+      "latitude": 12.5266,
+      "longitude": 78.215,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charging Station (Dual Bay, 24/7 Highway Access)",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Industrial Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / ₹14/kWh standard",
+      "lastVerifiedDate": "2026-10-19",
+      "userNotes": "Direct highway stop at KM 92 on the Bengaluru–Krishnagiri–Vellore–Chennai NH 48 corridor.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "cs_18",
+      "name": "Krishnagiri Toll Plaza Type 2 & Socket Backup Pod (NH 48)",
+      "location": "NH 48 Service Lane, Beside Saravana Bhavan, Krishnagiri, Tamil Nadu 635001",
+      "latitude": 12.534,
+      "longitude": 78.226,
+      "chargerType": "Type 2",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "7.2 kW Type 2 AC Wallbox + 16A 3-Pin Industrial Socket",
+      "vehicleCompatibility": "All F77 Variants",
+      "connectorTypes": [
+        "IEC 62196 Type 2 AC (7.2 kW)",
+        "16A 3-Pin Socket"
+      ],
+      "powerOutputKw": 7.2,
+      "chargerSource": "3rd Party Station",
+      "isSupernova": false,
+      "isCommunityReported": true,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_pilot07",
+      "submittedByRole": "user",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "₹15.00 per kWh",
+      "lastVerifiedDate": "2026-10-18",
+      "userNotes": "Reliable backup 1.5 km from Krishnagiri Supernova hub.",
+      "reportedBy": "Vikram Sengupta (Apex)"
+    },
+    {
+      "id": "cs_1792589692472",
+      "name": "Indiranagar Fast Socket",
+      "location": "Indiranagar, Bengaluru",
+      "latitude": 12.9716,
+      "longitude": 77.6412,
+      "chargerType": "Socket",
+      "chargerDetails": "Standard 15A AC Socket",
+      "vehicleCompatibility": "Verify connector & voltage compatibility before plugging in",
+      "connectorTypes": [
+        "15A Socket"
+      ],
+      "powerOutputKw": 3.3,
+      "chargerSource": "Community Provided Charger",
+      "isSupernova": false,
+      "isCommunityReported": true,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for pilots",
+      "lastVerifiedDate": "2026-10-21",
+      "userNotes": "",
+      "reportedBy": "Abinav Thejas K",
+      "submittedByPhone": "+91 98450 11099",
+      "pricingType": "Free",
+      "chargingCostAmount": 0,
+      "chargingCostUnit": "per kWh",
+      "availabilityStartTime": "06:00",
+      "availabilityEndTime": "22:30",
+      "availabilityDays": "Daily",
+      "availabilityTimeText": "06:00 – 22:30 (Daily)",
+      "requiresReservation": true,
+      "reservations": []
+    },
+    {
+      "id": "cs_1792596758950",
+      "clientRequestId": "chg_req_1792596759740",
+      "name": "Mysuru",
+      "location": "Mysuru, Mysuru taluk, Mysuru District, Karnataka, 570001, India",
+      "latitude": 12.304146,
+      "longitude": 76.652952,
+      "chargerType": "Supernova",
+      "chargerDetails": "No separate charger required.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "Supernova (DC Fast)"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free / Commercial",
+      "lastVerifiedDate": "2026-10-21",
+      "userNotes": "",
+      "reportedBy": "Abinav Thejas K"
+    },
+    {
+      "id": "cs_1792596784379",
+      "clientRequestId": "chg_req_1792596785196",
+      "name": "Hassan",
+      "location": "Hassan, Karnataka, India",
+      "latitude": 13.030185,
+      "longitude": 76.174497,
+      "chargerType": "Supernova",
+      "chargerDetails": "No separate charger required.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "Supernova (DC Fast)"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free / Commercial",
+      "lastVerifiedDate": "2026-10-21",
+      "userNotes": "",
+      "reportedBy": "Abinav Thejas K"
+    },
+    {
+      "id": "cs_1792596802891",
+      "clientRequestId": "chg_req_1792596803694",
+      "name": "Mangaluru",
+      "location": "Mangaluru, Mangaluru taluk, Dakshina Kannada, Karnataka, 575001, India",
+      "latitude": 12.869825,
+      "longitude": 74.843013,
+      "chargerType": "Supernova",
+      "chargerDetails": "No separate charger required.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "Supernova (DC Fast)"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free / Commercial",
+      "lastVerifiedDate": "2026-10-21",
+      "userNotes": "",
+      "reportedBy": "Abinav Thejas K"
+    },
+    {
+      "id": "cs_comm_1792788933421",
+      "name": "Tumakuru Community Socket",
+      "location": "Tumakuru, India",
+      "latitude": 13.3409,
+      "longitude": 77.101,
+      "chargerType": "Socket",
+      "chargerDetails": "Community provided Only socket. Registered during pilot onboarding.",
+      "vehicleCompatibility": "F77, X47, X47 Venom & all Ultraviolette models",
+      "connectorTypes": [
+        "15A 3-Pin Standard Socket (2.2 kW)"
+      ],
+      "powerOutputKw": 2.5,
+      "chargerSource": "Community Provided Charger",
+      "isSupernova": false,
+      "isCommunityReported": true,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_1792788933366",
+      "submittedByRole": "user",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free Community Access",
+      "lastVerifiedDate": "2026-10-23",
+      "userNotes": "Community station in Tumakuru. Confidentiality preserved (town-level coordinates). Note: Help squadron and yourself to fly more without charging anxiety.",
+      "reportedBy": "Test Pilot",
+      "submittedByPhone": "+91 9988776655",
+      "pricingType": "Free",
+      "chargingCostAmount": 0,
+      "chargingCostUnit": "per kWh",
+      "availabilityStartTime": "06:00",
+      "availabilityEndTime": "22:30",
+      "availabilityDays": "Daily",
+      "availabilityTimeText": "06:00 – 22:30 (Daily)",
+      "requiresReservation": true,
+      "reservations": []
+    },
+    {
+      "id": "SN-001",
+      "name": "Mysuru",
+      "location": "Mysuru, Karnataka",
+      "latitude": 12.3571953,
+      "longitude": 76.6614688,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charging Hub — Mysuru.",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Industrial Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / Commercial DC Fast",
+      "lastVerifiedDate": "2026-10-25",
+      "userNotes": "Ultraviolette Supernova DC Fast Charging Hub.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "SN-002",
+      "name": "Coimbatore",
+      "location": "Coimbatore, Tamil Nadu",
+      "latitude": 11.0204155,
+      "longitude": 76.9922914,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charging Hub — Coimbatore.",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Industrial Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / Commercial DC Fast",
+      "lastVerifiedDate": "2026-10-25",
+      "userNotes": "Ultraviolette Supernova DC Fast Charging Hub.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "SN-003",
+      "name": "Bengaluru",
+      "location": "Bengaluru, Karnataka",
+      "latitude": 12.9539933,
+      "longitude": 77.6408874,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charging Hub — Bengaluru.",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Industrial Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / Commercial DC Fast",
+      "lastVerifiedDate": "2026-10-25",
+      "userNotes": "Ultraviolette Supernova DC Fast Charging Hub.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "SN-004",
+      "name": "Kolar",
+      "location": "Kolar, Karnataka",
+      "latitude": 13.1356771,
+      "longitude": 78.015444,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charging Hub — Kolar.",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Industrial Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / Commercial DC Fast",
+      "lastVerifiedDate": "2026-10-25",
+      "userNotes": "Ultraviolette Supernova DC Fast Charging Hub.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "SN-005",
+      "name": "Devanahalli (North Bengaluru)",
+      "location": "Devanahalli (North Bengaluru), Karnataka",
+      "latitude": 13.3471483,
+      "longitude": 77.672997,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charging Hub — Devanahalli (North Bengaluru).",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Industrial Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / Commercial DC Fast",
+      "lastVerifiedDate": "2026-10-25",
+      "userNotes": "Ultraviolette Supernova DC Fast Charging Hub.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "SN-006",
+      "name": "Kochi",
+      "location": "Kochi, Kerala",
+      "latitude": 10.009437,
+      "longitude": 76.3119765,
+      "chargerType": "Supernova",
+      "uvChargingLink": "https://www.ultraviolette.com/charging",
+      "chargerDetails": "Ultraviolette Supernova 30 kW DC Fast Charging Hub — Kochi.",
+      "vehicleCompatibility": "F77 Original / F77 MACH 2 / Recon / SuperStreet",
+      "connectorTypes": [
+        "IEC 62196-3 Type 6 (UV DC Fast)",
+        "15A 3-Pin Industrial Socket"
+      ],
+      "powerOutputKw": 30,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free for UV Care+ / Commercial DC Fast",
+      "lastVerifiedDate": "2026-10-25",
+      "userNotes": "Ultraviolette Supernova DC Fast Charging Hub.",
+      "reportedBy": "Ultraviolette Grid Ops"
+    },
+    {
+      "id": "cs_1792924942027",
+      "clientRequestId": "chg_req_1792924943928",
+      "name": "Morgan Stanley",
+      "location": "Morgan Stanley, Bellandur Lake Road, Yemaluru, Yamalur, Bengaluru East City Corporation, Bengaluru, Bangalore East, Bengaluru Urban, Karnataka, 560103, India",
+      "latitude": 12.936976,
+      "longitude": 77.68093,
+      "chargerType": "Type 6",
+      "chargerDetails": "No separate charger required.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "Type 6 Connector"
+      ],
+      "powerOutputKw": 6,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free / Commercial",
+      "lastVerifiedDate": "2026-10-25",
+      "userNotes": "",
+      "reportedBy": "Abinav Thejas K"
+    },
+    {
+      "id": "cs_1792925024980",
+      "clientRequestId": "chg_req_1792925026900",
+      "name": "Kanakapura Road",
+      "location": "Kanakapura Road, Jayanagar 7th Block, Devagiri Temple Ward, Bengaluru West City Corporation, Bengaluru, Bangalore South, Bengaluru Urban, Karnataka, 560070, India",
+      "latitude": 12.926093,
+      "longitude": 77.577012,
+      "chargerType": "Type 6",
+      "chargerDetails": "No separate charger required.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "Type 6 Connector"
+      ],
+      "powerOutputKw": 6,
+      "chargerSource": "Supernova",
+      "isSupernova": true,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free / Commercial",
+      "lastVerifiedDate": "2026-10-25",
+      "userNotes": "",
+      "reportedBy": "Abinav Thejas K"
+    },
+    {
+      "id": "cs_1792925059349",
+      "clientRequestId": "chg_req_1792925061290",
+      "name": "Baiyappanahalli Road",
+      "location": "Baiyappanahalli Road, Jeevanahalli, Bengaluru North City Corporation, Bengaluru, Bangalore East, Bengaluru Urban, Karnataka, 560033, India",
+      "latitude": 12.997106,
+      "longitude": 77.640243,
+      "chargerType": "Type 6",
+      "chargerDetails": "No separate charger required.",
+      "vehicleCompatibility": "F77 MACH 2, F77 Recon, F77 Original",
+      "connectorTypes": [
+        "Type 6 Connector"
+      ],
+      "powerOutputKw": 6,
+      "chargerSource": "3rd Party Station",
+      "isSupernova": false,
+      "isCommunityReported": false,
+      "verifiedByAdmin": true,
+      "approvalStatus": "approved",
+      "published": true,
+      "submittedByUserId": "u_admin",
+      "submittedByRole": "admin",
+      "operatingStatus": "Operational",
+      "accessConditions": "Public 24/7",
+      "pricing": "Free / Commercial",
+      "lastVerifiedDate": "2026-10-25",
+      "userNotes": "",
+      "reportedBy": "Abinav Thejas K"
+    }
+  ],
+  "marketplace": [
+    {
+      "id": "mp_1792589692480",
+      "sellerId": "u_admin",
+      "sellerName": "Pilot",
+      "sellerVerified": true,
+      "title": "Original F77 Fast Charger 3.3kW",
+      "description": "Original charger in pristine condition",
+      "category": "Charging & Adapters",
+      "price": 18000,
+      "condition": "Like New",
+      "compatibleModel": "F77 MACH 2",
+      "generalLocation": "Bengaluru",
+      "contactPhone": "",
+      "status": "Available",
+      "createdAt": "2026-10-21T13:34:52.480Z",
+      "imageUrl": "",
+      "imageUrls": [],
+      "listingType": "buy"
+    },
+    {
+      "id": "mp_01",
+      "sellerId": "u_pilot07",
+      "sellerName": "Vikram Sengupta (Apex)",
+      "sellerVerified": true,
+      "title": "UV Official Boost Fast Charger (3.3 kW Portable unit)",
+      "description": "Upgraded to garage Supernova home wallbox, selling my portable 3.3 kW Boost charger with original padded travel bag and heavy-duty 15A plug.",
+      "category": "Chargers",
+      "price": 24000,
+      "condition": "Like New",
+      "compatibleModel": "F77 Original / F77 MACH 2 / Recon",
+      "generalLocation": "Bengaluru (Koramangala / Indiranagar)",
+      "status": "Available",
+      "createdAt": "2026-10-12T09:00:00Z",
+      "imageUrl": "https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=800&q=80",
+      "imageUrls": [
+        "https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1558980664-3a031cf67ea8?auto=format&fit=crop&w=800&q=80"
+      ],
+      "listingType": "buy",
+      "contactEmail": "vikram.sengupta@squadron.in",
+      "contactPhone": "+91 98801 44556"
+    },
+    {
+      "id": "mp_02",
+      "sellerId": "u_phantom",
+      "sellerName": "Devika Nair (Phantom)",
+      "sellerVerified": true,
+      "title": "Carbon-weave Pillion Seat Cowl (Matte Stealth Finish)",
+      "description": "Single-seater aerodynamic rear cowl. Clips straight into stock latch mechanism in place of rear seat.",
+      "category": "Accessories",
+      "price": 4500,
+      "condition": "Brand New",
+      "compatibleModel": "F77 MACH 2 / F77 Original",
+      "generalLocation": "Mysuru / Shipping across India",
+      "status": "Available",
+      "createdAt": "2026-10-14T15:00:00Z",
+      "imageUrl": "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=800&q=80",
+      "imageUrls": [
+        "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1558981403-c5f9899a28bc?auto=format&fit=crop&w=800&q=80"
+      ],
+      "listingType": "buy",
+      "contactEmail": "devika.nair@squadron.in",
+      "contactPhone": "+91 98452 77889"
+    },
+    {
+      "id": "mp_rent_01",
+      "sellerId": "u_admin",
+      "sellerName": "Abinav Thejas K",
+      "sellerVerified": true,
+      "listingType": "rent",
+      "title": "UV Official Hard-Shell Aero Panniers & 18L Tank Bag Kit",
+      "description": "Complete weekend touring luggage kit with quick-release mounting brackets, rain covers, and Type 2 charging adapter pouch. Ideal for Coorg, Ooty, or Western Ghats highway sorties.",
+      "category": "Accessories",
+      "price": 650,
+      "costPerDay": 650,
+      "securityDeposit": 3000,
+      "minRentalDays": 1,
+      "maxRentalDays": 14,
+      "rentalAvailability": "Booked Upcoming",
+      "rentalRules": "1. Valid driving license or verified GHOST PROTOCOL pilot profile required at pickup.\n2. Maximum payload 15 kg evenly distributed.\n3. Return cleaned and undamaged; refundable security deposit returned immediately via UPI on drop-off.",
+      "condition": "Like New",
+      "compatibleModel": "Both F77 & X47",
+      "generalLocation": "Bengaluru (Indiranagar Hangar)",
+      "contactPhone": "+91 98450 11099",
+      "contactEmail": "abinavthejas2001@gmail.com",
+      "status": "Available",
+      "imageUrls": [
+        "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22800%22%20height%3D%22450%22%20viewBox%3D%220%200%20400%20225%22%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%230B131B%22%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23172836%22%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3C%2Fdefs%3E%0A%20%20%20%20%3Crect%20width%3D%22400%22%20height%3D%22225%22%20fill%3D%22url(%23bg)%22%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%2045H400M0%2090H400M0%20135H400M0%20180H400M80%200V225M160%200V225M240%200V225M320%200V225%22%20stroke%3D%22%23ffffff%22%20stroke-opacity%3D%220.04%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22135%22%20y%3D%2280%22%20width%3D%22130%22%20height%3D%2290%22%20rx%3D%2214%22%20fill%3D%22none%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%224%22%2F%3E%3Cpath%20d%3D%22M165%2080V66H235V80M135%20115H265%22%20stroke%3D%22%2338BDF8%22%20stroke-width%3D%223%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22192%22%20text-anchor%3D%22middle%22%20fill%3D%22%23FFFFFF%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2212%22%20letter-spacing%3D%221.5%22%3EAERO%20TOURING%20PANNIER%20KIT%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22208%22%20text-anchor%3D%22middle%22%20fill%3D%22%2338BDF8%22%20font-family%3D%22monospace%22%20font-weight%3D%22600%22%20font-size%3D%229%22%20letter-spacing%3D%221%22%3EWATERPROOF%20QUICK-LATCH%20LUGGAGE%3C%2Ftext%3E%0A%20%20%3C%2Fsvg%3E"
+      ],
+      "rentalRequests": [
+        {
+          "id": "rent_1793115978786_8cl4",
+          "renterId": "u_admin",
+          "renterName": "Abinav Thejas K",
+          "renterPhone": "+91 98450 11099",
+          "renterEmail": "abinavthejas2001@gmail.com",
+          "startDate": "2026-10-28",
+          "days": 1,
+          "costPerDay": 650,
+          "securityDeposit": 3000,
+          "totalAmount": 3650,
+          "acceptedRules": true,
+          "status": "Requested",
+          "createdAt": "2026-10-27T15:46:18.785Z"
+        }
+      ],
+      "createdAt": "2026-10-18T10:00:00Z",
+      "updatedAt": "2026-10-27T15:46:18.785Z"
+    },
+    {
+      "id": "mp_rent_02",
+      "sellerId": "u_pilot07",
+      "sellerName": "Vikram Sengupta (Apex)",
+      "sellerVerified": true,
+      "listingType": "rent",
+      "title": "Portable 3.3 kW Boost Charger & 210 Hz Sonic Belt Tension Kit",
+      "description": "Rent my spare 3.3 kW Boost fast charger + Gates acoustic belt frequency gauge for long highway tours or weekend track days.",
+      "category": "Chargers",
+      "price": 500,
+      "costPerDay": 500,
+      "securityDeposit": 4000,
+      "minRentalDays": 1,
+      "maxRentalDays": 10,
+      "rentalAvailability": "Available Now",
+      "rentalRules": "1. Use only with grounded 15A/16A sockets.\n2. Do not submerge charger brick in standing water.\n3. Late returns beyond 4 hours billed at 1 additional day.",
+      "condition": "Like New",
+      "compatibleModel": "Both F77 & X47",
+      "generalLocation": "Bengaluru (HSR Layout / Koramangala)",
+      "contactPhone": "+91 98801 44556",
+      "contactEmail": "vikram.sengupta@squadron.in",
+      "status": "Available",
+      "imageUrls": [
+        "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22800%22%20height%3D%22450%22%20viewBox%3D%220%200%20400%20225%22%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%23091516%22%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23112A2E%22%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3C%2Fdefs%3E%0A%20%20%20%20%3Crect%20width%3D%22400%22%20height%3D%22225%22%20fill%3D%22url(%23bg)%22%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%2045H400M0%2090H400M0%20135H400M0%20180H400M80%200V225M160%200V225M240%200V225M320%200V225%22%20stroke%3D%22%23ffffff%22%20stroke-opacity%3D%220.04%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22200%22%20cy%3D%22118%22%20r%3D%2244%22%20fill%3D%22none%22%20stroke%3D%22%232DD4BF%22%20stroke-width%3D%224%22%2F%3E%3Cpath%20d%3D%22M176%20118H190L198%2098L206%20138L214%20118H226%22%20fill%3D%22none%22%20stroke%3D%22%232DD4BF%22%20stroke-width%3D%223%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22192%22%20text-anchor%3D%22middle%22%20fill%3D%22%23FFFFFF%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2212%22%20letter-spacing%3D%221.5%22%3ESONIC%20BELT%20%26amp%3B%20TELEMETRY%20RIG%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22208%22%20text-anchor%3D%22middle%22%20fill%3D%22%232DD4BF%22%20font-family%3D%22monospace%22%20font-weight%3D%22600%22%20font-size%3D%229%22%20letter-spacing%3D%221%22%3E210%20HZ%20ACOUSTIC%20TENSION%20METER%3C%2Ftext%3E%0A%20%20%3C%2Fsvg%3E",
+        "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22800%22%20height%3D%22450%22%20viewBox%3D%220%200%20400%20225%22%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%230A101D%22%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23132338%22%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3C%2Fdefs%3E%0A%20%20%20%20%3Crect%20width%3D%22400%22%20height%3D%22225%22%20fill%3D%22url(%23bg)%22%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%2045H400M0%2090H400M0%20135H400M0%20180H400M80%200V225M160%200V225M240%200V225M320%200V225%22%20stroke%3D%22%23ffffff%22%20stroke-opacity%3D%220.04%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22150%22%20y%3D%2265%22%20width%3D%22100%22%20height%3D%22110%22%20rx%3D%2212%22%20fill%3D%22none%22%20stroke%3D%22%23F59E0B%22%20stroke-width%3D%224%22%2F%3E%3Cpath%20d%3D%22M205%2090L185%20122H205L195%20150L220%20116H200L205%2090Z%22%20fill%3D%22%23F59E0B%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22192%22%20text-anchor%3D%22middle%22%20fill%3D%22%23FFFFFF%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2212%22%20letter-spacing%3D%221.5%22%3EUV%20BOOST%20CHARGER%203.3%20kW%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22208%22%20text-anchor%3D%22middle%22%20fill%3D%22%23F59E0B%22%20font-family%3D%22monospace%22%20font-weight%3D%22600%22%20font-size%3D%229%22%20letter-spacing%3D%221%22%3EPORTABLE%20FAST%20CHARGING%20UNIT%3C%2Ftext%3E%0A%20%20%3C%2Fsvg%3E"
+      ],
+      "rentalRequests": [],
+      "createdAt": "2026-10-19T11:30:00Z"
+    },
+    {
+      "id": "mp_auc_01",
+      "sellerId": "u_admin",
+      "sellerName": "Abinav Thejas K",
+      "sellerVerified": true,
+      "listingType": "auction",
+      "title": "Autoclaved 3K Carbon Fiber Aero Winglets & Tank Shroud Set",
+      "description": "Numbered squadron prototype dry-carbon aerodynamic winglets with titanium countersunk hardware. Direct bolt-on fitment for F77 Original, Recon, and MACH 2.",
+      "category": "Modifications",
+      "price": 11500,
+      "startingBid": 8000,
+      "currentBid": 11500,
+      "minBidIncrement": 500,
+      "reservePrice": 10000,
+      "auctionEndTime": "2026-11-15T18:00:00Z",
+      "auctionStatus": "active",
+      "condition": "Brand New",
+      "compatibleModel": "F77 MACH 2 / Recon",
+      "generalLocation": "Bengaluru (Indiranagar / Pan-India Shipping)",
+      "contactPhone": "+91 98450 11099",
+      "contactEmail": "abinavthejas2001@gmail.com",
+      "status": "Available",
+      "imageUrls": [
+        "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22800%22%20height%3D%22450%22%20viewBox%3D%220%200%20400%20225%22%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%23121318%22%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%231F2430%22%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3C%2Fdefs%3E%0A%20%20%20%20%3Crect%20width%3D%22400%22%20height%3D%22225%22%20fill%3D%22url(%23bg)%22%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%2045H400M0%2090H400M0%20135H400M0%20180H400M80%200V225M160%200V225M240%200V225M320%200V225%22%20stroke%3D%22%23ffffff%22%20stroke-opacity%3D%220.04%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22200%22%20cy%3D%22118%22%20r%3D%2248%22%20fill%3D%22none%22%20stroke%3D%22%23EAB308%22%20stroke-width%3D%224%22%2F%3E%3Ccircle%20cx%3D%22200%22%20cy%3D%22118%22%20r%3D%2218%22%20fill%3D%22none%22%20stroke%3D%22%23EAB308%22%20stroke-width%3D%222%22%2F%3E%3Cpath%20d%3D%22M200%2070V166M152%20118H248M166%2084L234%20152M234%2084L166%20152%22%20stroke%3D%22%23EAB308%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22192%22%20text-anchor%3D%22middle%22%20fill%3D%22%23FFFFFF%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2212%22%20letter-spacing%3D%221.5%22%3EFORGED%20AERO%20WHEEL%20%26amp%3B%20DISC%20KIT%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22208%22%20text-anchor%3D%22middle%22%20fill%3D%22%23EAB308%22%20font-family%3D%22monospace%22%20font-weight%3D%22600%22%20font-size%3D%229%22%20letter-spacing%3D%221%22%3EF77%20MACH%202%20%2F%20RECON%20TRACK%20SPEC%3C%2Ftext%3E%0A%20%20%3C%2Fsvg%3E"
+      ],
+      "bids": [
+        {
+          "id": "bid_seed_03",
+          "bidderId": "u_pilot07",
+          "bidderName": "Vikram Sengupta (Apex)",
+          "bidderModel": "F77 MACH 2 Recon",
+          "bidderPhone": "+91 98801 44556",
+          "bidderEmail": "vikram.sengupta@squadron.in",
+          "amount": 11500,
+          "note": "Ready for immediate pickup in Indiranagar this weekend!",
+          "createdAt": "2026-10-20T14:20:00Z"
+        },
+        {
+          "id": "bid_seed_02",
+          "bidderId": "u_phantom",
+          "bidderName": "Devika Nair (Phantom)",
+          "bidderModel": "F77 Original",
+          "bidderPhone": "+91 98452 77889",
+          "bidderEmail": "devika.nair@squadron.in",
+          "amount": 10000,
+          "note": "Matches my matte stealth rear cowl build.",
+          "createdAt": "2026-10-20T11:05:00Z"
+        },
+        {
+          "id": "bid_seed_01",
+          "bidderId": "u_pilot07",
+          "bidderName": "Vikram Sengupta (Apex)",
+          "bidderModel": "F77 MACH 2 Recon",
+          "bidderPhone": "+91 98801 44556",
+          "bidderEmail": "vikram.sengupta@squadron.in",
+          "amount": 8500,
+          "note": "Opening squadron bid.",
+          "createdAt": "2026-10-19T19:30:00Z"
+        }
+      ],
+      "createdAt": "2026-10-19T18:00:00Z"
+    },
+    {
+      "id": "mp_auc_02",
+      "sellerId": "u_phantom",
+      "sellerName": "Devika Nair (Phantom)",
+      "sellerVerified": true,
+      "listingType": "auction",
+      "title": "AGV K6S Carbon Track Helmet (Ultraviolette Airspace Visor)",
+      "description": "Ultra-lightweight carbon-aramid shell track helmet (Size ML) with dark iridium Pinlock visor and emergency cheek-pad release. Worn twice for showroom display.",
+      "category": "Riding Gear",
+      "price": 17000,
+      "startingBid": 15000,
+      "currentBid": 17000,
+      "minBidIncrement": 1000,
+      "reservePrice": 16000,
+      "auctionEndTime": "2026-11-20T20:00:00Z",
+      "auctionStatus": "active",
+      "condition": "Like New",
+      "compatibleModel": "Both F77 & X47",
+      "generalLocation": "Mysuru / Bengaluru Handover",
+      "contactPhone": "+91 98452 77889",
+      "contactEmail": "devika.nair@squadron.in",
+      "status": "Available",
+      "imageUrls": [
+        "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22800%22%20height%3D%22450%22%20viewBox%3D%220%200%20400%20225%22%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%230F1117%22%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%231E2230%22%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3C%2Fdefs%3E%0A%20%20%20%20%3Crect%20width%3D%22400%22%20height%3D%22225%22%20fill%3D%22url(%23bg)%22%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%2045H400M0%2090H400M0%20135H400M0%20180H400M80%200V225M160%200V225M240%200V225M320%200V225%22%20stroke%3D%22%23ffffff%22%20stroke-opacity%3D%220.04%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M145%20145C145%2095%20175%2070%20215%2070C250%2070%20270%2095%20270%20135V155H155L145%20145Z%22%20fill%3D%22none%22%20stroke%3D%22%2310B981%22%20stroke-width%3D%224%22%2F%3E%3Cpath%20d%3D%22M210%20100H268V128H215L210%20100Z%22%20fill%3D%22%2310B981%22%20fill-opacity%3D%220.25%22%20stroke%3D%22%2310B981%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22192%22%20text-anchor%3D%22middle%22%20fill%3D%22%23FFFFFF%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2212%22%20letter-spacing%3D%221.5%22%3EAERO%20CARBON%20HELMET%20SPEC%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%22200%22%20y%3D%22208%22%20text-anchor%3D%22middle%22%20fill%3D%22%2310B981%22%20font-family%3D%22monospace%22%20font-weight%3D%22600%22%20font-size%3D%229%22%20letter-spacing%3D%221%22%3EFIM%20%2F%20ECE%2022.06%20TRACK%20GRADE%3C%2Ftext%3E%0A%20%20%3C%2Fsvg%3E"
+      ],
+      "bids": [
+        {
+          "id": "bid_seed_202",
+          "bidderId": "u_admin",
+          "bidderName": "Abinav Thejas K",
+          "bidderModel": "F77 MACH 2",
+          "bidderPhone": "+91 98450 11099",
+          "bidderEmail": "abinavthejas2001@gmail.com",
+          "amount": 17000,
+          "note": "Can collect during Sunday Mysuru highway ride.",
+          "createdAt": "2026-10-21T09:15:00Z"
+        },
+        {
+          "id": "bid_seed_201",
+          "bidderId": "u_pilot07",
+          "bidderName": "Vikram Sengupta (Apex)",
+          "bidderModel": "F77 MACH 2 Recon",
+          "bidderPhone": "+91 98801 44556",
+          "bidderEmail": "vikram.sengupta@squadron.in",
+          "amount": 15500,
+          "note": "Solid track spec lid.",
+          "createdAt": "2026-10-20T16:40:00Z"
+        }
+      ],
+      "createdAt": "2026-10-20T12:00:00Z"
+    }
+  ],
+  "serviceReviews": [
+    {
+      "id": "sr_01",
+      "userId": "u_pilot07",
+      "authorName": "Vikram Sengupta",
+      "serviceCentreName": "Ultraviolette Bengaluru Flagship Hangar (Indiranagar)",
+      "generalLocation": "Bengaluru, Karnataka",
+      "motorcycleModel": "F77 MACH 2 Recon",
+      "visitDate": "2026-09-15",
+      "issueReported": "5,000 km Scheduled Service & Belt Drive Tension check",
+      "workPerformed": "Full mechanical check, belt tension calibrated with acoustic frequency meter (210 Hz), brake bleeding, MCU firmware update v3.2.",
+      "issueResolved": true,
+      "turnaroundDays": 1,
+      "customerRating": 5,
+      "notes": "Pristine service bay. Technicians demonstrated complete telemetry diagnostics log on screen before handing over.",
+      "createdAt": "2026-09-16T11:00:00Z"
+    }
+  ],
+  "discussions": [
+    {
+      "id": "disc_1792591260655",
+      "authorId": "u_admin",
+      "authorName": "Abinav Thejas",
+      "authorModel": "F77 Mach 2 Recon",
+      "category": "Maintenance",
+      "title": "PERSISTENCE VERIFICATION THREAD 2026",
+      "content": "Verifying that user-created records persist permanently across refreshes and container restarts.",
+      "tags": [],
+      "reactions": {
+        "helpful": [],
+        "salute": [],
+        "confirmed": []
+      },
+      "comments": [],
+      "createdAt": "2026-10-21T14:01:00.655Z"
+    },
+    {
+      "id": "disc_1792589374506",
+      "authorId": "u_admin",
+      "authorName": "Abinav Thejas K",
+      "authorModel": "F77 MACH 2",
+      "category": "general",
+      "title": "Test Discussion Item",
+      "content": "This is a test to verify persistence",
+      "tags": [],
+      "reactions": {
+        "helpful": [],
+        "salute": [],
+        "confirmed": []
+      },
+      "comments": [],
+      "createdAt": "2026-10-21T13:29:34.506Z"
+    },
+    {
+      "id": "disc_01",
+      "authorId": "u_admin",
+      "authorName": "Abinav Thejas (Vanguard)",
+      "authorModel": "F77 MACH 2",
+      "category": "Battery & Charging",
+      "title": "Best Practices: Battery Health Optimization for High Ambient Temperatures",
+      "content": "With summer ambient temperatures crossing 38°C in south India, here are three calibrated practices derived from BMS cell telemetry logs:\n\n1. Do not initiate DC fast charging immediately after prolonged high-speed Ballistic mode runs. Allow 10-15 minutes of thermal equalization.\n2. For daily commuting, setting charging cutoff to 85% significantly minimizes cell degradation cycles.\n3. Park in shaded bays whenever possible to prevent solar radiative heating of the SRB aluminum pack.",
+      "tags": [
+        "Battery",
+        "BMS",
+        "ThermalManagement",
+        "Recon"
+      ],
+      "pinned": true,
+      "reactions": {
+        "helpful": [
+          "u_pilot07",
+          "u_phantom"
+        ],
+        "salute": [
+          "u_pilot07"
+        ],
+        "confirmed": [
+          "u_phantom"
+        ]
+      },
+      "comments": [
+        {
+          "id": "c_1",
+          "authorId": "u_pilot07",
+          "authorName": "Vikram Sengupta (Apex)",
+          "content": "Can confirm! Implementing a 15-minute rest before plugging into the Shell 60kW charger completely stopped the thermal derate warning I previously noticed.",
+          "createdAt": "2026-10-11T14:30:00Z"
+        }
+      ],
+      "createdAt": "2026-10-10T10:00:00Z"
+    },
+    {
+      "id": "disc_02",
+      "authorId": "u_phantom",
+      "authorName": "Devika Nair (Phantom)",
+      "authorModel": "F77 Original",
+      "category": "Riding & Touring",
+      "title": "Western Ghats Wet Cornering: Dynamic Regen vs Mechanical Braking",
+      "content": "During yesterday damp morning descent down Charmadi Ghat, experimented with regen levels. Setting regen to Level 4 gave the most predictable trail-braking feel into decreasing-radius hairpin corners without destabilizing the chassis.",
+      "tags": [
+        "Ghats",
+        "Regen",
+        "Handling",
+        "ABS"
+      ],
+      "reactions": {
+        "helpful": [
+          "u_admin"
+        ],
+        "salute": [
+          "u_admin",
+          "u_pilot07"
+        ],
+        "confirmed": []
+      },
+      "comments": [],
+      "createdAt": "2026-10-14T09:20:00Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "notif_res_1793176976996_lryb_admin",
+      "reservationId": "resv_1793176976996_utsr",
+      "userId": "u_admin",
+      "ownerName": "Devika Nair (Phantom)",
+      "ownerPhone": "+91 97410 88231",
+      "type": "system",
+      "title": "⚡ Charger Reserved: Mysuru Highway Squadron Waypoint (CCD Maddur) (2026-10-28 at 10:00)",
+      "message": "Vikram Sengupta (+91 98860 22345, Bike: F77 Recon) has reserved your charger \"Mysuru Highway Squadron Waypoint (CCD Maddur)\" on 2026-10-28 from 10:00 to 11:00 (60 mins • ₹480 (~30 kWh)). Note: \"Arriving on F77 Mach 2, need 90 min top-up\"",
+      "link": "charging",
+      "read": false,
+      "createdAt": "2026-10-28T08:42:56.996Z"
+    },
+    {
+      "id": "notif_res_1793176976996_lryb",
+      "reservationId": "resv_1793176976996_utsr",
+      "userId": "u_phantom",
+      "ownerName": "Devika Nair (Phantom)",
+      "ownerPhone": "+91 97410 88231",
+      "type": "system",
+      "title": "⚡ Charger Reserved: Mysuru Highway Squadron Waypoint (CCD Maddur) (2026-10-28 at 10:00)",
+      "message": "Vikram Sengupta (+91 98860 22345, Bike: F77 Recon) has reserved your charger \"Mysuru Highway Squadron Waypoint (CCD Maddur)\" on 2026-10-28 from 10:00 to 11:00 (60 mins • ₹480 (~30 kWh)). Note: \"Arriving on F77 Mach 2, need 90 min top-up\"",
+      "link": "charging",
+      "read": false,
+      "createdAt": "2026-10-28T08:42:56.996Z"
+    },
+    {
+      "id": "notif_1793170077588",
+      "userId": "u_admin",
+      "type": "system",
+      "title": "Charger Reservation Approved",
+      "message": "Your reservation at 'ECR Mahabalipuram Coastal Squadron Hub' on 2026-10-28 (10:00–11:00) is now Approved.",
+      "link": "charging",
+      "read": false,
+      "createdAt": "2026-10-28T06:47:57.588Z"
+    },
+    {
+      "id": "notif_1793170074732",
+      "userId": "u_pilot07",
+      "type": "system",
+      "title": "New Community Charger Reservation Request",
+      "message": "Abinav Thejas K (+91 98450 11099) requested a charging slot at 'ECR Mahabalipuram Coastal Squadron Hub' on 2026-10-28 (10:00–11:00).",
+      "link": "charging",
+      "read": false,
+      "createdAt": "2026-10-28T06:47:54.732Z"
+    },
+    {
+      "id": "notif_1793115978786",
+      "userId": "u_admin",
+      "type": "system",
+      "title": "New Rental Request: UV Official Hard-Shell Aero Panniers & 18L Tank Bag Kit",
+      "message": "Abinav Thejas K requested to rent \"UV Official Hard-Shell Aero Panniers & 18L Tank Bag Kit\" for 1 day(s) starting 2026-10-28 (Total ₹3,650).",
+      "link": "marketplace",
+      "read": false,
+      "createdAt": "2026-10-27T15:46:18.785Z"
+    },
+    {
+      "id": "notif_admin_1792944682031_0_u_admin",
+      "userId": "u_admin",
+      "type": "emergency",
+      "priority": "critical",
+      "city": "Bengaluru",
+      "emergencyId": "emg_1792944682031",
+      "isAdminAlert": true,
+      "title": "⚠️ PRIORITY ADMIN SOS ALERT [BENGALURU]: Motorcycle breakdown",
+      "message": "CRITICAL SOS: Vikram Sengupta (F77 MACH 2) needs urgent assistance in Bengaluru (Shivajinagar Bus Terminus, Bengaluru) — \"Rear tyre puncture near Shivajinagar bus terminus, need portable inflator.\". Callback: +91 98860 22345. Alerted 3 registered Bengaluru rider(s) (including your registered city sector).",
+      "link": "emergency",
+      "read": true,
+      "createdAt": "2026-10-25T16:11:22.030Z"
+    },
+    {
+      "id": "notif_city_1792944682031_2_u_1792788933366",
+      "userId": "u_1792788933366",
+      "type": "emergency",
+      "priority": "critical",
+      "city": "Bengaluru",
+      "emergencyId": "emg_1792944682031",
+      "isAdminAlert": false,
+      "title": "🚨 CITY SOS ALERT [BENGALURU]: Motorcycle breakdown",
+      "message": "Rider Vikram Sengupta (F77 MACH 2) triggered a Squadron SOS in your registered city (Bengaluru) at Shivajinagar Bus Terminus, Bengaluru: \"Rear tyre puncture near Shivajinagar bus terminus, need portable inflator.\". Callback: +91 98860 22345",
+      "link": "emergency",
+      "read": false,
+      "createdAt": "2026-10-25T16:11:22.030Z"
+    },
+    {
+      "id": "notif_contrib_1792687028444",
+      "userId": "u_admin",
+      "type": "system",
+      "title": "New Mission Contribution: ₹999",
+      "message": "Rohan Kulkarni (F77 MACH 2) contributed ₹999 via UPI — \"Awesome cockpit & charger telemetry!\".",
+      "link": "contribute",
+      "read": false,
+      "createdAt": "2026-10-22T16:37:08.444Z"
+    },
+    {
+      "id": "notif_01",
+      "userId": "u_admin",
+      "type": "mission",
+      "title": "Sortie Status: Thunderhead Active",
+      "message": "Rider Apex has reached Destination (Nandi Hills Summit). Safe-arrival confirmations are now accessible.",
+      "link": "mission",
+      "read": false,
+      "createdAt": "2026-10-18T06:46:00Z"
+    },
+    {
+      "id": "notif_02",
+      "userId": "u_admin",
+      "type": "emergency",
+      "title": "Squadron Assist Acknowledged",
+      "message": "Emergency request for Apex (Hosur Elevated Tollway) is logged and acknowledged.",
+      "link": "emergency",
+      "read": true,
+      "createdAt": "2026-10-18T01:25:00Z"
+    },
+    {
+      "id": "notif_1792313806194",
+      "userId": "u_admin",
+      "type": "mission",
+      "title": "Rider Reached Home Safely",
+      "message": "Vanguard confirmed safe arrival home from Operation Thunderhead: Nandi Foothills High-Speed Sortie.",
+      "link": "mission",
+      "read": false,
+      "createdAt": "2026-10-18T08:56:46.194Z"
+    },
+    {
+      "id": "notif_1792401500873",
+      "userId": "u_admin",
+      "type": "emergency",
+      "title": "SQUADRON ASSIST: Motorcycle breakdown",
+      "message": "Abinav Thejas (Vanguard) at GPS: 10.3682° N, 76.2260° E: gg...",
+      "link": "emergency",
+      "read": true,
+      "createdAt": "2026-10-19T09:18:20.873Z"
+    },
+    {
+      "id": "notif_1792788933421",
+      "userId": "u_admin",
+      "type": "verification",
+      "title": "New Member Registration",
+      "message": "Test Pilot submitted registration for X47 Venom (KA 05 EV 9900).",
+      "link": "admin",
+      "read": false,
+      "createdAt": "2026-10-23T20:55:33.365Z"
+    },
+    {
+      "id": "notif_1793181453937",
+      "userId": "u_phantom",
+      "type": "verification",
+      "title": "Verification Status: SUSPENDED",
+      "message": "Your registration review status updated to suspended. Note: Admin action performed by Abinav Thejas K",
+      "read": false,
+      "createdAt": "2026-10-28T09:57:33.937Z"
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": "aud_1793182651817",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "PERMANENTLY_REMOVE_USER",
+      "targetId": "u_uv_employee",
+      "details": "Permanently removed user UV Service Engineer (employee@ultraviolette.com, ID: u_uv_employee) from database. Reason: Permanently removed from database by Abinav Thejas K",
+      "timestamp": "2026-10-28T10:17:31.817Z"
+    },
+    {
+      "id": "aud_1793181453937",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "USER_STATUS_SUSPENDED",
+      "targetId": "u_phantom",
+      "details": "Updated verification status to suspended. Notes: Admin action performed by Abinav Thejas K",
+      "timestamp": "2026-10-28T09:57:33.937Z"
+    },
+    {
+      "id": "aud_sos_1792944682031",
+      "adminId": "u_pilot07",
+      "adminName": "Vikram Sengupta",
+      "action": "SQUADRON_SOS_TRIGGERED",
+      "targetId": "emg_1792944682031",
+      "details": "CRITICAL SOS triggered in Bengaluru (Shivajinagar Bus Terminus, Bengaluru) [Motorcycle breakdown] by Vikram Sengupta. Priority alert sent to 1 Admin(s) and 3 registered Bengaluru user(s).",
+      "timestamp": "2026-10-25T16:11:22.030Z"
+    },
+    {
+      "id": "aud_1792925059349",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "PUBLISH_CHARGING_STATION",
+      "targetId": "cs_1792925059349",
+      "details": "Published Type 6 charger 'Baiyappanahalli Road' at (12.997106, 77.640243)",
+      "timestamp": "2026-10-25T10:44:19.349Z"
+    },
+    {
+      "id": "aud_1792925024980",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "PUBLISH_CHARGING_STATION",
+      "targetId": "cs_1792925024980",
+      "details": "Published Type 6 charger 'Kanakapura Road' at (12.926093, 77.577012)",
+      "timestamp": "2026-10-25T10:43:44.980Z"
+    },
+    {
+      "id": "aud_1792924942027",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "PUBLISH_CHARGING_STATION",
+      "targetId": "cs_1792924942027",
+      "details": "Published Type 6 charger 'Morgan Stanley' at (12.936976, 77.68093)",
+      "timestamp": "2026-10-25T10:42:22.027Z"
+    },
+    {
+      "id": "aud_1792687295581",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "UPDATE_CONTRIBUTION_PAGE",
+      "targetId": "contribution_config",
+      "details": "Updated public contribution message & payment config (FUEL THE GHOST PROTOCOL MISSION)",
+      "timestamp": "2026-10-22T16:41:35.581Z"
+    },
+    {
+      "id": "aud_1792686696137",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "JET_PRESET_ENABLED",
+      "targetId": "js_01",
+      "details": "Toggled quick solution preset to true for submission \"Regen Level 9 Calibration in Wet Monsoon Conditions\"",
+      "timestamp": "2026-10-22T16:31:36.137Z"
+    },
+    {
+      "id": "aud_1792686695020",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "JET_PRESET_ENABLED",
+      "targetId": "js_1792573524803",
+      "details": "Toggled quick solution preset to true for submission \"RESET BIKE\"",
+      "timestamp": "2026-10-22T16:31:35.020Z"
+    },
+    {
+      "id": "aud_1792686693139",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "JET_PRESET_DISABLED",
+      "targetId": "js_01",
+      "details": "Toggled quick solution preset to false for submission \"Regen Level 9 Calibration in Wet Monsoon Conditions\"",
+      "timestamp": "2026-10-22T16:31:33.139Z"
+    },
+    {
+      "id": "aud_1792686691246",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "JET_PRESET_DISABLED",
+      "targetId": "js_1792573524803",
+      "details": "Toggled quick solution preset to false for submission \"RESET BIKE\"",
+      "timestamp": "2026-10-22T16:31:31.246Z"
+    },
+    {
+      "id": "aud_1792686683443",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "JET_PRESET_ENABLED",
+      "targetId": "js_1792573524803",
+      "details": "Toggled quick solution preset to true for submission \"RESET BIKE\"",
+      "timestamp": "2026-10-22T16:31:23.443Z"
+    },
+    {
+      "id": "aud_1792686678015",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "JET_PRESET_DISABLED",
+      "targetId": "js_1792573524803",
+      "details": "Toggled quick solution preset to false for submission \"RESET BIKE\"",
+      "timestamp": "2026-10-22T16:31:18.015Z"
+    },
+    {
+      "id": "aud_1792602608291",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "ACCOUNT_PASSWORD_INITIALIZED",
+      "targetId": "u_admin",
+      "details": "Completed one-time secure password initialization for account u_admin.",
+      "timestamp": "2026-10-21T17:10:08.240Z"
+    },
+    {
+      "id": "aud_1792596802891",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "PUBLISH_CHARGING_STATION",
+      "targetId": "cs_1792596802891",
+      "details": "Published Supernova charger 'Mangaluru' at (12.869825, 74.843013)",
+      "timestamp": "2026-10-21T15:33:22.891Z"
+    },
+    {
+      "id": "aud_1792596784379",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "PUBLISH_CHARGING_STATION",
+      "targetId": "cs_1792596784379",
+      "details": "Published Supernova charger 'Hassan' at (13.030185, 76.174497)",
+      "timestamp": "2026-10-21T15:33:04.379Z"
+    },
+    {
+      "id": "aud_1792596758950",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "PUBLISH_CHARGING_STATION",
+      "targetId": "cs_1792596758950",
+      "details": "Published Supernova charger 'Mysuru' at (12.304146, 76.652952)",
+      "timestamp": "2026-10-21T15:32:38.950Z"
+    },
+    {
+      "id": "aud_1792589692472",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "PUBLISH_CHARGING_STATION",
+      "targetId": "cs_1792589692472",
+      "details": "Published Socket charger 'Indiranagar Fast Socket' at (12.9716, 77.6412)",
+      "timestamp": "2026-10-21T13:34:52.472Z"
+    },
+    {
+      "id": "aud_1792435867592",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas (Vanguard)",
+      "action": "PUBLISH_CHARGING_STATION",
+      "targetId": "cs_1792435867592",
+      "details": "Published Supernova charger 'Café Coffee Day (CCD) — Kolar NH 75 Bypass' at (13.13305, 78.1715)",
+      "timestamp": "2026-10-19T18:51:07.592Z"
+    },
+    {
+      "id": "aud_1792433171282",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas (Vanguard)",
+      "action": "PUBLISH_CHARGING_STATION",
+      "targetId": "cs_1792433171282",
+      "details": "Published Socket charger 'Maddur Highway 15A Socket Point' at (12.5841, 77.0428)",
+      "timestamp": "2026-10-19T18:06:11.282Z"
+    },
+    {
+      "id": "aud_01",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas (Vanguard)",
+      "action": "APPROVE_MEMBER",
+      "targetId": "u_pilot07",
+      "details": "Approved owner registration after RC book and chassis number validation",
+      "timestamp": "2024-06-22T14:30:00Z"
+    },
+    {
+      "id": "aud_02",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas (Vanguard)",
+      "action": "APPROVE_JET_SUBMISSION",
+      "targetId": "js_01",
+      "details": "Approved wet-weather regen level calibration into Jet Engineer knowledge base",
+      "timestamp": "2026-09-12T10:00:00Z"
+    }
+  ],
+  "telemetryConfig": {
+    "batterySoc": true,
+    "estimatedRange": true,
+    "motorTemp": true,
+    "regenLevel": true,
+    "odometer": true,
+    "avionicsHealth": true
+  },
+  "longRidePlanningText": "",
+  "chargerReports": [
+    {
+      "id": "crep_06",
+      "chargerId": "cs_17",
+      "userId": "u_pilot07",
+      "reporterCallsign": "Vikram Sengupta (Apex)",
+      "category": "SUCCESSFULLY CHARGED",
+      "comment": "Krishnagiri Supernova right on NH 48 highway service lane. Charged 30% to 90% in 28 mins.",
+      "createdAt": "2026-10-19T10:00:00Z",
+      "sourceLabel": "Community Report"
+    },
+    {
+      "id": "crep_01",
+      "chargerId": "cs_11",
+      "userId": "u_pilot07",
+      "reporterCallsign": "Vikram Sengupta (Apex)",
+      "category": "SUCCESSFULLY CHARGED",
+      "comment": "Charged from 24% to 88% in 32 mins on Bay 1 during Sunday morning Mysuru breakfast sortie.",
+      "createdAt": "2026-10-19T08:15:00Z",
+      "sourceLabel": "Community Report"
+    },
+    {
+      "id": "crep_02",
+      "chargerId": "cs_12",
+      "userId": "u_phantom",
+      "reporterCallsign": "Devika Nair (Phantom)",
+      "category": "WORKING",
+      "comment": "Both the Type 2 wallbox and the 16A industrial backup socket are clean and active.",
+      "createdAt": "2026-10-18T11:30:00Z",
+      "sourceLabel": "Community Report"
+    },
+    {
+      "id": "crep_03",
+      "chargerId": "cs_05",
+      "userId": "u_pilot07",
+      "reporterCallsign": "Vikram Sengupta (Apex)",
+      "category": "SUCCESSFULLY CHARGED",
+      "comment": "Cafe staff unlocked the outdoor 16A pillar immediately. Stable 232V line voltage.",
+      "createdAt": "2026-10-17T07:45:00Z",
+      "sourceLabel": "Community Report"
+    },
+    {
+      "id": "crep_04",
+      "chargerId": "cs_13",
+      "userId": "u_admin",
+      "reporterCallsign": "Abinav Thejas (Vanguard)",
+      "category": "WORKING",
+      "comment": "Mulbagal Supernova delivering full 30 kW output. Zero queue on weekday morning.",
+      "createdAt": "2026-10-19T09:20:00Z",
+      "sourceLabel": "Community Report"
+    },
+    {
+      "id": "crep_05",
+      "chargerId": "cs_14",
+      "userId": "u_phantom",
+      "reporterCallsign": "Devika Nair (Phantom)",
+      "category": "SUCCESSFULLY CHARGED",
+      "comment": "Topped up to 90% at Vellore Green Circle on the way to Chennai Marina.",
+      "createdAt": "2026-10-18T15:10:00Z",
+      "sourceLabel": "Community Report"
+    }
+  ],
+  "autoPilotMissions": [
+    {
+      "id": "apm_seed_01",
+      "userId": "u_admin",
+      "ownerName": "Abinav Thejas (Vanguard)",
+      "missionName": "OPERATION KAVERI: BENGALURU → MYSURU PALACE",
+      "createdAt": "2026-10-18T05:30:00Z",
+      "updatedAt": "2026-10-18T05:30:00Z",
+      "departureDateTime": "2026-10-25T06:00",
+      "startLocation": {
+        "name": "Ultraviolette Hangar Indiranagar",
+        "locality": "Indiranagar, Bengaluru",
+        "address": "529, 100 Feet Rd, Indiranagar, Bengaluru, Karnataka 560038",
+        "latitude": 12.9719,
+        "longitude": 77.6412
+      },
+      "destination": {
+        "name": "Mysuru Palace Main Gate",
+        "locality": "Agrahara, Mysuru",
+        "address": "Sayyaji Rao Rd, Agrahara, Chamrajpura, Mysuru, Karnataka 570001",
+        "latitude": 12.3051,
+        "longitude": 76.6551
+      },
+      "targetIntervalKm": 100,
+      "preferredChargerTypes": [
+        "Supernova",
+        "Type 2"
+      ],
+      "rangeGuard": {
+        "enabled": true,
+        "startingBatteryPercent": 95,
+        "estimatedUsableRangeKm": 175,
+        "reserveRangeKm": 25
+      },
+      "plannedRouteDistanceKm": 146.4,
+      "estimatedDrivingDurationMin": 168,
+      "routingSource": "OSRM Driving Route",
+      "chargingStops": [
+        {
+          "stationId": "cs_11",
+          "stationName": "UV Supernova Hub — Channapatna Highway (NH 275)",
+          "stationLocation": "NH 275 Bypass, Beside Kamat Upachar, Channapatna, Karnataka 562160",
+          "chargerType": "Supernova",
+          "powerOutputKw": 30,
+          "latitude": 12.6518,
+          "longitude": 77.2067,
+          "order": 1,
+          "distanceFromStartKm": 62.4,
+          "distanceFromPrevStopKm": 62.4,
+          "detourDistanceKm": 0.8,
+          "reached": false,
+          "chargingConfirmed": false
+        }
+      ],
+      "pitStops": [
+        {
+          "id": "place_mys_maddur_tiffanys",
+          "name": "Maddur Tiffany’s Highway Restaurant",
+          "address": "NH 275 Bengaluru-Mysuru Highway, Maddur, Karnataka 571428",
+          "category": "Restaurant",
+          "latitude": 12.5841,
+          "longitude": 77.0428,
+          "distanceFromStartKm": 82.5,
+          "detourDistanceKm": 0.5,
+          "estimatedDetourDurationMin": 1,
+          "includedInNavigation": true
+        }
+      ],
+      "status": "Planned",
+      "riderNotes": "Maintain Combat mode on NH 275 expressway. Quick 20-minute Supernova top-up at Channapatna.",
+      "isFavourite": true,
+      "shareSettings": {
+        "isShared": true,
+        "sharedWithUserIds": [
+          "u_pilot07",
+          "u_phantom"
+        ],
+        "includeMeetingPoint": true,
+        "meetingPointName": "NICE Road Kengeri Toll Plaza (06:15 AM)",
+        "includeDepartureTime": true,
+        "includeGroupNotes": true,
+        "groupNotes": "Channel 4 Intercom active. Carry 16A portable adapter in tail pack."
+      }
+    }
+  ],
+  "jetQaHistory": [
+    {
+      "id": "m_a_jqa_1792606862682_n8xd",
+      "sender": "assistant",
+      "text": "[OFFLINE TACTICAL ARCHIVE MODE — F77]\n\nEMPIRICAL RECORD FROM TRAIN DATABASE: RESET BIKE\n\n• Verification Status: Admin Approved Factory / Squadron Bulletin\n\n• Platform Model: Both \n\n\nOPERATIONAL RESOLUTION:\n\nPRESS O BUTTON , RIGHT LEFT BUTTON TOGTHER ... BIKE WILLL RESET\n\n\nTECHNICAL SYMPTOMS & CONDITIONS:\n\n• Symptoms: --\n\n• Operating Context: Normal operating conditions\n\n• Field Troubleshooting: None reported\n\n\nSOURCE ATTRIBUTION:\n\nRecorded by Abinav Thejas K | Reference: Owner empirical testing\n\n\nADDITIONAL CORRELATED TRAINING RECORDS (1):\n\n• Regen Level 9 Calibration in Wet Monsoon Conditions (Approved): Recommended rider practice: In wet weather, set Dynamic Regen to Level 3 or 4, switch traction control to Rain mode, and avoid harsh off-throttle over road paint.\n\n\nRELATED SQUADRON PROBLEM TRACKER ENTRIES:\n\n• [Console & Software] Violette AI Bluetooth BLE sync dropped during Android 15 OTA update (Under Investigation): After updating smartphone OS to Android 15, the motorcycle console pairs intermittently. Turn-by-turn navigation arrows flicker on the 5-inch TFT display. | Code: BLE-ERR-CONN-TIMEOUT (Dash Code 0x2A)\n\n• [Charging System] Thermal derate during fast charging when ambient exceeds 39°C (Resolved): When plugged into 60kW DC charger immediately after 45-minute highway ride in Combat mode, charge rate throttles from 1.5C to 0.4C with thermal warning icon. | Code: BMS-WARN-DELTA-TEMP (Code 0x5F)",
+      "source": "Offline TRAIN Database: RESET BIKE",
+      "timestamp": "11:51 PM"
+    },
+    {
+      "id": "m_u_jqa_1792606862682_n8xd",
+      "sender": "user",
+      "text": "how to reset bike",
+      "timestamp": "11:51 PM"
+    },
+    {
+      "id": "m_a_jqa_1792775530183_ae6b",
+      "sender": "assistant",
+      "text": "[INSTANT EMPIRICAL SOLUTION: RESET BIKE]\n• Platform Model: Both\n• Verification: Verified Hangar / Admin Approved\n\nOPERATIONAL RESOLUTION:\nPRESS O BUTTON , RIGHT LEFT BUTTON TOGTHER ... BIKE WILLL RESET\n\nSOURCE ATTRIBUTION:\nLogged in TRAIN database by Abinav Thejas K • Reference: Owner empirical testing",
+      "source": "Database Preset: RESET BIKE",
+      "timestamp": "10:42 PM"
+    },
+    {
+      "id": "m_u_jqa_1792775530183_ae6b",
+      "sender": "user",
+      "text": "[INSTANT SOLUTION] RESET BIKE",
+      "timestamp": "10:42 PM"
+    },
+    {
+      "id": "m_a_jqa_1792778187856_1btw",
+      "sender": "assistant",
+      "text": "[INSTANT EMPIRICAL SOLUTION: RESET BIKE]\n• Platform Model: Both\n• Verification: Verified Hangar / Admin Approved\n\nOPERATIONAL RESOLUTION:\nPRESS O BUTTON , RIGHT LEFT BUTTON TOGTHER ... BIKE WILLL RESET\n\nSOURCE ATTRIBUTION:\nLogged in TRAIN database by Abinav Thejas K • Reference: Owner empirical testing",
+      "source": "Database Preset: RESET BIKE",
+      "timestamp": "11:26 PM"
+    },
+    {
+      "id": "m_u_jqa_1792778187856_1btw",
+      "sender": "user",
+      "text": "[INSTANT SOLUTION] RESET BIKE",
+      "timestamp": "11:26 PM"
+    },
+    {
+      "id": "m_a_jqa_1792573957237_vwhr",
+      "sender": "assistant",
+      "text": "### System Reboot Procedure\n\nThis procedure executes a soft reset of the Vehicle Display Unit (VDU) / telematics cluster. \n\n**Pre-checks:**\n* Ensure the motorcycle is stationary.\n* Deploy the side stand.\n* Ignition must be switched **ON**.\n\n**Execution Steps:**\n1. Locate the multi-function navigation switchgear on the handlebar.\n2. Simultaneously press and hold the **'O' (Center/Select)** button, the **Left** navigation button, and the **Right** navigation button.\n3. Maintain hold until the screen turns black and the instrument cluster initiates the reboot cycle.\n4. Release the buttons and allow the operating system to complete its initialization sequence.\n\n---\n\n### Technical Operational Notes:\n* **Scope:** This sequence triggers a user-level soft reboot of the display and telematic operating system. It does not discharge the High Voltage (HV) traction battery pack or reset critical BMS fault logs.\n* **Persistent Issues:** If the reboot is being performed to resolve an active drive-inhibit fault, HV isolation error, or thermal alert, do not attempt to bypass via repeated resets. Power down the vehicle and contact an authorized Ultraviolette Hangar.\n\n---\n**Sources:**\n* Ghost Protocol Community Knowledge Base — ID: `RESET BIKE` (Community Validated Resolution)\n* Ultraviolette F77 Standard Operating Guide — Switchgear Operations",
+      "source": "Ultraviolette Technical Spec v3.2 & Verified Squadron Telemetry",
+      "timestamp": "02:42 PM"
+    },
+    {
+      "id": "m_u_jqa_1792573957237_vwhr",
+      "sender": "user",
+      "text": "RESET BIKE",
+      "timestamp": "02:42 PM"
+    },
+    {
+      "id": "m_welcome",
+      "sender": "assistant",
+      "text": "Hi, Pilot. How can I assist you today?",
+      "source": "Ultraviolette Technical Architecture & Ghost Protocol Telemetry",
+      "aiPowered": true,
+      "timestamp": "02:39 PM"
+    },
+    {
+      "id": "jqa_1792606862682_n8xd",
+      "clientRequestId": "jqa_req_1792606862667",
+      "userId": "u_admin",
+      "question": "how to reset bike",
+      "answer": "[OFFLINE TACTICAL ARCHIVE MODE — F77]\n\nEMPIRICAL RECORD FROM TRAIN DATABASE: RESET BIKE\n\n• Verification Status: Admin Approved Factory / Squadron Bulletin\n\n• Platform Model: Both \n\n\nOPERATIONAL RESOLUTION:\n\nPRESS O BUTTON , RIGHT LEFT BUTTON TOGTHER ... BIKE WILLL RESET\n\n\nTECHNICAL SYMPTOMS & CONDITIONS:\n\n• Symptoms: --\n\n• Operating Context: Normal operating conditions\n\n• Field Troubleshooting: None reported\n\n\nSOURCE ATTRIBUTION:\n\nRecorded by Abinav Thejas K | Reference: Owner empirical testing\n\n\nADDITIONAL CORRELATED TRAINING RECORDS (1):\n\n• Regen Level 9 Calibration in Wet Monsoon Conditions (Approved): Recommended rider practice: In wet weather, set Dynamic Regen to Level 3 or 4, switch traction control to Rain mode, and avoid harsh off-throttle over road paint.\n\n\nRELATED SQUADRON PROBLEM TRACKER ENTRIES:\n\n• [Console & Software] Violette AI Bluetooth BLE sync dropped during Android 15 OTA update (Under Investigation): After updating smartphone OS to Android 15, the motorcycle console pairs intermittently. Turn-by-turn navigation arrows flicker on the 5-inch TFT display. | Code: BLE-ERR-CONN-TIMEOUT (Dash Code 0x2A)\n\n• [Charging System] Thermal derate during fast charging when ambient exceeds 39°C (Resolved): When plugged into 60kW DC charger immediately after 45-minute highway ride in Combat mode, charge rate throttles from 1.5C to 0.4C with thermal warning icon. | Code: BMS-WARN-DELTA-TEMP (Code 0x5F)",
+      "source": "Offline TRAIN Database: RESET BIKE",
+      "modelContext": "F77",
+      "createdAt": "2026-10-21T18:21:02.682Z"
+    },
+    {
+      "id": "jqa_1792775530183_ae6b",
+      "clientRequestId": "jqa_req_1792775530120",
+      "userId": "u_admin",
+      "question": "[INSTANT SOLUTION] RESET BIKE",
+      "answer": "[INSTANT EMPIRICAL SOLUTION: RESET BIKE]\n• Platform Model: Both\n• Verification: Verified Hangar / Admin Approved\n\nOPERATIONAL RESOLUTION:\nPRESS O BUTTON , RIGHT LEFT BUTTON TOGTHER ... BIKE WILLL RESET\n\nSOURCE ATTRIBUTION:\nLogged in TRAIN database by Abinav Thejas K • Reference: Owner empirical testing",
+      "source": "Database Preset: RESET BIKE",
+      "modelContext": "F77",
+      "createdAt": "2026-10-23T17:12:10.183Z"
+    },
+    {
+      "id": "jqa_1792778187856_1btw",
+      "clientRequestId": "jqa_req_1792778188533",
+      "userId": "u_admin",
+      "question": "[INSTANT SOLUTION] RESET BIKE",
+      "answer": "[INSTANT EMPIRICAL SOLUTION: RESET BIKE]\n• Platform Model: Both\n• Verification: Verified Hangar / Admin Approved\n\nOPERATIONAL RESOLUTION:\nPRESS O BUTTON , RIGHT LEFT BUTTON TOGTHER ... BIKE WILLL RESET\n\nSOURCE ATTRIBUTION:\nLogged in TRAIN database by Abinav Thejas K • Reference: Owner empirical testing",
+      "source": "Database Preset: RESET BIKE",
+      "modelContext": "F77",
+      "createdAt": "2026-10-23T17:56:27.857Z"
+    }
+  ],
+  "deletedIds": [
+    "disc_1792591434113",
+    "disc_client_rehydrated_1",
+    "pet_1792765486167",
+    "mod_1792441077024",
+    "mod_1792589692453",
+    "mod_1792441063803",
+    "mod_01",
+    "mod_02",
+    "mod_03",
+    "mod_06",
+    "mod_05",
+    "mod_04",
+    "contrib_1792765910297_gwp1",
+    "u_uv_employee"
+  ],
+  "revision": 2128,
+  "lastUpdatedAt": "2026-10-28T12:40:27.665Z",
+  "contributionConfig": {
+    "headline": "CONTRIBUTE",
+    "creatorMessage": "hihihhih",
+    "upiId": "hihih@upi",
+    "customQrUrl": "",
+    "paymentLink": "",
+    "otherPaymentDetails": "",
+    "enableQrScan": true,
+    "enableUpiId": true,
+    "enablePaymentLink": false,
+    "customLimitInr": 50000,
+    "updatedAt": "2026-10-23T12:32:58.411Z"
+  },
+  "contributions": [
+    {
+      "id": "contrib_1793002283910_0r2f",
+      "contributorName": "Abinav Thejas K",
+      "contributorModel": "F77 MACH 2",
+      "optionId": "custom",
+      "paymentMethod": "UPI QR Scan",
+      "note": "Great app for UV pilots!",
+      "createdAt": "2026-10-26T08:11:23.910Z",
+      "userId": "u_admin",
+      "clientRequestId": "contrib_req_1793002283904"
+    },
+    {
+      "id": "contrib_1792687028444_9gr7",
+      "contributorName": "Rohan Kulkarni",
+      "contributorModel": "F77 MACH 2",
+      "amountInr": 999,
+      "paymentMethod": "UPI",
+      "note": "Awesome cockpit & charger telemetry!",
+      "createdAt": "2026-10-22T16:37:08.444Z",
+      "clientRequestId": "contrib_req_1792687028408"
+    },
+    {
+      "id": "contrib_01",
+      "contributorName": "Vikram Sengupta",
+      "contributorModel": "F77 MACH 2",
+      "amountInr": 999,
+      "paymentMethod": "UPI",
+      "transactionRef": "UPI-429518204119",
+      "note": "Incredible work keeping the India-wide Supernova & community charger map live for the squadron!",
+      "createdAt": "2026-10-18T14:20:00Z",
+      "userId": "u_pilot07"
+    },
+    {
+      "id": "contrib_02",
+      "contributorName": "Devika Nair",
+      "contributorModel": "F77 Original",
+      "amountInr": 499,
+      "paymentMethod": "UPI",
+      "transactionRef": "UPI-429108843210",
+      "note": "Fuel for The Jet Engineer diagnostics & server upkeep. Fly fast!",
+      "createdAt": "2026-10-14T09:45:00Z",
+      "userId": "u_phantom"
+    }
+  ],
+  "polls": [
+    {
+      "id": "poll_1792760794344",
+      "clientRequestId": "poll_req_1792760794316",
+      "authorId": "pilot_voter_1792760793925_oco079",
+      "authorName": "Test Pilot Alpha",
+      "authorModel": "F77 MACH 2",
+      "question": "Preferred helmet visor tint for night highway sorties?",
+      "category": "General Discussion",
+      "options": [
+        {
+          "id": "opt_1792760794344_1",
+          "text": "Clear Pinlock Visor",
+          "votes": []
+        },
+        {
+          "id": "opt_1792760794344_2",
+          "text": "Photochromic Transitions Visor",
+          "votes": [
+            "u_admin"
+          ]
+        }
+      ],
+      "createdAt": "2026-10-23T13:06:34.344Z"
+    },
+    {
+      "id": "poll_01",
+      "authorId": "u_admin",
+      "authorName": "Abinav Thejas K",
+      "authorModel": "F77 MACH 2",
+      "question": "Which riding mode & regen combination do you rely on most for highway and ghat sorties?",
+      "category": "Riding & Touring",
+      "options": [
+        {
+          "id": "opt_1",
+          "text": "Combat Mode + Regen Level 4 (Balanced trail-braking)",
+          "votes": [
+            "u_admin",
+            "u_phantom",
+            "pilot_voter_1792760793925_oco079",
+            "pilot_voter_1792781290688_888bvk"
+          ]
+        },
+        {
+          "id": "opt_2",
+          "text": "Ballistic Mode + Regen Level 6 (Maximum engine braking)",
+          "votes": [
+            "u_pilot07"
+          ]
+        },
+        {
+          "id": "opt_3",
+          "text": "Glide Mode + Regen Level 2 (Maximum highway range)",
+          "votes": []
+        },
+        {
+          "id": "opt_4",
+          "text": "Ballistic Mode + Regen Level 0 (Pure mechanical braking)",
+          "votes": []
+        }
+      ],
+      "createdAt": "2026-10-16T08:30:00Z"
+    },
+    {
+      "id": "poll_02",
+      "authorId": "u_pilot07",
+      "authorName": "Vikram Sengupta",
+      "authorModel": "F77 MACH 2",
+      "question": "Which corridor should get the next UV Supernova 30kW fast-charging hub on priority?",
+      "category": "Battery & Charging",
+      "options": [
+        {
+          "id": "opt_201",
+          "text": "Bengaluru – Coimbatore (NH 544 Salem Highway)",
+          "votes": [
+            "u_pilot07",
+            "u_admin"
+          ]
+        },
+        {
+          "id": "opt_202",
+          "text": "Mumbai – Goa (NH 66 Konkan Coastal Corridor)",
+          "votes": [
+            "u_phantom"
+          ]
+        },
+        {
+          "id": "opt_203",
+          "text": "Chennai – Puducherry (East Coast Road ECR)",
+          "votes": []
+        },
+        {
+          "id": "opt_204",
+          "text": "Hyderabad – Vijayawada (NH 65 Expressway)",
+          "votes": []
+        }
+      ],
+      "createdAt": "2026-10-18T11:15:00Z"
+    }
+  ],
+  "petitions": [
+    {
+      "id": "pet_01",
+      "authorId": "u_pilot07",
+      "authorName": "Vikram Sengupta",
+      "authorModel": "F77 MACH 2",
+      "title": "Deploy Official UV Supernova 30kW Fast-Charging Hub on Mumbai–Goa NH 66 Coastal Highway",
+      "description": "Requesting Ultraviolette Infrastructure Team to prioritize a 30kW Supernova DC fast-charging station at Chiplun / Ratnagiri junction on NH 66 so riders from Mumbai and Pune can complete coastal Goa sorties without slow 16A overnight stops.",
+      "category": "Battery & Charging",
+      "targetGoal": 25,
+      "supporters": [
+        {
+          "voterId": "u_pilot07",
+          "supporterName": "Vikram Sengupta",
+          "supporterModel": "F77 MACH 2",
+          "supportedAt": "2026-10-17T09:00:00Z"
+        },
+        {
+          "voterId": "u_phantom",
+          "supporterName": "Devika Nair",
+          "supporterModel": "F77 Original",
+          "supportedAt": "2026-10-18T08:15:00Z"
+        },
+        {
+          "voterId": "pilot_voter_1792765484153_8h4xwz",
+          "supporterName": "Squadron Pilot",
+          "supporterModel": "F77 MACH 2",
+          "supportedAt": "2026-10-23T14:24:45.501Z"
+        },
+        {
+          "voterId": "u_admin",
+          "supporterName": "Abinav Thejas K",
+          "supporterModel": "F77 MACH 2",
+          "supportedAt": "2026-10-23T14:27:55.887Z"
+        }
+      ],
+      "createdAt": "2026-10-17T09:00:00Z"
+    },
+    {
+      "id": "pet_02",
+      "authorId": "u_phantom",
+      "authorName": "Devika Nair",
+      "authorModel": "F77 Original",
+      "title": "OTA Console Update: Save Custom Regen & Traction Presets Per Riding Mode",
+      "description": "Allow riders to lock independent default Regeneration (R0–R9) and Traction Control profiles for Glide, Combat, and Ballistic modes that persist across key-off cycles on the 5-inch TFT cockpit.",
+      "category": "Software & Dashboard",
+      "targetGoal": 50,
+      "supporters": [
+        {
+          "voterId": "u_phantom",
+          "supporterName": "Devika Nair",
+          "supporterModel": "F77 Original",
+          "supportedAt": "2026-10-19T07:20:00Z"
+        }
+      ],
+      "createdAt": "2026-10-19T07:20:00Z"
+    }
+  ],
+  "visitedDestinations": [
+    {
+      "id": "dest_seed_chikmagalur",
+      "authorId": "u_pilot07",
+      "authorName": "Vikram Sengupta",
+      "authorModel": "F77 Recon",
+      "title": "Mullayanagiri Peak & Chikmagalur Coffee Trail",
+      "startingPoint": "Bengaluru (Nelamangala Toll)",
+      "totalDistanceKm": 485,
+      "chargingOptionsOnWay": "UV Supernova fast charger at Hassan Highway Plaza (185 km mark) + 15A 3-pin sockets at Café Coffee Day Kunigal & Chikmagalur town homestays.",
+      "chargingAvailable": true,
+      "chargerTypesAvailable": [
+        "UV Supernova",
+        "CCS2 Type 2",
+        "15A 3-Pin Socket"
+      ],
+      "locationMapUrl": "https://www.google.com/maps/search/?api=1&query=13.3909,75.7214",
+      "photos": [
+        "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20800%20450%22%20width%3D%22800%22%20height%3D%22450%22%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%22100%25%22%20y2%3D%22100%25%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%230A1912%22%20%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23153224%22%20%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22road%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%220%25%22%20y2%3D%22100%25%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%23E8AA45%22%20stop-opacity%3D%220.25%22%20%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%2305080C%22%20stop-opacity%3D%220.95%22%20%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3C%2Fdefs%3E%0A%20%20%20%20%3Crect%20width%3D%22800%22%20height%3D%22450%22%20fill%3D%22url(%23bg)%22%20%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22640%22%20cy%3D%22110%22%20r%3D%2254%22%20fill%3D%22%23E8AA45%22%20fill-opacity%3D%220.18%22%20stroke%3D%22%23E8AA45%22%20stroke-opacity%3D%220.45%22%20stroke-width%3D%222%22%20%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%20320%20L180%20185%20L330%20275%20L510%20145%20L670%20250%20L800%20175%20L800%20450%20L0%20450%20Z%22%20fill%3D%22%230A141E%22%20fill-opacity%3D%220.82%22%20stroke%3D%22%23E8AA45%22%20stroke-opacity%3D%220.35%22%20stroke-width%3D%221.5%22%20%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%20365%20L240%20240%20L430%20310%20L620%20215%20L800%20295%20L800%20450%20L0%20450%20Z%22%20fill%3D%22%23060B10%22%20fill-opacity%3D%220.92%22%20%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M290%20450%20Q395%20320%20440%20245%20Q465%20200%20510%20145%20L540%20145%20Q495%20205%20475%20255%20Q445%20330%20520%20450%20Z%22%20fill%3D%22url(%23road)%22%20stroke%3D%22%23E8AA45%22%20stroke-width%3D%222%22%20stroke-opacity%3D%220.7%22%20%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2232%22%20y%3D%2228%22%20width%3D%22290%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%2305080C%22%20fill-opacity%3D%220.82%22%20stroke%3D%22%23E8AA45%22%20stroke-opacity%3D%220.55%22%20%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%2248%22%20y%3D%2249%22%20fill%3D%22%23E8AA45%22%20font-family%3D%22monospace%22%20font-size%3D%2213%22%20font-weight%3D%22bold%22%20letter-spacing%3D%221.5%22%3EESTATE%20%26%20COFFEE%20TRAIL%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%2234%22%20y%3D%22402%22%20fill%3D%22%23F1F3F5%22%20font-family%3D%22sans-serif%22%20font-size%3D%2222%22%20font-weight%3D%22bold%22%20letter-spacing%3D%221%22%3EMULLAYANAGIRI%20%20CHIKMAGALUR%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%2234%22%20y%3D%22426%22%20fill%3D%22%2394A3B8%22%20font-family%3D%22monospace%22%20font-size%3D%2213%22%20letter-spacing%3D%221.5%22%3ECANOPY%20CURVES%20%26%20FAST%20CHARGERS%3C%2Ftext%3E%0A%20%20%3C%2Fsvg%3E"
+      ],
+      "routeSummary": "Bengaluru → Kunigal → Hassan (Fast Charge) → Belur → Chikmagalur → Mullayanagiri Peak",
+      "bestTimeToVisit": "October to March • Depart 05:00 AM",
+      "riderTips": "Smooth 4-lane tarmac till Hassan. Switch to Combat mode on the final 18 km ghat climb; heavy regen on the descent recovers ~9% battery SoC.",
+      "createdAt": "2026-10-18T06:30:00.000Z"
+    },
+    {
+      "id": "dest_seed_nandihills",
+      "authorId": "u_admin",
+      "authorName": "Abinav Thejas K",
+      "authorModel": "F77 MACH 2",
+      "title": "Nandi Hills Sunrise & Lepakshi Temple Loop",
+      "startingPoint": "Bengaluru (Hebbal Flyover)",
+      "totalDistanceKm": 195,
+      "chargingOptionsOnWay": "No mid-ride charge required on F77 Recon/Mach 2 (completes on a single charge with ~32% SoC remaining). Devanahalli Supernova station available on return leg if topping up.",
+      "chargingAvailable": true,
+      "chargerTypesAvailable": [
+        "Single Charge Capable",
+        "UV Supernova Devanahalli"
+      ],
+      "locationMapUrl": "https://www.google.com/maps/search/?api=1&query=13.3702,77.6835",
+      "photos": [
+        "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20800%20450%22%20width%3D%22800%22%20height%3D%22450%22%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%22100%25%22%20y2%3D%22100%25%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%2307131E%22%20%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%230F293A%22%20%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22road%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%220%25%22%20y2%3D%22100%25%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%2342B883%22%20stop-opacity%3D%220.25%22%20%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%2305080C%22%20stop-opacity%3D%220.95%22%20%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3C%2Fdefs%3E%0A%20%20%20%20%3Crect%20width%3D%22800%22%20height%3D%22450%22%20fill%3D%22url(%23bg)%22%20%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22640%22%20cy%3D%22110%22%20r%3D%2254%22%20fill%3D%22%2342B883%22%20fill-opacity%3D%220.18%22%20stroke%3D%22%2342B883%22%20stroke-opacity%3D%220.45%22%20stroke-width%3D%222%22%20%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%20320%20L180%20185%20L330%20275%20L510%20145%20L670%20250%20L800%20175%20L800%20450%20L0%20450%20Z%22%20fill%3D%22%230A141E%22%20fill-opacity%3D%220.82%22%20stroke%3D%22%2342B883%22%20stroke-opacity%3D%220.35%22%20stroke-width%3D%221.5%22%20%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%20365%20L240%20240%20L430%20310%20L620%20215%20L800%20295%20L800%20450%20L0%20450%20Z%22%20fill%3D%22%23060B10%22%20fill-opacity%3D%220.92%22%20%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M290%20450%20Q395%20320%20440%20245%20Q465%20200%20510%20145%20L540%20145%20Q495%20205%20475%20255%20Q445%20330%20520%20450%20Z%22%20fill%3D%22url(%23road)%22%20stroke%3D%22%2342B883%22%20stroke-width%3D%222%22%20stroke-opacity%3D%220.7%22%20%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2232%22%20y%3D%2228%22%20width%3D%22290%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%2305080C%22%20fill-opacity%3D%220.82%22%20stroke%3D%22%2342B883%22%20stroke-opacity%3D%220.55%22%20%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%2248%22%20y%3D%2249%22%20fill%3D%22%2342B883%22%20font-family%3D%22monospace%22%20font-size%3D%2213%22%20font-weight%3D%22bold%22%20letter-spacing%3D%221.5%22%3EWESTERN%20GHATS%20SUMMIT%20RUN%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%2234%22%20y%3D%22402%22%20fill%3D%22%23F1F3F5%22%20font-family%3D%22sans-serif%22%20font-size%3D%2222%22%20font-weight%3D%22bold%22%20letter-spacing%3D%221%22%3ENANDI%20HILLS%20%20LEPAKSHI%20LOOP%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%2234%22%20y%3D%22426%22%20fill%3D%22%2394A3B8%22%20font-family%3D%22monospace%22%20font-size%3D%2213%22%20letter-spacing%3D%221.5%22%3EHIGH-ALTITUDE%20HAIRPIN%20CORRIDOR%3C%2Ftext%3E%0A%20%20%3C%2Fsvg%3E"
+      ],
+      "routeSummary": "Hebbal → Devanahalli → Nandi Hills Summit → Bagepalli → Lepakshi → Bengaluru",
+      "bestTimeToVisit": "Year-round • Reach Nandi Foothills before 05:45 AM",
+      "riderTips": "Carry your portable 15A adapter just in case you extend the ride further north. Watch for morning mist on hairpins 4 through 9.",
+      "createdAt": "2026-10-20T05:15:00.000Z"
+    },
+    {
+      "id": "dest_seed_coorg",
+      "authorId": "u_phantom",
+      "authorName": "Devika Nair",
+      "authorModel": "F77 Original",
+      "title": "Madikeri Glass Bridge & Coorg Misty Ghats",
+      "startingPoint": "Bengaluru (Kengeri Mysore Expressway)",
+      "totalDistanceKm": 520,
+      "chargingOptionsOnWay": "Maddur Highway Socket Waypoint + Mysuru Ring Road Fast Charger + Community Provided Charger at Kushalnagar Rider Hangar (3.3 kW).",
+      "chargingAvailable": true,
+      "chargerTypesAvailable": [
+        "Community Provided Charger",
+        "15A 3-Pin Socket",
+        "Type 2 AC"
+      ],
+      "locationMapUrl": "https://www.google.com/maps/search/?api=1&query=12.4244,75.7382",
+      "photos": [
+        "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20800%20450%22%20width%3D%22800%22%20height%3D%22450%22%3E%0A%20%20%20%20%3Cdefs%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%22100%25%22%20y2%3D%22100%25%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%2309141C%22%20%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23142936%22%20%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%20%20%3ClinearGradient%20id%3D%22road%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%220%25%22%20y2%3D%22100%25%22%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%23729BCB%22%20stop-opacity%3D%220.25%22%20%2F%3E%0A%20%20%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%2305080C%22%20stop-opacity%3D%220.95%22%20%2F%3E%0A%20%20%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3C%2Fdefs%3E%0A%20%20%20%20%3Crect%20width%3D%22800%22%20height%3D%22450%22%20fill%3D%22url(%23bg)%22%20%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22640%22%20cy%3D%22110%22%20r%3D%2254%22%20fill%3D%22%23729BCB%22%20fill-opacity%3D%220.18%22%20stroke%3D%22%23729BCB%22%20stroke-opacity%3D%220.45%22%20stroke-width%3D%222%22%20%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%20320%20L180%20185%20L330%20275%20L510%20145%20L670%20250%20L800%20175%20L800%20450%20L0%20450%20Z%22%20fill%3D%22%230A141E%22%20fill-opacity%3D%220.82%22%20stroke%3D%22%23729BCB%22%20stroke-opacity%3D%220.35%22%20stroke-width%3D%221.5%22%20%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M0%20365%20L240%20240%20L430%20310%20L620%20215%20L800%20295%20L800%20450%20L0%20450%20Z%22%20fill%3D%22%23060B10%22%20fill-opacity%3D%220.92%22%20%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M290%20450%20Q395%20320%20440%20245%20Q465%20200%20510%20145%20L540%20145%20Q495%20205%20475%20255%20Q445%20330%20520%20450%20Z%22%20fill%3D%22url(%23road)%22%20stroke%3D%22%23729BCB%22%20stroke-width%3D%222%22%20stroke-opacity%3D%220.7%22%20%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2232%22%20y%3D%2228%22%20width%3D%22290%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%2305080C%22%20fill-opacity%3D%220.82%22%20stroke%3D%22%23729BCB%22%20stroke-opacity%3D%220.55%22%20%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%2248%22%20y%3D%2249%22%20fill%3D%22%23729BCB%22%20font-family%3D%22monospace%22%20font-size%3D%2213%22%20font-weight%3D%22bold%22%20letter-spacing%3D%221.5%22%3ERESERVOIR%20%26%20FOREST%20LOOP%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%2234%22%20y%3D%22402%22%20fill%3D%22%23F1F3F5%22%20font-family%3D%22sans-serif%22%20font-size%3D%2222%22%20font-weight%3D%22bold%22%20letter-spacing%3D%221%22%3EMADIKERI%20%20COORG%20GHATS%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%2234%22%20y%3D%22426%22%20fill%3D%22%2394A3B8%22%20font-family%3D%22monospace%22%20font-size%3D%2213%22%20letter-spacing%3D%221.5%22%3ESCENIC%20DAM%20%26%20BACKROAD%20CIRCUIT%3C%2Ftext%3E%0A%20%20%3C%2Fsvg%3E"
+      ],
+      "routeSummary": "Bengaluru → Maddur → Mysuru → Kushalnagar → Madikeri Raja Seat",
+      "bestTimeToVisit": "September to February • Early morning departure",
+      "riderTips": "Top up to 95% at Mysuru before climbing Kushalnagar-Madikeri ghat section. Plenty of scenic coffee stops with 15A sockets.",
+      "createdAt": "2026-10-22T07:45:00.000Z"
+    }
+  ]
+}

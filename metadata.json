@@ -1,0 +1,6 @@
+{
+  "name": "GHOST PROTOCOL",
+  "description": "Private, premium digital community and tactical assistance platform for verified Ultraviolette electric motorcycle owners (Ghost Protocol).",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

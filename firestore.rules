@@ -1,0 +1,323 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Hardened Global Primitives
+    // =========================================================================
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedOwner() {
+      return isSignedIn() &&
+        request.auth.token.email == 'abinavthejas2001@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        isBootstrappedOwner() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // =========================================================================
+    // Validation Blueprints (Pillar 2: Anti-Update-Gap)
+    // =========================================================================
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'role', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'role', 'createdAt']) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.role is string && data.role.size() >= 4 && data.role.size() <= 16 && (data.role == 'admin' || data.role == 'owner') &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidPublicPilotProfile(data) {
+      return data.keys().hasAll(['ownerId', 'fullName', 'nickname', 'bikeModel', 'city', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'fullName', 'nickname', 'bikeModel', 'city', 'createdAt', 'updatedAt']) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 80 &&
+        data.nickname is string && data.nickname.size() >= 1 && data.nickname.size() <= 40 &&
+        data.bikeModel is string && data.bikeModel.size() >= 1 && data.bikeModel.size() <= 60 &&
+        data.city is string && data.city.size() >= 1 && data.city.size() <= 80 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPrivatePilotInfo(data) {
+      return data.keys().hasAll(['ownerId', 'email', 'phone', 'bikeRegistrationNumber', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'email', 'phone', 'bikeRegistrationNumber', 'createdAt', 'updatedAt']) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+        data.phone is string && data.phone.size() >= 6 && data.phone.size() <= 24 &&
+        data.bikeRegistrationNumber is string && data.bikeRegistrationNumber.size() >= 2 && data.bikeRegistrationNumber.size() <= 32 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isAllowedModuleId(modId) {
+      return modId is string && modId.size() >= 3 && modId.size() <= 40 && modId.matches('^[a-zA-Z0-9_\\-]+$') && (
+        modId == 'emergencies' ||
+        modId == 'rides' ||
+        modId == 'problems' ||
+        modId == 'discussions' ||
+        modId == 'polls' ||
+        modId == 'petitions' ||
+        modId == 'community_chargers' ||
+        modId == 'charger_reports' ||
+        modId == 'modifications' ||
+        modId == 'marketplace' ||
+        modId == 'service_reviews' ||
+        modId == 'jet_submissions' ||
+        modId == 'contributions' ||
+        modId == 'contribution_config'
+      );
+    }
+
+    function isValidSharedModuleBundle(data) {
+      return data.keys().hasAll([
+          'moduleId',
+          'ownerId',
+          'lastUpdatedBy',
+          'version',
+          'recordCount',
+          'payloadChecksum',
+          'items',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'moduleId',
+          'ownerId',
+          'lastUpdatedBy',
+          'version',
+          'recordCount',
+          'payloadChecksum',
+          'items',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        isAllowedModuleId(data.moduleId) &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.lastUpdatedBy is string && data.lastUpdatedBy.size() >= 1 && data.lastUpdatedBy.size() <= 128 && data.lastUpdatedBy.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.version is int && data.version >= 1 && data.version <= 1000000000 &&
+        data.recordCount is int && data.recordCount >= 0 && data.recordCount <= 100 &&
+        data.payloadChecksum is string && data.payloadChecksum.size() >= 1 && data.payloadChecksum.size() <= 64 &&
+        data.items is list && data.items.size() <= 100 &&
+        (data.items.size() == 0 || data.items[0] is map) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCommunityRecord(data) {
+      return data.keys().hasAll([
+          'recordId',
+          'moduleId',
+          'ownerId',
+          'authorName',
+          'title',
+          'summary',
+          'status',
+          'upvotes',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'recordId',
+          'moduleId',
+          'ownerId',
+          'authorName',
+          'title',
+          'summary',
+          'status',
+          'upvotes',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.recordId is string && data.recordId.size() >= 1 && data.recordId.size() <= 128 && data.recordId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        isAllowedModuleId(data.moduleId) && data.moduleId != 'contribution_config' &&
+        data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 4000 &&
+        data.status is string && data.status.size() >= 6 && data.status.size() <= 16 &&
+        (data.status == 'active' || data.status == 'resolved' || data.status == 'archived') &&
+        data.upvotes is int && data.upvotes >= 0 && data.upvotes <= 1000000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // Collection 1: /admins/{adminUid}
+    // =========================================================================
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        isValidId(adminUid) &&
+        isValidAdminRecord(incoming()) &&
+        incoming().uid == adminUid &&
+        incoming().createdAt == request.time &&
+        isBootstrappedOwner();
+      allow update: if isSignedIn() &&
+        isValidId(adminUid) &&
+        isValidAdminRecord(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['role']) &&
+        isBootstrappedOwner();
+      allow delete: if isSignedIn() && isValidId(adminUid) && isBootstrappedOwner();
+    }
+
+    // =========================================================================
+    // Collection 2: /users/{userId}/public/{profileId} (Non-PII Public Callsigns)
+    // =========================================================================
+    match /users/{userId}/public/{profileId} {
+      allow get: if isSignedIn() && isValidId(userId) && isValidId(profileId);
+      allow list: if isSignedIn() && resource.data.ownerId == userId;
+      allow create: if isSignedIn() &&
+        isValidId(userId) &&
+        isValidId(profileId) &&
+        isValidPublicPilotProfile(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isSignedIn() &&
+        isValidId(userId) &&
+        isValidId(profileId) &&
+        isValidPublicPilotProfile(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'nickname', 'bikeModel', 'city', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(userId) && isValidId(profileId) && (isOwner(userId) || isAdmin());
+    }
+
+    // =========================================================================
+    // Collection 3: /users/{userId}/private/{docId} (Pillar 6: Strict PII Isolation)
+    // =========================================================================
+    match /users/{userId}/private/{docId} {
+      allow get: if isSignedIn() && isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        isValidId(userId) &&
+        isValidId(docId) &&
+        isValidPrivatePilotInfo(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isSignedIn() &&
+        isValidId(userId) &&
+        isValidId(docId) &&
+        isValidPrivatePilotInfo(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'phone', 'bikeRegistrationNumber', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
+    }
+
+    // =========================================================================
+    // Collection 4: /shared_modules/{moduleId} (Quota-Optimized Hybrid Sync Bundles)
+    // =========================================================================
+    match /shared_modules/{moduleId} {
+      allow get: if isSignedIn() && isValidId(moduleId) && isAllowedModuleId(moduleId);
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        isValidId(moduleId) &&
+        isValidSharedModuleBundle(incoming()) &&
+        incoming().moduleId == moduleId &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().lastUpdatedBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (moduleId != 'contribution_config' || isBootstrappedOwner());
+      allow update: if isSignedIn() &&
+        isValidId(moduleId) &&
+        isValidSharedModuleBundle(incoming()) &&
+        incoming().moduleId == existing().moduleId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().lastUpdatedBy == request.auth.uid &&
+        incoming().updatedAt == request.time &&
+        incoming().version == existing().version + 1 && (
+          isAdmin() ||
+          (moduleId != 'contribution_config' &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'lastUpdatedBy',
+              'version',
+              'recordCount',
+              'payloadChecksum',
+              'items',
+              'updatedAt'
+            ]))
+        );
+      allow delete: if isSignedIn() && isValidId(moduleId) && isAdmin();
+    }
+
+    // =========================================================================
+    // Collection 5: /community_records/{recordId} (Individual Shared Community Items)
+    // =========================================================================
+    match /community_records/{recordId} {
+      allow get: if isSignedIn() && isValidId(recordId);
+      allow list: if isSignedIn() && (resource.data.status == 'active' || resource.data.ownerId == request.auth.uid);
+      allow create: if isSignedIn() &&
+        isValidId(recordId) &&
+        isValidCommunityRecord(incoming()) &&
+        incoming().recordId == recordId &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().status == 'active' &&
+        incoming().upvotes == 0 &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isSignedIn() &&
+        isValidId(recordId) &&
+        isValidCommunityRecord(incoming()) &&
+        incoming().recordId == existing().recordId &&
+        incoming().moduleId == existing().moduleId &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          // Action 1: Creator edits title, summary, or resolves active item (locked once archived)
+          (existing().status != 'archived' &&
+            existing().ownerId == request.auth.uid &&
+            incoming().upvotes == existing().upvotes &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['authorName', 'title', 'summary', 'status', 'updatedAt'])) ||
+          // Action 2: Community member increments upvote by +1 on active item
+          (existing().status == 'active' &&
+            incoming().upvotes == existing().upvotes + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['upvotes', 'updatedAt']))
+        );
+      allow delete: if isSignedIn() && isValidId(recordId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+  }
+}
