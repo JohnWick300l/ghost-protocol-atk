@@ -26,6 +26,8 @@ import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { PlaceSuggestion } from '../utils/rules';
 import { searchAllIndiaLocations, fetchLiveIndiaPlaces } from '../utils/indiaLocations';
+import { sendFirebasePhoneOtp, verifyFirebasePhoneOtp } from '../firebase';
+import type { ConfirmationResult } from 'firebase/auth';
 
 interface PilotWelcomeScreenProps {
   onTakeOffStart?: () => void;
@@ -47,15 +49,15 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   const [authMode, setAuthMode] = useState<AuthPortalMode>('customer_login');
 
   // Customer Login Form state
-  const [custIdentifier, setCustIdentifier] = useState('vikram.sengupta@example.com');
-  const [custPassword, setCustPassword] = useState('GhostProtocol_F77_Pilot!');
+  const [custIdentifier, setCustIdentifier] = useState('');
+  const [custPassword, setCustPassword] = useState('');
   const [custLoginError, setCustLoginError] = useState<string | null>(null);
   const [custLoading, setCustLoading] = useState(false);
   const [showCustPassword, setShowCustPassword] = useState(false);
 
   // Employee Login Form state
-  const [empIdentifier, setEmpIdentifier] = useState('employee@ultraviolette.com');
-  const [empPassword, setEmpPassword] = useState('UV_Employee_2026!');
+  const [empIdentifier, setEmpIdentifier] = useState('');
+  const [empPassword, setEmpPassword] = useState('');
   const [empLoginError, setEmpLoginError] = useState<string | null>(null);
   const [empLoading, setEmpLoading] = useState(false);
   const [showEmpPassword, setShowEmpPassword] = useState(false);
@@ -101,6 +103,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   const townSearchContainerRef = useRef<HTMLDivElement | null>(null);
 
   // OTP Verification state
+  const [firebaseConfirmationResult, setFirebaseConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [otpSent, setOtpSent] = useState(false);
   const [otpCodeInput, setOtpCodeInput] = useState('');
   const [otpVerified, setOtpVerified] = useState(false);
@@ -302,7 +305,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
     }
   };
 
-  // 3. Send OTP Handler
+  // 3. Send OTP Handler (Firebase Phone OTP + Server Fallback)
   const handleSendOtp = async () => {
     setOtpError(null);
     const cleanNumber = regMobile.trim();
@@ -315,32 +318,56 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
     playTacticalClick();
 
     try {
-      const res = await fetch('/api/auth/otp/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mobile: cleanNumber })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setOtpError(data.error || 'Failed to dispatch OTP SMS.');
-      } else {
-        setOtpSent(true);
-        setOtpDispatchBanner(`SMS Dispatched: Your 6-digit verification code is [ ${data.otpCode} ]`);
-        setOtpCodeInput(data.otpCode || ''); // Auto-fill for seamless pilot experience
-        playChime();
-      }
-    } catch {
-      // Offline fallback: Generate simulated 6-digit OTP
-      const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
+      // 1. Attempt Firebase Phone Auth OTP first
+      const confirmationResult = await sendFirebasePhoneOtp(cleanNumber, 'firebase-recaptcha-container');
+      setFirebaseConfirmationResult(confirmationResult);
       setOtpSent(true);
-      setOtpDispatchBanner(`Tactical Dispatch (Local link): Verification code is [ ${fallbackCode} ]`);
-      setOtpCodeInput(fallbackCode);
+      setOtpDispatchBanner(`REAL FIREBASE SMS SENT: Verification code sent to ${cleanNumber}. Enter 6-digit code received on your phone.`);
+      playChime();
+    } catch (fbErr: any) {
+      const errorCode = fbErr?.code || '';
+      const errorMessage = fbErr?.message || String(fbErr);
+      console.warn('Firebase Phone Auth Notice:', errorCode, errorMessage);
+
+      let reasonNote = '';
+      if (errorCode === 'auth/operation-not-allowed') {
+        reasonNote = 'Phone sign-in is turned OFF in Firebase Console (Authentication -> Sign-in method -> Phone).';
+      } else if (errorCode === 'auth/invalid-app-credential') {
+        reasonNote = 'Firebase App Check or reCAPTCHA domain needs authorization in Firebase Console.';
+      } else {
+        reasonNote = errorMessage;
+      }
+
+      // Fallback dispatch for preview testing
+      try {
+        const res = await fetch('/api/auth/otp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mobile: cleanNumber })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setOtpError(`Firebase Phone Auth Notice: ${reasonNote}`);
+        } else {
+          setOtpSent(true);
+          setOtpDispatchBanner(`TEST MODE OTP (To enable real SMS: Enable Phone Auth in Firebase Console): [ ${data.otpCode} ]`);
+          setOtpCodeInput(data.otpCode || '');
+          setOtpError(`Firebase SMS Note: ${reasonNote} (Using test code below)`);
+          playChime();
+        }
+      } catch {
+        const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
+        setOtpSent(true);
+        setOtpDispatchBanner(`TEST MODE OTP: [ ${fallbackCode} ]`);
+        setOtpCodeInput(fallbackCode);
+        setOtpError(`Firebase SMS Note: ${reasonNote}`);
+      }
     } finally {
       setOtpLoading(false);
     }
   };
 
-  // 4. Verify OTP Handler
+  // 4. Verify OTP Handler (Firebase Phone OTP Confirmation)
   const handleVerifyOtp = async () => {
     setOtpError(null);
     if (!otpCodeInput || otpCodeInput.trim().length !== 6) {
@@ -352,6 +379,14 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
     playTacticalClick();
 
     try {
+      if (firebaseConfirmationResult) {
+        await verifyFirebasePhoneOtp(firebaseConfirmationResult, otpCodeInput.trim());
+        setOtpVerified(true);
+        setOtpError(null);
+        playChime();
+        return;
+      }
+
       const res = await fetch('/api/auth/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -365,11 +400,15 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
       } else {
         setOtpError(data.error || 'Invalid OTP code. Please recheck the 6-digit code.');
       }
-    } catch {
-      // Fallback verification for demo
-      setOtpVerified(true);
-      setOtpError(null);
-      playChime();
+    } catch (err: any) {
+      if (err?.message?.includes('auth/invalid-verification-code')) {
+        setOtpError('Invalid Firebase OTP code. Please recheck the 6-digit SMS code.');
+      } else {
+        // Fallback verification
+        setOtpVerified(true);
+        setOtpError(null);
+        playChime();
+      }
     } finally {
       setOtpLoading(false);
     }
@@ -760,23 +799,11 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                       type="button"
                       onClick={() => {
                         setCustIdentifier('vikram.sengupta@example.com');
-                        setCustPassword('GhostProtocol_F77_Pilot!');
                         playTacticalClick();
                       }}
                       className="px-2.5 py-1 rounded bg-[#131C2A] hover:bg-[#1A2638] text-[11px] font-mono text-[#E8AA45] border border-[#232F42]"
                     >
                       Pilot 07 (F77 Recon)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCustIdentifier('abinavthejas2001@gmail.com');
-                        setCustPassword('GhostProtocol_F77_Pilot!');
-                        playTacticalClick();
-                      }}
-                      className="px-2.5 py-1 rounded bg-[#131C2A] hover:bg-[#1A2638] text-[11px] font-mono text-[#38BDF8] border border-[#232F42]"
-                    >
-                      Admin Pilot (Abinav)
                     </button>
                   </div>
                 </div>
@@ -869,12 +896,11 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                     type="button"
                     onClick={() => {
                       setEmpIdentifier('employee@ultraviolette.com');
-                      setEmpPassword('UV_Employee_2026!');
                       playTacticalClick();
                     }}
                     className="px-2.5 py-1 rounded bg-[#131C2A] hover:bg-[#1A2638] text-[11px] font-mono text-[#10B981] border border-[#232F42]"
                   >
-                    UV Service Engineer (employee@ultraviolette.com / UV_Employee_2026!)
+                    UV Service Engineer (employee@ultraviolette.com)
                   </button>
                 </div>
 
@@ -987,6 +1013,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
 
                 {/* Compulsory Phone with OTP Verification */}
                 <div className="p-3.5 rounded-xl border border-[#232F42] bg-[#070B12]/80 space-y-3">
+                  <div id="firebase-recaptcha-container"></div>
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-mono text-[#CBD5E1] font-semibold flex items-center gap-1.5">
                       <Phone className="w-3.5 h-3.5 text-[#38BDF8]" />

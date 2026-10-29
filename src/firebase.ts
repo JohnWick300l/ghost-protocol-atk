@@ -1,5 +1,15 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, type User as FirebaseUser } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  type ConfirmationResult,
+  type UserCredential,
+  type User as FirebaseUser
+} from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -82,3 +92,56 @@ export async function signInWithGoogleForCloudSync(): Promise<FirebaseUser | nul
 export async function signOutFromFirebaseCloudSync(): Promise<void> {
   await signOut(auth);
 }
+
+// ============================================================================
+// FIREBASE PHONE NUMBER OTP AUTHENTICATION
+// ============================================================================
+
+let recaptchaVerifierInstance: RecaptchaVerifier | null = null;
+
+export function initRecaptchaVerifier(containerId: string = 'recaptcha-container'): RecaptchaVerifier {
+  if (typeof window === 'undefined') {
+    throw new Error('reCAPTCHA can only be initialized in the browser.');
+  }
+
+  if (recaptchaVerifierInstance) {
+    try {
+      recaptchaVerifierInstance.clear();
+    } catch {
+      // ignore
+    }
+  }
+
+  recaptchaVerifierInstance = new RecaptchaVerifier(auth, containerId, {
+    size: 'invisible',
+    callback: () => {
+      // reCAPTCHA solved
+    },
+    'expired-callback': () => {
+      // Response expired
+    }
+  });
+
+  return recaptchaVerifierInstance;
+}
+
+export async function sendFirebasePhoneOtp(
+  phoneNumber: string,
+  containerId: string = 'recaptcha-container'
+): Promise<ConfirmationResult> {
+  const verifier = initRecaptchaVerifier(containerId);
+  const cleanDigits = phoneNumber.replace(/\D/g, '');
+  const formattedPhone = phoneNumber.startsWith('+')
+    ? phoneNumber.replace(/\s+/g, '')
+    : `+91${cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits}`;
+
+  return await signInWithPhoneNumber(auth, formattedPhone, verifier);
+}
+
+export async function verifyFirebasePhoneOtp(
+  confirmationResult: ConfirmationResult,
+  otpCode: string
+): Promise<UserCredential> {
+  return await confirmationResult.confirm(otpCode);
+}
+
