@@ -3,13 +3,15 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+import { fileURLToPath } from 'node:url';
+
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
       dedupe: ['react', 'react-dom'],
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': fileURLToPath(new URL('.', import.meta.url)),
       },
     },
     server: {

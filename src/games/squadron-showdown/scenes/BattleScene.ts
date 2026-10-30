@@ -738,6 +738,31 @@ export class BattleScene extends Phaser.Scene {
         g.lineBetween(beamX - 95, beamY + 75, beamX + 95, beamY - 75);
         g.fillStyle(0xe0f2fe, 0.45);
         g.fillCircle(beamX, beamY, 55);
+      } else if (def.id === 'FIGHTER_009') {
+        // LIVIN CHETTAN (THE SQUADRON LEGEND) — SQUADRON SURGE: Electric Blue & Cyan Forward Strike
+        // 1. Electric blue charging aura surrounding Livin's body
+        g.lineStyle(6, 0x00d2ff, 0.95);
+        g.strokeEllipse(c.x, c.y - 120, 150 + Math.sin(time * 0.05) * 16, 220);
+        // 2. Cyan forward energy surge cone & impact flash
+        g.fillStyle(0x06b6d4, 0.45);
+        g.fillEllipse(beamX, beamY, 230, 140);
+        g.lineStyle(7, 0x22d3ee, 0.95);
+        g.strokeEllipse(beamX, beamY, 245, 150);
+        // 3. Short supersonic dash trail
+        g.fillStyle(0x00d2ff, 0.25);
+        g.fillTriangle(
+          c.x - c.facing * 70, c.y - 120,
+          beamX - c.facing * 30, beamY - 70,
+          beamX - c.facing * 30, beamY + 70
+        );
+        // 4. Arc lightning branching from knuckles into impact zone
+        g.lineStyle(4, 0xffffff, 0.95);
+        for (let arc = 0; arc < 3; arc++) {
+          const jitter1 = Math.sin(time * 0.08 + arc * 1.8) * 22;
+          const jitter2 = Math.cos(time * 0.08 + arc * 2.4) * 22;
+          g.lineBetween(c.x + c.facing * 40, beamY + jitter1, beamX - 20, beamY - 10 + jitter2);
+          g.lineBetween(beamX - 20, beamY - 10 + jitter2, beamX + 75, beamY + jitter1 * 0.6);
+        }
       } else {
         g.fillStyle(accent, 0.38);
         g.fillEllipse(beamX, beamY, 215, 130);

@@ -3028,6 +3028,24 @@
   ],
   "auditLogs": [
     {
+      "id": "aud_g_1793386425119",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "GOOGLE_AUTH_LOGIN",
+      "targetId": "u_admin",
+      "details": "Authenticated Google account abinavthejas2001@gmail.com via Firebase Google Auth.",
+      "timestamp": "2026-10-30T18:53:45.119Z"
+    },
+    {
+      "id": "aud_g_1793378216990",
+      "adminId": "u_admin",
+      "adminName": "Abinav Thejas K",
+      "action": "GOOGLE_AUTH_LOGIN",
+      "targetId": "u_admin",
+      "details": "Authenticated Google account abinavthejas2001@gmail.com via Firebase Google Auth.",
+      "timestamp": "2026-10-30T16:36:56.990Z"
+    },
+    {
       "id": "aud_1793350503162",
       "adminId": "u_admin",
       "adminName": "Abinav Thejas K",
@@ -3582,8 +3600,8 @@
     "prob_01",
     "u_1793347961601"
   ],
-  "revision": 2782,
-  "lastUpdatedAt": "2026-10-30T11:12:47.975Z",
+  "revision": 3124,
+  "lastUpdatedAt": "2026-10-30T19:04:23.314Z",
   "contributionConfig": {
     "headline": "CONTRIBUTE",
     "creatorMessage": "hihihhih",

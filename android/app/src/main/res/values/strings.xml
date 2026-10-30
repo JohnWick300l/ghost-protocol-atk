@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Ghost Protocol </string>
-    <string name="title_activity_main">Ghost Protocol </string>
-    <string name="package_name">com.ghostprotocol.atk</string>
-    <string name="custom_url_scheme">com.ghostprotocol.atk</string>
-</resources>

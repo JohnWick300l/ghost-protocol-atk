@@ -1,7 +1,7 @@
 // GHOST PROTOCOL - Offline-First Service Worker (PWA & Tactical Field Cache)
-const CACHE_NAME = 'ghost-protocol-shell-v4';
-const DATA_CACHE_NAME = 'ghost-protocol-data-v4';
-const TILE_CACHE_NAME = 'ghost-protocol-tiles-v4';
+const CACHE_NAME = 'ghost-protocol-shell-v6';
+const DATA_CACHE_NAME = 'ghost-protocol-data-v6';
+const TILE_CACHE_NAME = 'ghost-protocol-tiles-v6';
 
 const STATIC_ASSETS = [
   '/',
@@ -12,6 +12,8 @@ const STATIC_ASSETS = [
   '/assets/squadron-showdown/characters/penguin_bhai_clean.png',
   '/assets/squadron-showdown/characters/girimon_clean.png',
   '/assets/squadron-showdown/characters/dq_sprite.png',
+  '/assets/squadron-showdown/characters/livin_chettan_clean.png',
+  '/assets/aistudio/Livin_chettan_f0287255.png',
   '/assets/aistudio/dheeraj_b0cdc76b.png',
   '/assets/aistudio/vijay_e1402ef4.png',
   '/assets/aistudio/anhiyan_9b0cd04d.png',

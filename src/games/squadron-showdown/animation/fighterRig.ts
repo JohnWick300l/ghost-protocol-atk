@@ -578,9 +578,67 @@ export const CHARACTER_ANATOMICAL_PROFILES: Record<
     shoeAccent: '#38bdf8',
   },
 
-  // 9. KAEL VANCE — Cyber-Volt blue/slate armored biker suit
+  // 9. LIVIN CHETTAN (THE SQUADRON LEGEND) — Black & white UV pilot hoodie, bare clenched fists, black cargo pants, black/white high-top sneakers
   FIGHTER_009: {
     fighterId: 'FIGHTER_009',
+    shoulderRx: 0.48,
+    shoulderRy: 0.25,
+    hipRx: 0.56,
+    hipRy: 0.50,
+    upperArmStrip: {
+      p0Rx: 0.17,
+      p0Ry: 0.22,
+      p1Rx: 0.12,
+      p1Ry: 0.34,
+      thicknessRatio: 0.13,
+      flipY: false,
+    },
+    armStrip: {
+      p0Rx: 0.13,
+      p0Ry: 0.33,
+      p1Rx: 0.395,
+      p1Ry: 0.285,
+      thicknessRatio: 0.135,
+      flipY: false,
+      clearDarkBgAtTip: true,
+    },
+    legStrip: {
+      p0Rx: 0.55,
+      p0Ry: 0.50,
+      p1Rx: 0.85,
+      p1Ry: 0.96,
+      thicknessRatio: 0.32,
+      flipY: false,
+    },
+    outerArmCutout: {
+      rx: 0.77,
+      ry: 0.25,
+      rw: 0.23,
+      rh: 0.16,
+    },
+    sleeveStyle: 'LONG_JACKET',
+    handStyle: 'BARE_FIST',
+    sleevePrimary: '#f8fafc',
+    sleeveSecondary: '#18181b',
+    sleeveHighlight: '#00d2ff',
+    cuffColor: '#09090b',
+    skinTone: '#e09a6c',
+    skinShadow: '#a8643c',
+    gloveColor: '#e09a6c',
+    gloveAccent: '#00d2ff',
+    bootStyle: 'TACTICAL_SNEAKER',
+    pantsPrimary: '#18181b',
+    pantsSecondary: '#09090b',
+    pantsHighlight: '#00d2ff',
+    shoePrimary: '#0f172a',
+    shoeSecondary: '#f8fafc',
+    shoeSole: '#e2e8f0',
+    shoeAccent: '#00d2ff',
+  },
+
+  // 10. KAEL VANCE — Cyber-Volt blue/slate armored biker suit
+  FIGHTER_010: {
+    fighterId: 'FIGHTER_010',
     shoulderRx: 0.58,
     shoulderRy: 0.27,
     hipRx: 0.56,
@@ -629,9 +687,9 @@ export const CHARACTER_ANATOMICAL_PROFILES: Record<
     shoeAccent: '#e0f2fe',
   },
 
-  // 10. ZARA RAO — Cyber Valkyrie violet/silver aero suit
-  FIGHTER_010: {
-    fighterId: 'FIGHTER_010',
+  // 11. ZARA RAO — Cyber Valkyrie violet/silver aero suit
+  FIGHTER_011: {
+    fighterId: 'FIGHTER_011',
     shoulderRx: 0.58,
     shoulderRy: 0.27,
     hipRx: 0.56,
@@ -680,9 +738,9 @@ export const CHARACTER_ANATOMICAL_PROFILES: Record<
     shoeAccent: '#f5d0fe',
   },
 
-  // 11. REX KAPOOR — Apex Titan molten orange heavy armor
-  FIGHTER_011: {
-    fighterId: 'FIGHTER_011',
+  // 12. REX KAPOOR — Apex Titan molten orange heavy armor
+  FIGHTER_012: {
+    fighterId: 'FIGHTER_012',
     shoulderRx: 0.60,
     shoulderRy: 0.26,
     hipRx: 0.58,
@@ -731,9 +789,9 @@ export const CHARACTER_ANATOMICAL_PROFILES: Record<
     shoeAccent: '#fed7aa',
   },
 
-  // 12. KENJI SATO — Neon Drift emerald cyber suit
-  FIGHTER_012: {
-    fighterId: 'FIGHTER_012',
+  // 13. KENJI SATO — Neon Drift emerald cyber suit
+  FIGHTER_013: {
+    fighterId: 'FIGHTER_013',
     shoulderRx: 0.58,
     shoulderRy: 0.27,
     hipRx: 0.56,

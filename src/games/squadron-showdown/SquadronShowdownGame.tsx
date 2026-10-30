@@ -437,8 +437,8 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                   FIGHT. RIDE. DOMINATE.
                 </p>
                 <p className="mt-3 text-sm sm:text-base text-slate-300 max-w-xl leading-relaxed">
-                  Your squadron. Your fighter. Your battle. Step onto the neon tarmac with
-                  8 official Squadron legends and 4 custom circuit riders in high-voltage
+                  Your squadron. Your fighter. Your battle. Step onto the neon tarmac with{' '}
+                  {OFFICIAL_FIGHTERS.length} official Squadron legends and {BONUS_FIGHTERS.length} custom circuit riders in high-voltage
                   1v1 Player vs AI combat.
                 </p>
               </div>
@@ -547,7 +547,7 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                       OFFICIAL SQUADRON ROSTER
                     </div>
                     <div className="text-lg font-black text-white uppercase">
-                      8 CORE LEGENDS + 4 CIRCUIT RIDERS
+                      {OFFICIAL_FIGHTERS.length} CORE LEGENDS + {BONUS_FIGHTERS.length} CIRCUIT RIDERS
                     </div>
                   </div>
                   <span className="px-2.5 py-1 rounded bg-purple-500/20 border border-purple-400/40 text-purple-300 text-xs font-bold">
@@ -555,7 +555,7 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-3 gap-2.5">
                   {OFFICIAL_FIGHTERS.map((f) => (
                     <button
                       key={f.id}
@@ -621,6 +621,9 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                 <h2 className="text-xl font-black text-white uppercase truncate">
                   {playerDef.name}
                 </h2>
+                <div className="text-[11px] text-cyan-300 font-bold tracking-wider uppercase truncate">
+                  {playerDef.title}
+                </div>
                 <div className="text-xs text-amber-400 font-bold uppercase">
                   SPECIAL: {playerDef.specialName}
                 </div>
@@ -758,6 +761,9 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                 <h2 className="text-xl font-black text-white uppercase truncate">
                   {opponentDef.name}
                 </h2>
+                <div className="text-[11px] text-rose-300 font-bold tracking-wider uppercase truncate">
+                  {opponentDef.title}
+                </div>
                 <div className="text-xs text-amber-400 font-bold uppercase">
                   SPECIAL: {opponentDef.specialName}
                 </div>
@@ -851,12 +857,12 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
             </div>
           </div>
 
-          {/* Roster Grid: 8 Official Squadron Fighters + 4 Circuit Biker Fighters */}
+          {/* Roster Grid: 9 Official Squadron Fighters + 4 Circuit Biker Fighters */}
           <div className="space-y-3">
             <div className="text-xs font-bold tracking-[0.2em] text-cyan-400 uppercase">
-              OFFICIAL SQUADRON ROSTER (8 CORE FIGHTERS)
+              OFFICIAL SQUADRON ROSTER ({OFFICIAL_FIGHTERS.length} CORE FIGHTERS)
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2.5">
               {OFFICIAL_FIGHTERS.map((fighter) => {
                 const isP1 = playerFighterId === fighter.id;
                 const isAI = opponentFighterId === fighter.id;
@@ -904,6 +910,9 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                     </div>
                     <div className="mt-1.5 text-xs font-black text-white uppercase truncate w-full text-center">
                       {fighter.name}
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-bold uppercase truncate w-full text-center">
+                      {fighter.title}
                     </div>
                     <div className="text-[10px] text-amber-400 font-semibold truncate w-full text-center">
                       {fighter.specialName}
