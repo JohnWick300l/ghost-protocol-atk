@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900" width="600" height="900">
+  <defs>
+    <linearGradient id="valkArmor" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#312e81"/>
+      <stop offset="50%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#0f0728"/>
+    </linearGradient>
+    <linearGradient id="ionViolet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e879f9"/>
+      <stop offset="100%" stop-color="#9333ea"/>
+    </linearGradient>
+    <linearGradient id="silverPlate" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
+    </linearGradient>
+    <filter id="violetGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <ellipse cx="300" cy="855" rx="135" ry="18" fill="rgba(217,70,239,0.24)"/>
+
+  <!-- Ion Energy Wings / Aura -->
+  <polygon points="220,255 115,190 155,285 105,315 215,320" fill="url(#ionViolet)" opacity="0.75" filter="url(#violetGlow)"/>
+  <polygon points="380,255 485,190 445,285 495,315 385,320" fill="url(#ionViolet)" opacity="0.75" filter="url(#violetGlow)"/>
+
+  <!-- Left Leg -->
+  <path d="M255 475 L205 655 L185 805 L238 810 L268 665 L300 495 Z" fill="url(#valkArmor)" stroke="#090514" stroke-width="6"/>
+  <polygon points="202,630 248,635 240,685 195,680" fill="url(#silverPlate)" stroke="#d946ef" stroke-width="4"/>
+
+  <!-- Right Leg (Dynamic High-Kick Ready Stance) -->
+  <path d="M312 475 L368 645 L395 805 L342 810 L312 665 L285 495 Z" fill="url(#valkArmor)" stroke="#090514" stroke-width="6"/>
+  <polygon points="332,630 378,625 386,680 338,685" fill="url(#silverPlate)" stroke="#d946ef" stroke-width="4"/>
+
+  <!-- Left Ion Boot -->
+  <path d="M180 795 L240 800 L245 848 L152 852 C148 828 164 810 180 795 Z" fill="url(#silverPlate)" stroke="#090514" stroke-width="6"/>
+  <path d="M156 842 L242 842" stroke="#e879f9" stroke-width="6" filter="url(#violetGlow)"/>
+
+  <!-- Right Ion Boot -->
+  <path d="M342 800 L402 795 C418 810 434 828 430 852 L338 848 Z" fill="url(#silverPlate)" stroke="#090514" stroke-width="6"/>
+  <path d="M340 842 L426 842" stroke="#e879f9" stroke-width="6" filter="url(#violetGlow)"/>
+
+  <!-- Torso / Valkyrie Riding Suit -->
+  <path d="M222 245 L378 245 L345 480 L255 480 Z" fill="url(#valkArmor)" stroke="#090514" stroke-width="7"/>
+  <!-- Silver Chest Plate -->
+  <polygon points="240,260 360,260 338,370 300,398 262,370" fill="url(#silverPlate)" stroke="#d946ef" stroke-width="4"/>
+  <!-- Violet Core Reactor -->
+  <polygon points="300,285 324,320 300,355 276,320" fill="url(#ionViolet)" stroke="#fdf4ff" stroke-width="3" filter="url(#violetGlow)"/>
+
+  <!-- Belt -->
+  <rect x="248" y="465" width="104" height="22" rx="6" fill="#090514" stroke="#e879f9" stroke-width="3"/>
+
+  <!-- Left Arm -->
+  <path d="M225 255 L160 335 L195 405 L242 340 Z" fill="url(#valkArmor)" stroke="#090514" stroke-width="6"/>
+  <polygon points="185,235 235,245 222,292 172,280" fill="url(#silverPlate)" stroke="#d946ef" stroke-width="4"/>
+  <circle cx="215" cy="300" r="24" fill="url(#ionViolet)" stroke="#fdf4ff" stroke-width="4" filter="url(#violetGlow)"/>
+
+  <!-- Right Arm -->
+  <path d="M375 255 L440 335 L405 405 L358 340 Z" fill="url(#valkArmor)" stroke="#090514" stroke-width="6"/>
+  <polygon points="415,235 365,245 378,292 428,280" fill="url(#silverPlate)" stroke="#d946ef" stroke-width="4"/>
+  <circle cx="385" cy="300" r="24" fill="url(#ionViolet)" stroke="#fdf4ff" stroke-width="4" filter="url(#violetGlow)"/>
+
+  <!-- Flowing Ponytail Crest Behind Helmet -->
+  <path d="M315 115 C365 85 415 110 430 165 C395 160 365 145 335 140 Z" fill="#d946ef" stroke="#090514" stroke-width="5"/>
+
+  <!-- Valkyrie Aero Helmet -->
+  <path d="M244 155 C244 98 356 98 356 155 L362 212 C362 235 332 248 300 248 C268 248 238 235 238 212 Z" fill="url(#silverPlate)" stroke="#090514" stroke-width="7"/>
+  <!-- Neon Violet Visor -->
+  <path d="M250 160 L350 160 L340 202 L300 214 L260 202 Z" fill="url(#ionViolet)" stroke="#fdf4ff" stroke-width="3" filter="url(#violetGlow)"/>
+</svg>

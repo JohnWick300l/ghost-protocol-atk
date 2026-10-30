@@ -23,6 +23,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { ModificationItem } from '../types';
+import { BackButton } from './BackButton';
 import {
   CACHE_KEYS,
   saveToCache,

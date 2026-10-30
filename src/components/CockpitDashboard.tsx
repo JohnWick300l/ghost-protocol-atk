@@ -781,37 +781,6 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
           </button>
         )}
       </div>
-
-      {/* Operator Persona Switcher */}
-      {availableUsers.length > 0 && (
-        <div className="border-t border-[#141E2E] pt-2">
-          <div className="text-[10px] font-mono text-[#94A3B8] mb-1.5 uppercase">
-            Switch Operator Profile
-          </div>
-          <div className="space-y-1 max-h-40 overflow-y-auto">
-            {availableUsers.map(user => (
-              <button
-                type="button"
-                key={user.id}
-                onClick={() => {
-                  setShowPersonaMenu(false);
-                  void switchPersona(user.id);
-                }}
-                className={`w-full text-left px-2.5 py-1.5 rounded text-xs font-mono transition-colors cursor-pointer flex items-center justify-between ${
-                  currentUser?.id === user.id
-                    ? 'bg-[#0A1424] text-[#38BDF8] font-semibold border border-[#38BDF8]/40'
-                    : 'text-[#94A3B8] hover:bg-[#070B14] hover:text-[#F8FAFC]'
-                }`}
-              >
-                <span className="truncate">{user.fullName}</span>
-                <span className="text-[10px] opacity-75 ml-2 shrink-0">
-                  {user.pilotNickname || user.role}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 
@@ -1814,10 +1783,74 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
                     ))}
                 </div>
               </div>
+
+              <div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-[#38BDF8] mb-2.5">
+                  Squadron Arcade Arena (Offline 2D Combat)
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSystemControls(false);
+                    onNavigate('squadron-showdown');
+                  }}
+                  className="w-full text-left p-3.5 rounded-lg bg-[#060A12] hover:bg-[#0B1220] border border-[#38BDF8]/50 hover:border-[#38BDF8] transition-all group cursor-pointer flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="font-sans font-bold text-xs tracking-wide uppercase text-[#38BDF8]">
+                      SQUADRON SHOWDOWN — FIGHT. RIDE. DOMINATE.
+                    </span>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[#38BDF8]" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* =====================================================================
+          SQUADRON SHOWDOWN — DEDICATED ARCADE ARENA LAUNCHER CARD
+          ===================================================================== */}
+      <div className="w-full max-w-[920px] px-4 pb-8 pt-2">
+        <div
+          data-testid="squadron-showdown-launcher-card"
+          className="relative overflow-hidden rounded-2xl border border-[#38BDF8]/40 bg-gradient-to-r from-[#050B16] via-[#0B1528] to-[#140C24] p-5 sm:p-6 shadow-[0_12px_40px_rgba(0,0,0,0.85)] flex flex-col sm:flex-row items-center justify-between gap-5"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-20 rounded-xl bg-[#03060C] border border-[#38BDF8]/40 flex items-center justify-center p-1.5 shrink-0">
+              <img
+                src="/assets/squadron-showdown/characters/dq_sprite.png"
+                alt="Squadron Showdown Fighter"
+                className="max-h-full max-w-full object-contain"
+              />
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#38BDF8]/15 border border-[#38BDF8]/40 text-[#38BDF8] font-mono text-[10px] font-bold tracking-widest uppercase mb-1">
+                <span>FIGHT. RIDE. DOMINATE. • OFFLINE 2D ARENA</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-wider text-white uppercase">
+                SQUADRON SHOWDOWN
+              </h2>
+              <p className="text-xs sm:text-sm text-[#CBD5E1] mt-0.5">
+                Enter the arena. Challenge the squadron. Your squadron. Your fighter. Your battle.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            data-testid="enter-arena-btn"
+            onClick={() => {
+              playTacticalClick();
+              onNavigate('squadron-showdown');
+            }}
+            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-[#38BDF8] to-[#2563EB] hover:from-[#7DD3FC] hover:to-[#3B82F6] text-[#020408] font-black tracking-wider text-xs sm:text-sm uppercase shadow-[0_0_24px_rgba(56,189,248,0.35)] transition cursor-pointer shrink-0"
+          >
+            ENTER ARENA →
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

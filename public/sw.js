@@ -1,12 +1,24 @@
 // GHOST PROTOCOL - Offline-First Service Worker (PWA & Tactical Field Cache)
-const CACHE_NAME = 'ghost-protocol-shell-v3';
-const DATA_CACHE_NAME = 'ghost-protocol-data-v3';
-const TILE_CACHE_NAME = 'ghost-protocol-tiles-v3';
+const CACHE_NAME = 'ghost-protocol-shell-v4';
+const DATA_CACHE_NAME = 'ghost-protocol-data-v4';
+const TILE_CACHE_NAME = 'ghost-protocol-tiles-v4';
 
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/assets/squadron-showdown/characters/naresh_clean.png',
+  '/assets/squadron-showdown/characters/lexi_clean.png',
+  '/assets/squadron-showdown/characters/penguin_bhai_clean.png',
+  '/assets/squadron-showdown/characters/girimon_clean.png',
+  '/assets/squadron-showdown/characters/dq_sprite.png',
+  '/assets/aistudio/dheeraj_b0cdc76b.png',
+  '/assets/aistudio/vijay_e1402ef4.png',
+  '/assets/aistudio/anhiyan_9b0cd04d.png',
+  '/assets/squadron-showdown/characters/fighter_009_kael.svg',
+  '/assets/squadron-showdown/characters/fighter_010_zara.svg',
+  '/assets/squadron-showdown/characters/fighter_011_rex.svg',
+  '/assets/squadron-showdown/characters/fighter_012_kenji.svg'
 ];
 
 const CACHEABLE_API_PREFIXES = [

@@ -3,6 +3,7 @@ import { Building2, Plus, Star, CheckCircle2, MapPin, Search, ThumbsUp, ThumbsDo
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { ServiceReview } from '../types';
+import { BackButton } from './BackButton';
 import {
   CACHE_KEYS,
   saveToCache,
@@ -34,7 +35,7 @@ export const ServiceIntelligence: React.FC = () => {
   const initialDraft = loadFormDraft(DRAFT_KEY, {
     serviceCentreName: 'Ultraviolette Bengaluru Flagship Hangar (Indiranagar)',
     generalLocation: 'Bengaluru, Karnataka',
-    motorcycleModel: 'F77 MACH 2 Recon',
+    motorcycleModel: 'F77',
     visitDate: new Date().toISOString().split('T')[0],
     issueReported: '',
     workPerformed: '',

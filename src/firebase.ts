@@ -72,9 +72,57 @@ export function handleFirestoreError(
 async function testConnection() {
   if (typeof window === 'undefined') return;
   try {
+    // Wait for auth to resolve persisted session so we don't race against token refresh
+    if (typeof (auth as any).authStateReady === 'function') {
+      try {
+        await auth.authStateReady();
+      } catch {
+        // Ignore authStateReady rejection
+      }
+    }
+
+    // Proactively check if the restored user has an active token or disabled token service API
+    if (auth.currentUser) {
+      try {
+        await auth.currentUser.getIdToken();
+      } catch (tokenErr: unknown) {
+        const tokenMsg = tokenErr instanceof Error ? tokenErr.message : String(tokenErr);
+        if (tokenMsg.includes('token-service-api') || tokenMsg.includes('securetoken')) {
+          console.warn('Google Cloud Token Service API is disabled on project. Clearing stale session:', tokenMsg);
+          try {
+            await signOut(auth);
+          } catch {
+            // Ignore signout error
+          }
+        }
+      }
+    }
+
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
+      // Check if the offline state was caused by an invalid/broken auth token (e.g. disabled securetoken.googleapis.com)
+      if (auth.currentUser) {
+        try {
+          await auth.currentUser.getIdToken();
+        } catch (tokenErr: unknown) {
+          const tokenMsg = tokenErr instanceof Error ? tokenErr.message : String(tokenErr);
+          if (tokenMsg.includes('token-service-api') || tokenMsg.includes('securetoken')) {
+            console.warn('Signing out user due to disabled token service API on project:', tokenMsg);
+            try {
+              await signOut(auth);
+              // Retry connection check as unauthenticated client
+              await getDocFromServer(doc(db, 'test', 'connection'));
+              return;
+            } catch (retryErr) {
+              if (retryErr instanceof Error && !retryErr.message.includes('the client is offline')) {
+                // Online backend reached successfully (e.g. PERMISSION_DENIED on /test/connection)
+                return;
+              }
+            }
+          }
+        }
+      }
       console.error('Please check your Firebase configuration.');
     }
   }
@@ -82,11 +130,43 @@ async function testConnection() {
 
 void testConnection();
 
+// Auto-heal broken auth sessions on startup if Token Service API is disabled
+if (typeof window !== 'undefined') {
+  auth.onAuthStateChanged(async (user) => {
+    if (user) {
+      try {
+        await user.getIdToken();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('token-service-api') || msg.includes('securetoken.googleapis.com')) {
+          console.warn('Google Cloud Token Service API (securetoken.googleapis.com) is disabled on project. Clearing stale session:', msg);
+          try {
+            await signOut(auth);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+  });
+}
+
 export async function signInWithGoogleForCloudSync(): Promise<FirebaseUser | null> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  const cred = await signInWithPopup(auth, provider);
-  return cred.user;
+  try {
+    const cred = await signInWithPopup(auth, provider);
+    return cred.user;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('token-service-api') || msg.includes('securetoken.googleapis.com')) {
+      const detailedMsg =
+        'Google Cloud Token Service API (securetoken.googleapis.com) is disabled on project 214972545002. Please enable it in Google Cloud Console: https://console.developers.google.com/apis/api/securetoken.googleapis.com/overview?project=214972545002';
+      console.error(detailedMsg);
+      throw new Error(detailedMsg);
+    }
+    throw err;
+  }
 }
 
 export async function signOutFromFirebaseCloudSync(): Promise<void> {

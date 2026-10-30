@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Shield,
+  ShieldCheck,
+  ShieldAlert,
   UserCheck,
   CheckCircle2,
   XCircle,
@@ -30,6 +32,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { User, JetEngineerSubmission, TelemetryConfig, EmergencyRequest } from '../types';
+import { BackButton } from './BackButton';
 import {
   CACHE_KEYS,
   saveToCache,
@@ -46,6 +49,7 @@ import {
   DEFAULT_CONTRIBUTION_CONFIG,
   sanitizeContributionConfig,
   redactContributionForPublicWall,
+  VALID_ADMIN_PERMISSIONS,
   type ContributionConfig,
   type ContributionRecord
 } from '../utils/rules';
@@ -71,7 +75,8 @@ export const AdminCentre: React.FC = () => {
     availableUsers,
     refreshUsers,
     openAuthModal,
-    issueSetupToken,
+    appointAdmin,
+    revokeAdmin,
     updatePilotNickname,
     permanentlyRemoveUser
   } = useAuth();
@@ -89,12 +94,6 @@ export const AdminCentre: React.FC = () => {
   const [activeSection, setActiveSection] = useState<
     'registrations' | 'jet_submissions' | 'telemetry_config' | 'contribution_config' | 'audit'
   >('registrations');
-  const [issuedTokenInfo, setIssuedTokenInfo] = useState<{
-    userId: string;
-    userName: string;
-    token: string;
-    expiresAt: string;
-  } | null>(null);
 
   // Owner Pilot Nickname modal state
   const [editingNicknameUser, setEditingNicknameUser] = useState<User | null>(null);
@@ -113,6 +112,7 @@ export const AdminCentre: React.FC = () => {
   const [removingInProgress, setRemovingInProgress] = useState(false);
   const [removalError, setRemovalError] = useState<string | null>(null);
   const [removalBannerMessage, setRemovalBannerMessage] = useState<string | null>(null);
+  const [ownerActionMessage, setOwnerActionMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Telemetry configuration state
   const [telemetryConfig, setTelemetryConfig] = useState<TelemetryConfig>({
@@ -503,18 +503,50 @@ export const AdminCentre: React.FC = () => {
     }
   };
 
-  const handleIssueSetupToken = async (targetUser: User) => {
+  const handleAppointAdmin = async (targetUser: User) => {
+    if (!currentUser?.isOwner) return;
     playTacticalClick();
-    const res = await issueSetupToken(targetUser.id);
-    if (res.success && res.setupToken) {
+    const res = await appointAdmin(
+      targetUser.id,
+      VALID_ADMIN_PERMISSIONS,
+      `Direct appointment by Owner (${currentUser.fullName || currentUser.email})`
+    );
+    if (res.success) {
       playChime();
-      setIssuedTokenInfo({
-        userId: targetUser.id,
-        userName: targetUser.fullName,
-        token: res.setupToken,
-        expiresAt: res.expiresAt || ''
+      setOwnerActionMessage({
+        text: `Successfully appointed ${targetUser.fullName || targetUser.email} as Administrator with full permissions!`,
+        type: 'success'
       });
       await fetchMetrics();
+    } else {
+      playAlert();
+      setOwnerActionMessage({
+        text: res.error || 'Failed to appoint administrator',
+        type: 'error'
+      });
+    }
+  };
+
+  const handleRevokeAdmin = async (targetUser: User) => {
+    if (!currentUser?.isOwner) return;
+    playTacticalClick();
+    const res = await revokeAdmin(
+      targetUser.id,
+      `Revoked by Owner (${currentUser.fullName || currentUser.email})`
+    );
+    if (res.success) {
+      playChime();
+      setOwnerActionMessage({
+        text: `Revoked administrator access for ${targetUser.fullName || targetUser.email}. Restored to verified member.`,
+        type: 'success'
+      });
+      await fetchMetrics();
+    } else {
+      playAlert();
+      setOwnerActionMessage({
+        text: res.error || 'Failed to revoke administrator access',
+        type: 'error'
+      });
     }
   };
 
@@ -967,28 +999,33 @@ export const AdminCentre: React.FC = () => {
             </div>
           )}
 
-          {issuedTokenInfo && (
-            <div className="p-4 rounded-lg bg-[#13161A] border border-[#E8AA45]/50 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[#E8AA45] uppercase">
-                  SINGLE-USE 24-HOUR PASSWORD SETUP TOKEN GENERATED FOR {issuedTokenInfo.userName}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIssuedTokenInfo(null)}
-                  className="text-[10px] text-[#707883] hover:text-[#F1F3F5]"
-                >
-                  DISMISS
-                </button>
+          {ownerActionMessage && (
+            <div
+              className={`p-3.5 rounded-lg border flex items-center justify-between gap-3 text-xs ${
+                ownerActionMessage.type === 'success'
+                  ? 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
+                  : 'bg-[#E04F5F]/15 border-[#E04F5F]/40 text-[#E04F5F]'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {ownerActionMessage.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-[#42B883] shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-[#E04F5F] shrink-0" />
+                )}
+                <span className="font-bold">{ownerActionMessage.text}</span>
               </div>
-              <div className="p-2.5 rounded bg-[#08090B] border border-[#282D34] text-[#42B883] font-bold select-all break-all">
-                {issuedTokenInfo.token}
-              </div>
-              <div className="text-[10px] text-[#A0A7B0]">
-                Share this token securely with the member. Only its SHA-256 hash is stored on the server; this plaintext token will not be shown again. Expires: {new Date(issuedTokenInfo.expiresAt).toLocaleString()}
-              </div>
+              <button
+                type="button"
+                onClick={() => setOwnerActionMessage(null)}
+                className="text-[10px] text-[#A0A7B0] hover:text-[#F1F3F5] uppercase font-bold"
+              >
+                DISMISS
+              </button>
             </div>
           )}
+
+
 
           {/* Pilot List */}
           <div className="divide-y divide-[#282D34] border border-[#282D34] rounded-lg overflow-hidden bg-[#0D0F12]">
@@ -1082,15 +1119,28 @@ export const AdminCentre: React.FC = () => {
                         </button>
                       )}
 
-                      {currentUser.isOwner && (
-                        <button
-                          type="button"
-                          onClick={() => handleIssueSetupToken(user)}
-                          className="px-2.5 py-1.5 rounded bg-[#E8AA45]/15 hover:bg-[#E8AA45]/25 text-[#E8AA45] border border-[#E8AA45]/40 font-bold text-[10px]"
-                          title="Generate single-use 24h setup token for this member"
-                        >
-                          ISSUE SETUP TOKEN
-                        </button>
+                      {currentUser.isOwner && !user.isOwner && (
+                        user.role === 'admin' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRevokeAdmin(user)}
+                            className="px-2.5 py-1.5 rounded bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 text-[#E04F5F] border border-[#E04F5F]/40 font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors shadow-[0_0_10px_rgba(224,79,95,0.15)]"
+                            title="Website Owner Clearance: Revoke administrator status and restore to verified member"
+                          >
+                            <ShieldAlert className="w-3.5 h-3.5 text-[#E04F5F]" />
+                            <span>REVOKE ADMIN</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleAppointAdmin(user)}
+                            className="px-2.5 py-1.5 rounded bg-[#38BDF8]/15 hover:bg-[#38BDF8]/25 text-[#38BDF8] border border-[#38BDF8]/40 font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors shadow-[0_0_10px_rgba(56,189,248,0.15)]"
+                            title="Website Owner Clearance: Appoint this user directly as Administrator"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-[#38BDF8]" />
+                            <span>APPOINT ADMIN</span>
+                          </button>
+                        )
                       )}
                       {user.verificationStatus !== 'verified' && (
                         <button

@@ -26,6 +26,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { MarketplaceItem, User } from '../types';
+import { BackButton } from './BackButton';
 import {
   MarketplaceListingType,
   extractMarketplaceItemImages,

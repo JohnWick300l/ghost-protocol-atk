@@ -9,6 +9,9 @@ import {
   calculateDistanceKm,
   isWithinAssistanceRadius,
   sortProblemsBySeverity,
+  getSeverityRank,
+  X47_PRIORITY_ISSUES_SEED,
+  F77_PRIORITY_ISSUES_SEED,
   isValidChargerSource,
   matchesChargingStationFilter,
   LEFT_MFD_SYSTEMS_ITEMS,
@@ -1581,5 +1584,136 @@ test('Mission Mode: joinSortieRoster, leaveOrBackOffSortieRoster, and validateVi
   assert.equal(invalidDest.valid, false);
 });
 
+test('Mission Mode: buildGoogleMapsUrl and buildMasterRouteGoogleMapsUrl format coordinates and stops into valid GMaps URLs', async () => {
+  const {
+    buildGoogleMapsUrl,
+    buildMasterRouteGoogleMapsUrl,
+    extractCoordinatesFromGoogleMapsUrl,
+    resolveTrueWaypointCoordinates
+  } = await import('./rules');
+  const { INDIA_TOWN_PLACE_SUGGESTIONS } = await import('./indiaLocations');
 
+  // Single waypoint coordinate URL
+  const gmapsCoord = buildGoogleMapsUrl(13.2085, 77.7082, 'Devanahalli Regroup');
+  assert.ok(gmapsCoord.includes('13.208500,77.708200'));
 
+  // Master multi-stop route linking origin, intermediate stops, charging hubs, and destination
+  const masterRoute = buildMasterRouteGoogleMapsUrl({
+    meetingPoint: {
+      name: 'Hebbal Flyover',
+      lat: 13.0358,
+      lng: 77.5970
+    },
+    destination: {
+      name: 'Nandi Hills Summit',
+      lat: 13.3702,
+      lng: 77.6835
+    },
+    stops: [
+      {
+        name: 'Devanahalli Toll Plaza',
+        lat: 13.2085,
+        lng: 77.7082
+      },
+      {
+        name: 'Indian Paratha Company',
+        lat: 13.2980,
+        lng: 77.7120
+      }
+    ],
+    chargingStops: [
+      {
+        locationName: 'Shell Highway Fast Hub',
+        lat: 13.2200,
+        lng: 77.7100
+      }
+    ]
+  });
+
+  assert.ok(masterRoute.includes('origin=13.035800%2C77.597000'));
+  assert.ok(masterRoute.includes('destination=13.370200%2C77.683500'));
+  assert.ok(masterRoute.includes('waypoints='));
+  assert.ok(masterRoute.includes('13.208500%2C77.708200'));
+  assert.ok(masterRoute.includes('13.298000%2C77.712000'));
+  assert.ok(masterRoute.includes('13.220000%2C77.710000'));
+
+  // Extract coordinates from Google Maps links
+  const parsedSearchUrl = extractCoordinatesFromGoogleMapsUrl(
+    'https://www.google.com/maps/search/?api=1&query=13.132800,78.171500'
+  );
+  assert.equal(parsedSearchUrl?.latitude, 13.1328);
+  assert.equal(parsedSearchUrl?.longitude, 78.1715);
+
+  const parsedAtUrl = extractCoordinatesFromGoogleMapsUrl(
+    'https://www.google.com/maps/place/Kolar/@13.1362,78.1291,14z/data=!3d13.1362!4d78.1291'
+  );
+  assert.equal(parsedAtUrl?.latitude, 13.1362);
+  assert.equal(parsedAtUrl?.longitude, 78.1291);
+
+  // Resolve true coordinates for Kolar, CCD Kolar, Bengaluru Hangar, Hoskote without shifting to Nandi Hills
+  const kolarCoords = resolveTrueWaypointCoordinates(
+    { name: 'Kolar' },
+    INDIA_TOWN_PLACE_SUGGESTIONS
+  );
+  assert.ok(kolarCoords);
+  assert.ok(Math.abs(kolarCoords.latitude - 13.1362) < 0.05);
+  assert.ok(Math.abs(kolarCoords.longitude - 78.1291) < 0.06);
+
+  const ccdKolarCoords = resolveTrueWaypointCoordinates(
+    { name: 'Café Coffee Day (CCD) — Kolar NH 75 Bypass' },
+    INDIA_TOWN_PLACE_SUGGESTIONS
+  );
+  assert.equal(ccdKolarCoords?.latitude, 13.1328);
+  assert.equal(ccdKolarCoords?.longitude, 78.1715);
+
+  // Guard against stale Nandi Hills default coordinates (13.3702, 77.6835) when destination is Kolar
+  const staleDefaultGuarded = resolveTrueWaypointCoordinates(
+    { name: 'Kolar', lat: 13.3702, lng: 77.6835 },
+    INDIA_TOWN_PLACE_SUGGESTIONS
+  );
+  assert.ok(staleDefaultGuarded);
+  assert.ok(Math.abs(staleDefaultGuarded.latitude - 13.1362) < 0.05);
+  assert.ok(Math.abs(staleDefaultGuarded.longitude - 78.1291) < 0.06);
+});
+
+test('X47 Priority Issues: all 17 X47 issues are present and ordered prioritywise (Critical -> High -> Moderate -> Low)', () => {
+  assert.equal(X47_PRIORITY_ISSUES_SEED.length, 17);
+  assert.ok(X47_PRIORITY_ISSUES_SEED.every(p => p.motorcycleModel === 'X47'));
+
+  const critical = X47_PRIORITY_ISSUES_SEED.filter(p => getSeverityRank(p.severity) === 1);
+  const high = X47_PRIORITY_ISSUES_SEED.filter(p => getSeverityRank(p.severity) === 2);
+  const moderate = X47_PRIORITY_ISSUES_SEED.filter(p => getSeverityRank(p.severity) === 3);
+  const low = X47_PRIORITY_ISSUES_SEED.filter(p => getSeverityRank(p.severity) === 4);
+
+  assert.equal(critical.length, 2);
+  assert.equal(high.length, 6);
+  assert.equal(moderate.length, 4);
+  assert.equal(low.length, 5);
+
+  const shuffled = [...X47_PRIORITY_ISSUES_SEED].reverse();
+  const sorted = sortProblemsBySeverity(shuffled);
+  assert.deepEqual(
+    sorted.map(p => p.id),
+    X47_PRIORITY_ISSUES_SEED.map(p => p.id)
+  );
+});
+
+test('F77 Priority Issues: all 18 F77 issues are present and ordered prioritywise (High 1-9 -> Medium 10-13 -> Low 14-18)', () => {
+  assert.equal(F77_PRIORITY_ISSUES_SEED.length, 18);
+  assert.ok(F77_PRIORITY_ISSUES_SEED.every(p => p.motorcycleModel === 'F77'));
+
+  const high = F77_PRIORITY_ISSUES_SEED.filter(p => getSeverityRank(p.severity) === 2);
+  const moderate = F77_PRIORITY_ISSUES_SEED.filter(p => getSeverityRank(p.severity) === 3);
+  const low = F77_PRIORITY_ISSUES_SEED.filter(p => getSeverityRank(p.severity) === 4);
+
+  assert.equal(high.length, 9);
+  assert.equal(moderate.length, 4);
+  assert.equal(low.length, 5);
+
+  const shuffled = [...F77_PRIORITY_ISSUES_SEED].reverse();
+  const sorted = sortProblemsBySeverity(shuffled);
+  assert.deepEqual(
+    sorted.map(p => p.id),
+    F77_PRIORITY_ISSUES_SEED.map(p => p.id)
+  );
+});

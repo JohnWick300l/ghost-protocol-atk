@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { VALID_BLOOD_GROUPS, BloodGroup } from '../utils/rules';
 import { AvionicsToggleTransition, motion } from './AvionicsTransition';
+import { BackButton } from './BackButton';
 
 export const MyGarage: React.FC = () => {
   const { currentUser, updateProfile, register, openAuthModal, changePassword } = useAuth();
@@ -25,7 +26,7 @@ export const MyGarage: React.FC = () => {
   const [regPassword, setRegPassword] = useState('');
   const [regCity, setRegCity] = useState('Bengaluru');
   const [regState, setRegState] = useState('Karnataka');
-  const [regModel, setRegModel] = useState<'F77 MACH 2' | 'F77 Recon' | 'F77 Original' | 'X47'>('F77 MACH 2');
+  const [regModel, setRegModel] = useState<'F77' | 'X47'>('F77');
   const [regVariant, setRegVariant] = useState('Recon Laser Black (10.3 kWh)');
   const [regNumber, setRegNumber] = useState('KA 01 EV 1077');
   const [regBloodGroup, setRegBloodGroup] = useState<BloodGroup>('O+');
@@ -441,10 +442,8 @@ export const MyGarage: React.FC = () => {
                   onChange={e => setRegModel(e.target.value as any)}
                   className="w-full bg-[#13161A] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
                 >
-                  <option value="F77 MACH 2">F77 MACH 2</option>
-                  <option value="F77 Recon">F77 Recon</option>
-                  <option value="F77 Original">F77 Original</option>
-                  <option value="X47">X47 Crossover</option>
+                  <option value="F77">F77</option>
+                  <option value="X47">X47</option>
                 </select>
               </div>
               <div>

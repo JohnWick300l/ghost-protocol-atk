@@ -428,7 +428,20 @@ export function initHybridDatabaseEngine(): void {
   if (initialized || typeof window === 'undefined') return;
   initialized = true;
 
-  onAuthStateChanged(auth, user => {
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      try {
+        await user.getIdToken();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('token-service-api') || msg.includes('securetoken.googleapis.com')) {
+          console.warn('Firebase Token Service API is disabled on project. Fallback to server sync:', msg);
+          currentFirebaseUser = null;
+          emitSyncStatus();
+          return;
+        }
+      }
+    }
     currentFirebaseUser = user;
     emitSyncStatus();
     if (user && user.emailVerified) {

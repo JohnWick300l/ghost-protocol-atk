@@ -308,11 +308,703 @@ export function getSeverityRank(severity: string): number {
 }
 
 /**
- * Sorts problems by severity in exact order: Critical, High, Moderate, Low, Informational
+ * Sorts problems by severity in exact order: Critical, High, Moderate, Low, Informational,
+ * preserving explicit priorityOrder within each severity tier.
  */
-export function sortProblemsBySeverity<T extends { severity: string }>(problems: T[]): T[] {
-  return [...problems].sort((a, b) => getSeverityRank(a.severity) - getSeverityRank(b.severity));
+export function sortProblemsBySeverity<T extends { severity: string; priorityOrder?: number }>(problems: T[]): T[] {
+  return [...problems].sort((a, b) => {
+    const rankDiff = getSeverityRank(a.severity) - getSeverityRank(b.severity);
+    if (rankDiff !== 0) return rankDiff;
+    const orderA = typeof a.priorityOrder === 'number' ? a.priorityOrder : 9999;
+    const orderB = typeof b.priorityOrder === 'number' ? b.priorityOrder : 9999;
+    return orderA - orderB;
+  });
 }
+
+export interface SeedPriorityProblem {
+  id: string;
+  priorityOrder: number;
+  userId: string;
+  reporterName: string;
+  motorcycleModel: 'X47' | 'F77' | string;
+  variant?: string;
+  category:
+    | 'Battery & Power'
+    | 'Motor & Drivetrain'
+    | 'Console & Software'
+    | 'Braking & ABS'
+    | 'Suspension & Chassis'
+    | 'Charging System';
+  title: string;
+  description: string;
+  firstObservedDate: string;
+  warningMessageOrCode?: string;
+  severity: 'Informational' | 'Low' | 'Moderate' | 'High' | 'Critical / Safety-Related';
+  isRecurring: boolean;
+  troubleshootingAttempted?: string;
+  serviceVisits?: string;
+  status: 'Reported' | 'Under Investigation' | 'Service Scheduled' | 'Resolved' | 'Recurring';
+  updates: {
+    id: string;
+    authorName: string;
+    date: string;
+    note: string;
+  }[];
+  createdAt: string;
+}
+
+export const X47_PRIORITY_ISSUES_SEED: SeedPriorityProblem[] = [
+  // 🔴 Critical Priority
+  {
+    id: 'prob_x47_crit_01',
+    priorityOrder: 1,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Motor & Drivetrain',
+    title: 'Random bike immobilisation while riding, which can be life-threatening at high speeds.',
+    description: 'Random bike immobilisation while riding, which can be life-threatening at high speeds.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'CRITICAL PRIORITY • DRIVETRAIN / CUTOFF',
+    severity: 'Critical / Safety-Related',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T10:01:00Z'
+  },
+  {
+    id: 'prob_x47_crit_02',
+    priorityOrder: 2,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Motor & Drivetrain',
+    title: 'Random instances where the bike’s switches and throttle become unresponsive.',
+    description: 'Random instances where the bike’s switches and throttle become unresponsive.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'CRITICAL PRIORITY • SWITCHGEAR & THROTTLE',
+    severity: 'Critical / Safety-Related',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T10:02:00Z'
+  },
+
+  // 🟠 High Priority
+  {
+    id: 'prob_x47_high_01',
+    priorityOrder: 3,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'Map functionality not working or continuously loading on most bikes.',
+    description: 'Map functionality not working or continuously loading on most bikes.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH PRIORITY • CONSOLE NAVIGATION',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T10:03:00Z'
+  },
+  {
+    id: 'prob_x47_high_02',
+    priorityOrder: 4,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Battery & Power',
+    title: 'Bike sometimes refusing to turn on.',
+    description: 'Bike sometimes refusing to turn on.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH PRIORITY • POWER / IGNITION',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T10:04:00Z'
+  },
+  {
+    id: 'prob_x47_high_03',
+    priorityOrder: 5,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'App-bike synchronisation issues, with the app unable to fetch bike data reliably.',
+    description: 'App-bike synchronisation issues, with the app unable to fetch bike data reliably.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH PRIORITY • APP-BIKE TELEMETRY SYNC',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T10:05:00Z'
+  },
+  {
+    id: 'prob_x47_high_04',
+    priorityOrder: 6,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'New app update causing excessive phone battery drain.',
+    description: 'New app update causing excessive phone battery drain.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH PRIORITY • MOBILE APP BATTERY DRAIN',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T10:06:00Z'
+  },
+  {
+    id: 'prob_x47_high_05',
+    priorityOrder: 7,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'App widget only working when the app is running in the background or foreground.',
+    description: 'App widget only working when the app is running in the background or foreground.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH PRIORITY • MOBILE APP WIDGET',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T10:07:00Z'
+  },
+  {
+    id: 'prob_x47_high_06',
+    priorityOrder: 8,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'RC delay in processing for both digilocker and physical RC',
+    description: 'RC delay in processing for both digilocker and physical RC',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH PRIORITY • REGISTRATION & RC PROCESSING',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:08:00Z'
+  },
+
+  // 🟡 Moderate Priority
+  {
+    id: 'prob_x47_mod_01',
+    priorityOrder: 9,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'No standardised service experience at Space Stations operated by third-party franchise owners. Service quality, processes, and customer experience vary, with no consistent standard across locations.',
+    description: 'No standardised service experience at Space Stations operated by third-party franchise owners. Service quality, processes, and customer experience vary, with no consistent standard across locations.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'MODERATE PRIORITY • SPACE STATION FRANCHISE STANDARDS',
+    severity: 'Moderate',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:09:00Z'
+  },
+  {
+    id: 'prob_x47_mod_02',
+    priorityOrder: 10,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'Lack of clear communication and transparency regarding recurring technical issues and their resolution.',
+    description: 'Lack of clear communication and transparency regarding recurring technical issues and their resolution.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'MODERATE PRIORITY • TECHNICAL TRANSPARENCY',
+    severity: 'Moderate',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:10:00Z'
+  },
+  {
+    id: 'prob_x47_mod_03',
+    priorityOrder: 11,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'No detailed changelog or proper documentation of bug fixes with software updates. Updates are being rolled out without clearly communicating which bugs have been fixed, what issues remain, or what changes have been made. The current process feels ad hoc, with owners left guessing what has actually been addressed.',
+    description: 'No detailed changelog or proper documentation of bug fixes with software updates. Updates are being rolled out without clearly communicating which bugs have been fixed, what issues remain, or what changes have been made. The current process feels ad hoc, with owners left guessing what has actually been addressed.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'MODERATE PRIORITY • OTA UPDATE CHANGELOGS',
+    severity: 'Moderate',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:11:00Z'
+  },
+  {
+    id: 'prob_x47_mod_04',
+    priorityOrder: 12,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'No clear tracking or communication of previously reported bugs across software updates.',
+    description: 'No clear tracking or communication of previously reported bugs across software updates.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'MODERATE PRIORITY • BUG TRACKING ACROSS UPDATES',
+    severity: 'Moderate',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:12:00Z'
+  },
+
+  // 🟣 Low Priority
+  {
+    id: 'prob_x47_low_01',
+    priorityOrder: 13,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Charging System',
+    title: 'Boost parallel charging was promised around a year ago, but there has been no meaningful update on its rollout.',
+    description: 'Boost parallel charging was promised around a year ago, but there has been no meaningful update on its rollout.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW PRIORITY • BOOST PARALLEL CHARGING ROLLOUT',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:13:00Z'
+  },
+  {
+    id: 'prob_x47_low_02',
+    priorityOrder: 14,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Console & Software',
+    title: 'Display water-resistance concerns, with owners worried about using the bike in heavy rain.',
+    description: 'Display water-resistance concerns, with owners worried about using the bike in heavy rain.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW PRIORITY • DISPLAY WATER-RESISTANCE',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:14:00Z'
+  },
+  {
+    id: 'prob_x47_low_03',
+    priorityOrder: 15,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Charging System',
+    title: 'No reliable, up-to-date information on charging infrastructure.',
+    description: 'No reliable, up-to-date information on charging infrastructure.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW PRIORITY • CHARGING INFRASTRUCTURE INFO',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:15:00Z'
+  },
+  {
+    id: 'prob_x47_low_04',
+    priorityOrder: 16,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Charging System',
+    title: 'Chargers frequently appear dead, offline, or removed, with no clear communication on when they will be restored.',
+    description: 'Chargers frequently appear dead, offline, or removed, with no clear communication on when they will be restored.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW PRIORITY • OFFLINE / REMOVED CHARGERS',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:16:00Z'
+  },
+  {
+    id: 'prob_x47_low_05',
+    priorityOrder: 17,
+    userId: 'u_admin',
+    reporterName: 'X47 Owners Collective',
+    motorcycleModel: 'X47',
+    variant: 'X47 All Variants',
+    category: 'Charging System',
+    title: 'No estimated restoration timelines or proactive status updates, making it extremely difficult for owners to plan rides reliably.',
+    description: 'No estimated restoration timelines or proactive status updates, making it extremely difficult for owners to plan rides reliably.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW PRIORITY • CHARGER RESTORATION TIMELINES',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T10:17:00Z'
+  }
+];
+
+export const F77_PRIORITY_ISSUES_SEED: SeedPriorityProblem[] = [
+  // 🟠 High-Priority Issues (1 - 9)
+  {
+    id: 'prob_f77_high_01',
+    priorityOrder: 101,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Motor & Drivetrain',
+    title: '1. Chain slider damage and premature wear.',
+    description: '1. Chain slider damage and premature wear.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH-PRIORITY • DRIVETRAIN / CHAIN SLIDER',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T11:01:00Z'
+  },
+  {
+    id: 'prob_f77_high_02',
+    priorityOrder: 102,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Suspension & Chassis',
+    title: '2. Weak footpeg mounting points (front and rear).',
+    description: '2. Weak footpeg mounting points (front and rear).',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH-PRIORITY • CHASSIS / FOOTPEG MOUNTS',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T11:02:00Z'
+  },
+  {
+    id: 'prob_f77_high_03',
+    priorityOrder: 103,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Console & Software',
+    title: '3. Display malfunction due to water ingress.',
+    description: '3. Display malfunction due to water ingress.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH-PRIORITY • TFT DISPLAY WATER INGRESS',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T11:03:00Z'
+  },
+  {
+    id: 'prob_f77_high_04',
+    priorityOrder: 104,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Console & Software',
+    title: '4. Crash detection system not functioning reliably.',
+    description: '4. Crash detection system not functioning reliably.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH-PRIORITY • CRASH DETECTION SENSOR',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T11:04:00Z'
+  },
+  {
+    id: 'prob_f77_high_05',
+    priorityOrder: 105,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Braking & ABS',
+    title: '5. Sudden loss of regenerative braking.',
+    description: '5. Sudden loss of regenerative braking.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH-PRIORITY • REGENERATIVE BRAKING LOSS',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T11:05:00Z'
+  },
+  {
+    id: 'prob_f77_high_06',
+    priorityOrder: 106,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Suspension & Chassis',
+    title: '6. Concerns about wheel rim strength and durability.',
+    description: '6. Concerns about wheel rim strength and durability.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH-PRIORITY • WHEEL RIM DURABILITY',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T11:06:00Z'
+  },
+  {
+    id: 'prob_f77_high_07',
+    priorityOrder: 107,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Battery & Power',
+    title: '7. Weak stock headlight illumination.',
+    description: '7. Weak stock headlight illumination.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH-PRIORITY • HEADLIGHT ILLUMINATION',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T11:07:00Z'
+  },
+  {
+    id: 'prob_f77_high_08',
+    priorityOrder: 108,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Suspension & Chassis',
+    title: '8. Loose indicator mounts and tail assembly.',
+    description: '8. Loose indicator mounts and tail assembly.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH-PRIORITY • INDICATOR & TAIL ASSEMBLY',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T11:08:00Z'
+  },
+  {
+    id: 'prob_f77_high_09',
+    priorityOrder: 109,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Console & Software',
+    title: '9. Delayed horn response.',
+    description: '9. Delayed horn response.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'HIGH-PRIORITY • SWITCHGEAR / HORN LATENCY',
+    severity: 'High',
+    isRecurring: true,
+    status: 'Under Investigation',
+    updates: [],
+    createdAt: '2026-10-29T11:09:00Z'
+  },
+
+  // 🟡 Medium-Priority Issues (10 - 13)
+  {
+    id: 'prob_f77_mod_10',
+    priorityOrder: 110,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Console & Software',
+    title: '10. Ultraviolette mobile app issues.',
+    description: '10. Ultraviolette mobile app issues.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'MEDIUM-PRIORITY • UV MOBILE APP',
+    severity: 'Moderate',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T11:10:00Z'
+  },
+  {
+    id: 'prob_f77_mod_11',
+    priorityOrder: 111,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Console & Software',
+    title: '11. Mappls navigation issues.',
+    description: '11. Mappls navigation issues.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'MEDIUM-PRIORITY • MAPPLS NAVIGATION',
+    severity: 'Moderate',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T11:11:00Z'
+  },
+  {
+    id: 'prob_f77_mod_12',
+    priorityOrder: 112,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Suspension & Chassis',
+    title: '12. Tight or sticking keyhole.',
+    description: '12. Tight or sticking keyhole.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'MEDIUM-PRIORITY • IGNITION KEYHOLE',
+    severity: 'Moderate',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T11:12:00Z'
+  },
+  {
+    id: 'prob_f77_mod_13',
+    priorityOrder: 113,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Console & Software',
+    title: "13. Non-functional music controls despite being mentioned in the owner's manual.",
+    description: "13. Non-functional music controls despite being mentioned in the owner's manual.",
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'MEDIUM-PRIORITY • CONSOLE MUSIC CONTROLS',
+    severity: 'Moderate',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T11:13:00Z'
+  },
+
+  // 🟣 Low-Priority / Owner-Manageable Issues (14 - 18)
+  {
+    id: 'prob_f77_low_14',
+    priorityOrder: 114,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Suspension & Chassis',
+    title: '14. Paint peeling or wearing off around the adjuster and Ultraviolette logo.',
+    description: '14. Paint peeling or wearing off around the adjuster and Ultraviolette logo.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW-PRIORITY / OWNER-MANAGEABLE • PAINT & FINISH',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T11:14:00Z'
+  },
+  {
+    id: 'prob_f77_low_15',
+    priorityOrder: 115,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Suspension & Chassis',
+    title: '15. Mirrors providing inadequate rear visibility.',
+    description: '15. Mirrors providing inadequate rear visibility.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW-PRIORITY / OWNER-MANAGEABLE • REAR MIRROR VISIBILITY',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T11:15:00Z'
+  },
+  {
+    id: 'prob_f77_low_16',
+    priorityOrder: 116,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Suspension & Chassis',
+    title: '16. Seat comfort issues, particularly on longer rides.',
+    description: '16. Seat comfort issues, particularly on longer rides.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW-PRIORITY / OWNER-MANAGEABLE • SEAT ERGONOMICS',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T11:16:00Z'
+  },
+  {
+    id: 'prob_f77_low_17',
+    priorityOrder: 117,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Suspension & Chassis',
+    title: '17. Ultraviolette logo coming off.',
+    description: '17. Ultraviolette logo coming off.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW-PRIORITY / OWNER-MANAGEABLE • BADGE / LOGO ADHESION',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T11:17:00Z'
+  },
+  {
+    id: 'prob_f77_low_18',
+    priorityOrder: 118,
+    userId: 'u_admin',
+    reporterName: 'F77 Owners Collective',
+    motorcycleModel: 'F77',
+    variant: 'F77 Original / MACH 2 / Recon',
+    category: 'Suspension & Chassis',
+    title: '18. Key occasionally getting stuck.',
+    description: '18. Key occasionally getting stuck.',
+    firstObservedDate: '2026-10-29',
+    warningMessageOrCode: 'LOW-PRIORITY / OWNER-MANAGEABLE • KEY RETENTION',
+    severity: 'Low',
+    isRecurring: true,
+    status: 'Reported',
+    updates: [],
+    createdAt: '2026-10-29T11:18:00Z'
+  }
+];
+
+export const ALL_PRIORITY_ISSUES_SEED: SeedPriorityProblem[] = [
+  ...X47_PRIORITY_ISSUES_SEED,
+  ...F77_PRIORITY_ISSUES_SEED
+];
 
 export type ChargerSource = 'Supernova' | '3rd Party Station' | 'Community Provided Charger';
 
@@ -1588,6 +2280,169 @@ export const VERIFIED_INDIA_PLACES_DIRECTORY: PlaceSuggestion[] = [
     category: 'Mall & Commercial Building',
     latitude: 10.0261,
     longitude: 76.3125
+  },
+  // Iconic Riding Destinations, Hills, Toll Gates & Highway Waypoints
+  {
+    id: 'poi_nandi_hills_summit',
+    name: 'Nandi Hills Summit Parking Gate',
+    locality: 'Nandi Hills, Chikkaballapur, Karnataka',
+    address: 'Nandi Hills Summit Viewpoint & Fortress Gate, Chikkaballapur District, Karnataka 562103',
+    category: 'Hill Station & Viewpoint',
+    latitude: 13.3702,
+    longitude: 77.6835
+  },
+  {
+    id: 'poi_blr_hebbal_flyover',
+    name: 'Hebbal Flyover Service Lane, Bengaluru',
+    locality: 'Hebbal NH 44, Bengaluru, Karnataka',
+    address: 'Bellary Road (NH 44) Northbound Service Lane, Hebbal Flyover, Bengaluru, Karnataka 560024',
+    category: 'Meeting Point & Highway Junction',
+    latitude: 13.0358,
+    longitude: 77.5970
+  },
+  {
+    id: 'poi_blr_nelamangala_toll',
+    name: 'Nelamangala Expressway Toll Gate',
+    locality: 'Nelamangala NH 48 / NH 75, Bengaluru, Karnataka',
+    address: 'Bengaluru–Mangaluru Highway (NH 75) Toll Plaza, Nelamangala, Bengaluru, Karnataka 562123',
+    category: 'Meeting Point & Toll Plaza',
+    latitude: 13.0335,
+    longitude: 77.3986
+  },
+  {
+    id: 'poi_devanahalli_ipc',
+    name: 'Indian Paratha Company (IPC) — Devanahalli Nandi Cross',
+    locality: 'Karahalli Cross, Devanahalli, Karnataka',
+    address: 'NH 44 Bellary Road, Ghati Subramanya Road Cross, Devanahalli, Karnataka 562110',
+    category: 'Restaurant & Highway Breakfast Stop',
+    latitude: 13.2980,
+    longitude: 77.7120
+  },
+  {
+    id: 'poi_hoskote_toll',
+    name: 'Hoskote Highway Toll Plaza & Junction',
+    locality: 'Hoskote NH 75, Bengaluru East, Karnataka',
+    address: 'Old Madras Road (NH 75), Hoskote Town Bypass, Bengaluru Rural, Karnataka 562114',
+    category: 'Town & Highway Waypoint',
+    latitude: 13.0730,
+    longitude: 77.7921
+  },
+  {
+    id: 'poi_kunigal_bypass',
+    name: 'Kunigal Lake View Regroup Point & Café Coffee Day',
+    locality: 'Kunigal NH 75 Bypass, Tumakuru, Karnataka',
+    address: 'NH 75 Bengaluru–Hassan Highway Bypass, Kunigal, Karnataka 572130',
+    category: 'Highway Stop & Lake View',
+    latitude: 12.9860,
+    longitude: 76.9920
+  },
+  {
+    id: 'poi_hassan_highway_hub',
+    name: 'Hassan Highway EV Hub & Bypass Plaza',
+    locality: 'BM Road, Hassan Bypass, Karnataka',
+    address: 'NH 75 Bengaluru–Mangaluru Highway Bypass, Hassan, Karnataka 573201',
+    category: 'EV Charging Station & Highway Hub',
+    latitude: 13.0070,
+    longitude: 76.0960
+  },
+  {
+    id: 'poi_sakleshpur_viewpoint',
+    name: 'Sakleshpur Valley Viewpoint & Manjarabad Fort',
+    locality: 'Sakleshpur Western Ghats, Hassan, Karnataka',
+    address: 'NH 75 Shiradi Ghat Crest, Sakleshpur, Hassan District, Karnataka 573134',
+    category: 'Hill Station & Ghat Viewpoint',
+    latitude: 12.9698,
+    longitude: 75.7874
+  },
+  {
+    id: 'poi_chikmagalur_mullayanagiri',
+    name: 'Mullayanagiri Peak & Chikmagalur Coffee Trail',
+    locality: 'Chikkamagaluru, Karnataka',
+    address: 'Mullayanagiri Summit Road, Baba Budangiri Range, Chikkamagaluru, Karnataka 577101',
+    category: 'Hill Station & Mountain Peak',
+    latitude: 13.3909,
+    longitude: 75.7214
+  },
+  {
+    id: 'poi_coorg_madikeri',
+    name: 'Madikeri Glass Bridge & Coorg Raja Seat',
+    locality: 'Madikeri, Coorg (Kodagu), Karnataka',
+    address: 'Stuart Hill, Raja Seat Road, Madikeri, Kodagu District, Karnataka 571201',
+    category: 'Hill Station & Viewpoint',
+    latitude: 12.4244,
+    longitude: 75.7382
+  },
+  {
+    id: 'poi_mysuru_palace',
+    name: 'Mysuru Palace & Chamundi Foothills',
+    locality: 'Agrahara, Mysuru (Mysore), Karnataka',
+    address: 'Sayyaji Rao Road, Agrahara, Chamrajpura, Mysuru, Karnataka 570001',
+    category: 'City & Heritage Landmark',
+    latitude: 12.3051,
+    longitude: 76.6551
+  },
+  {
+    id: 'poi_lepakshi_temple',
+    name: 'Lepakshi Veerabhadra Temple & Nandi Monolith',
+    locality: 'Lepakshi, Sri Sathya Sai District, Andhra Pradesh',
+    address: 'NH 44 Kodikonda Checkpost Turnoff, Lepakshi, Andhra Pradesh 515331',
+    category: 'Heritage Temple & Ride Destination',
+    latitude: 13.8037,
+    longitude: 77.6094
+  },
+  {
+    id: 'poi_ooty_nilgiris',
+    name: 'Ooty Doddabetta Peak & Nilgiri Ghats',
+    locality: 'Udhagamandalam (Ooty), Nilgiris, Tamil Nadu',
+    address: 'Charing Cross & Doddabetta Road, Ooty, Nilgiris District, Tamil Nadu 643001',
+    category: 'Hill Station & Ghats',
+    latitude: 11.4102,
+    longitude: 76.6950
+  },
+  {
+    id: 'poi_yercaud_loop',
+    name: 'Yercaud 20-Hairpin Ghat & Emerald Lake',
+    locality: 'Yercaud, Salem, Tamil Nadu',
+    address: 'Shevaroy Hills Ghat Road, Yercaud, Salem District, Tamil Nadu 636601',
+    category: 'Hill Station & Ghats',
+    latitude: 11.7753,
+    longitude: 78.2093
+  },
+  {
+    id: 'poi_munnar_hills',
+    name: 'Munnar Top Station & Tea Valley Ghats',
+    locality: 'Munnar, Idukki, Kerala',
+    address: 'Munnar–Mattupetty Road, Kannan Devan Hills, Munnar, Kerala 685612',
+    category: 'Hill Station & Tea Estates',
+    latitude: 10.0889,
+    longitude: 77.0595
+  },
+  {
+    id: 'poi_wayanad_lakkidi',
+    name: 'Wayanad Lakkidi Viewpoint & Thamarassery Churam',
+    locality: 'Kalpetta / Lakkidi, Wayanad, Kerala',
+    address: 'NH 766 Lakkidi Ghat Viewpoint, Wayanad District, Kerala 673576',
+    category: 'Hill Station & Ghat Viewpoint',
+    latitude: 11.5124,
+    longitude: 76.0191
+  },
+  {
+    id: 'poi_horsley_hills',
+    name: 'Horsley Hills Viewpoint & Whispering Winds',
+    locality: 'Madanapalle, Annamayya District, Andhra Pradesh',
+    address: 'Horsley Hills Ghat Road, Madanapalle, Andhra Pradesh 517325',
+    category: 'Hill Station & Viewpoint',
+    latitude: 13.6601,
+    longitude: 78.3995
+  },
+  {
+    id: 'poi_yelagiri_hills',
+    name: 'Yelagiri Hills 14-Hairpin Bend Summit',
+    locality: 'Yelagiri, Tirupattur, Tamil Nadu',
+    address: 'Ponneri–Yelagiri Ghat Road, Athanavoor, Tamil Nadu 635853',
+    category: 'Hill Station & Ghats',
+    latitude: 12.5794,
+    longitude: 78.6385
   }
 ];
 
@@ -5269,7 +6124,10 @@ export interface VisitedDestinationSubmissionInput {
   chargingOptionsOnWay?: unknown;
   chargingAvailable?: unknown;
   chargerTypesAvailable?: unknown;
+  chargerTypesUsed?: unknown;
   locationMapUrl?: unknown;
+  customPhotoUrl?: unknown;
+  uploadedPhotos?: unknown;
   photos?: unknown;
   presetTheme?: DestinationPresetTheme;
   routeSummary?: unknown;
@@ -5333,9 +6191,13 @@ export function validateVisitedDestinationSubmission(
     normalizedMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rawMapLink)}`;
   }
 
-  const rawPhotos = Array.isArray(input.photos) ? input.photos : [];
+  const rawPhotoList: unknown[] = [
+    ...(Array.isArray(input.photos) ? input.photos : []),
+    ...(Array.isArray(input.uploadedPhotos) ? input.uploadedPhotos : []),
+    ...(typeof input.customPhotoUrl === 'string' && input.customPhotoUrl.trim() ? [input.customPhotoUrl.trim()] : [])
+  ];
   const cleanedPhotos: string[] = [];
-  for (const p of rawPhotos) {
+  for (const p of rawPhotoList) {
     if (typeof p === 'string') {
       const trimmed = p.trim();
       if (trimmed.startsWith('data:image/') || /^https?:\/\//i.test(trimmed)) {
@@ -5349,8 +6211,9 @@ export function validateVisitedDestinationSubmission(
     );
   }
 
-  const chargerTypesAvailable = Array.isArray(input.chargerTypesAvailable)
-    ? input.chargerTypesAvailable
+  const rawChargers = input.chargerTypesAvailable ?? input.chargerTypesUsed;
+  const chargerTypesAvailable = Array.isArray(rawChargers)
+    ? rawChargers
         .filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
         .map(c => c.trim())
     : ['UV Supernova / Fast Charger', '15A 3-Pin Socket'];
@@ -5466,5 +6329,467 @@ export const DEFAULT_VISITED_DESTINATIONS: VisitedDestinationRecord[] = [
     createdAt: '2026-10-22T07:45:00.000Z'
   }
 ];
+
+/**
+ * Extracts valid geographic coordinates (lat, lng) from a Google Maps URL or coordinate string.
+ * Supports:
+ * - ?query=lat,lng / &q=lat,lng / ?ll=lat,lng / &destination=lat,lng / &origin=lat,lng
+ * - !3d<lat>!4d<lng> (Google Maps exact place pin coordinates)
+ * - /@<lat>,<lng> (Google Maps viewport/place URL)
+ * - /search/<lat>,<lng> or /dir/.../<lat>,<lng>
+ * - Raw coordinate text such as "13.0730, 77.7921" or "13.0730°N, 77.7921°E"
+ */
+export function extractCoordinatesFromGoogleMapsUrl(
+  rawUrl?: string | null
+): { lat: number; lng: number; latitude: number; longitude: number } | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  let decoded = rawUrl.trim();
+  if (!decoded) return null;
+
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // Keep original if percent-decoding fails
+  }
+
+  const isValidLatLng = (lat: number, lng: number): boolean =>
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001);
+
+  const makeResult = (lat: number, lng: number) => {
+    const cleanLat = Number(lat.toFixed(6));
+    const cleanLng = Number(lng.toFixed(6));
+    return { lat: cleanLat, lng: cleanLng, latitude: cleanLat, longitude: cleanLng };
+  };
+
+  // 1. Exact pin data parameter: !3d<lat>!4d<lng> (use last occurrence in URL for destination/pin)
+  const bangMatches = Array.from(
+    decoded.matchAll(/!3d([+-]?\d+(?:\.\d+)?)!4d([+-]?\d+(?:\.\d+)?)/g)
+  );
+  if (bangMatches.length > 0) {
+    const last = bangMatches[bangMatches.length - 1];
+    const lat = Number(last[1]);
+    const lng = Number(last[2]);
+    if (isValidLatLng(lat, lng)) {
+      return makeResult(lat, lng);
+    }
+  }
+
+  // 2. Query parameters: query=lat,lng | q=lat,lng | destination=lat,lng | origin=lat,lng | ll=lat,lng | center=lat,lng
+  const paramMatch = decoded.match(
+    /[?&](?:query|q|destination|origin|ll|center|daddr|saddr)=([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)/i
+  );
+  if (paramMatch) {
+    const lat = Number(paramMatch[1]);
+    const lng = Number(paramMatch[2]);
+    if (isValidLatLng(lat, lng)) {
+      return makeResult(lat, lng);
+    }
+  }
+
+  // 3. Google Maps @lat,lng path segment
+  const atMatch = decoded.match(/@([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)/);
+  if (atMatch) {
+    const lat = Number(atMatch[1]);
+    const lng = Number(atMatch[2]);
+    if (isValidLatLng(lat, lng)) {
+      return makeResult(lat, lng);
+    }
+  }
+
+  // 4. /search/lat,lng or /place/lat,lng or /dir/.../lat,lng
+  const pathMatch = decoded.match(
+    /\/(?:search|place|dir)\/(?:[^/]+\/)*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)/i
+  );
+  if (pathMatch) {
+    const lat = Number(pathMatch[1]);
+    const lng = Number(pathMatch[2]);
+    if (isValidLatLng(lat, lng)) {
+      return makeResult(lat, lng);
+    }
+  }
+
+  // 5. Raw coordinate pair in string (e.g. "13.0730, 77.7921" or "Pinned coordinates 13.0730°N, 77.7921°E")
+  const rawCoordMatch = decoded.match(
+    /([+-]?\d{1,2}\.\d{3,})\s*°?\s*[NS]?\s*,\s*([+-]?\d{1,3}\.\d{3,})\s*°?\s*[EW]?/i
+  );
+  if (rawCoordMatch) {
+    const lat = Number(rawCoordMatch[1]);
+    const lng = Number(rawCoordMatch[2]);
+    if (isValidLatLng(lat, lng)) {
+      return makeResult(lat, lng);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extracts a human-readable location search query from a Google Maps URL when it contains a place name
+ * rather than raw numeric coordinates (e.g., https://www.google.com/maps/search/?api=1&query=Kolar+CCD).
+ */
+export function extractQueryTextFromGoogleMapsUrl(rawUrl?: string | null): string | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    for (const key of ['query', 'q', 'destination', 'daddr', 'origin']) {
+      const val = parsed.searchParams.get(key);
+      if (val && val.trim() && !/^[+-]?\d+(\.\d+)?\s*,\s*[+-]?\d+(\.\d+)?$/.test(val.trim())) {
+        return val.trim().replace(/\+/g, ' ');
+      }
+    }
+    const placeMatch = parsed.pathname.match(/\/maps\/place\/([^/]+)/i);
+    if (placeMatch && placeMatch[1]) {
+      const decoded = decodeURIComponent(placeMatch[1]).replace(/\+/g, ' ').trim();
+      if (decoded && !/^[+-]?\d+(\.\d+)?\s*,\s*[+-]?\d+(\.\d+)?$/.test(decoded)) {
+        return decoded;
+      }
+    }
+  } catch {
+    // Ignore malformed URL
+  }
+  return null;
+}
+
+/**
+ * Built-in dictionary of common Indian cities, towns, hills, and squadron hubs for fast synchronous lookup.
+ */
+const COMMON_INDIA_WAYPOINT_COORDS: { keys: string[]; lat: number; lng: number }[] = [
+  { keys: ['bengaluru hangar', 'indiranagar hangar', 'ultraviolette hangar', 'uv hangar', 'indiranagar'], lat: 12.9719, lng: 77.6412 },
+  { keys: ['bengaluru', 'bangalore'], lat: 12.9716, lng: 77.5946 },
+  { keys: ['hebbal flyover', 'hebbal'], lat: 13.0358, lng: 77.5970 },
+  { keys: ['nelamangala toll', 'nelamangala expressway toll gate', 'nelamangala'], lat: 13.0335, lng: 77.3986 },
+  { keys: ['kengeri', 'nice road kengeri'], lat: 12.9177, lng: 77.4833 },
+  { keys: ['electronic city', 'hosur elevated tollway'], lat: 12.8452, lng: 77.6602 },
+  { keys: ['whitefield'], lat: 12.9698, lng: 77.7500 },
+  { keys: ['koramangala'], lat: 12.9352, lng: 77.6245 },
+  { keys: ['yelahanka'], lat: 13.1007, lng: 77.5963 },
+  { keys: ['devanahalli', 'devanahalli airport toll', 'airport toll'], lat: 13.2085, lng: 77.7082 },
+  { keys: ['indian paratha company', 'ipc'], lat: 13.2980, lng: 77.7120 },
+  { keys: ['nandi hills', 'nandi hills summit', 'nandi hills summit parking gate', 'nandi foothills'], lat: 13.3702, lng: 77.6835 },
+  { keys: ['hoskote', 'hosakote'], lat: 13.0730, lng: 77.7921 },
+  { keys: ['narasapura'], lat: 13.1412, lng: 78.0114 },
+  { keys: ['kolar ccd', 'ccd kolar', 'café coffee day (ccd) — kolar nh 75 bypass', 'cafe coffee day kolar'], lat: 13.1328, lng: 78.1715 },
+  { keys: ['kolar', 'kolar town', 'kolar clock tower'], lat: 13.1362, lng: 78.1291 },
+  { keys: ['mulbagal'], lat: 13.1645, lng: 78.3932 },
+  { keys: ['chikkaballapur', 'chickballapur'], lat: 13.4355, lng: 77.7315 },
+  { keys: ['lepakshi', 'lepakshi temple'], lat: 13.8037, lng: 77.6094 },
+  { keys: ['ramanagara'], lat: 12.7209, lng: 77.2799 },
+  { keys: ['channapatna'], lat: 12.6518, lng: 77.2067 },
+  { keys: ['maddur', 'ccd maddur', 'maddur tiffany'], lat: 12.5841, lng: 77.0428 },
+  { keys: ['mandya'], lat: 12.5218, lng: 76.8951 },
+  { keys: ['mysuru', 'mysore', 'mysuru palace'], lat: 12.2958, lng: 76.6394 },
+  { keys: ['kunigal', 'kunigal lake', 'kunigal bypass'], lat: 12.9860, lng: 76.9920 },
+  { keys: ['hassan', 'hassan highway ev hub', 'hassan bypass'], lat: 13.0070, lng: 76.0960 },
+  { keys: ['sakleshpur', 'sakleshpur valley viewpoint'], lat: 12.9698, lng: 75.7874 },
+  { keys: ['chikkamagaluru', 'chikmagalur', 'mullayanagiri', 'mullayanagiri peak'], lat: 13.3909, lng: 75.7214 },
+  { keys: ['madikeri', 'coorg', 'kushalnagar'], lat: 12.4244, lng: 75.7382 },
+  { keys: ['tumakuru', 'tumkur'], lat: 13.3409, lng: 77.1010 },
+  { keys: ['chitradurga'], lat: 14.2251, lng: 76.3980 },
+  { keys: ['shivamogga', 'shimoga'], lat: 13.9299, lng: 75.5681 },
+  { keys: ['mangaluru', 'mangalore'], lat: 12.9141, lng: 74.8560 },
+  { keys: ['udupi', 'manipal'], lat: 13.3409, lng: 74.7421 },
+  { keys: ['gokarna'], lat: 14.5479, lng: 74.3188 },
+  { keys: ['hampi', 'hospet', 'hosapete'], lat: 15.2689, lng: 76.3909 },
+  { keys: ['hubballi', 'hubli', 'dharwad'], lat: 15.3647, lng: 75.1240 },
+  { keys: ['belagavi', 'belgaum'], lat: 15.8497, lng: 74.4977 },
+  { keys: ['hosur'], lat: 12.7409, lng: 77.8253 },
+  { keys: ['krishnagiri'], lat: 12.5266, lng: 78.2150 },
+  { keys: ['yelagiri', 'yelagiri hills'], lat: 12.5794, lng: 78.6385 },
+  { keys: ['vellore'], lat: 12.9349, lng: 79.1469 },
+  { keys: ['sriperumbudur'], lat: 12.9675, lng: 79.9479 },
+  { keys: ['chennai', 'madras'], lat: 13.0827, lng: 80.2707 },
+  { keys: ['mahabalipuram', 'mamallapuram', 'ecr'], lat: 12.6208, lng: 80.1945 },
+  { keys: ['puducherry', 'pondicherry'], lat: 11.9416, lng: 79.8083 },
+  { keys: ['salem'], lat: 11.6643, lng: 78.1460 },
+  { keys: ['yercaud'], lat: 11.7753, lng: 78.2093 },
+  { keys: ['coimbatore', 'kovai'], lat: 11.0168, lng: 76.9558 },
+  { keys: ['ooty', 'udhagamandalam', 'coonoor', 'nilgiris'], lat: 11.4102, lng: 76.6950 },
+  { keys: ['kodaikanal'], lat: 10.2381, lng: 77.4892 },
+  { keys: ['madurai'], lat: 9.9252, lng: 78.1198 },
+  { keys: ['kanyakumari'], lat: 8.0883, lng: 77.5385 },
+  { keys: ['kochi', 'cochin', 'edappally', 'ernakulam'], lat: 10.0261, lng: 76.3125 },
+  { keys: ['munnar'], lat: 10.0889, lng: 77.0595 },
+  { keys: ['wayanad', 'kalpetta', 'lakkidi'], lat: 11.6085, lng: 76.0832 },
+  { keys: ['kozhikode', 'calicut'], lat: 11.2588, lng: 75.7804 },
+  { keys: ['thiruvananthapuram', 'trivandrum'], lat: 8.5241, lng: 76.9366 },
+  { keys: ['hyderabad', 'hitec city', 'secunderabad'], lat: 17.4435, lng: 78.3772 },
+  { keys: ['horsley hills', 'madanapalle'], lat: 13.6601, lng: 78.3995 },
+  { keys: ['tirupati'], lat: 13.6288, lng: 79.4192 },
+  { keys: ['mumbai', 'worli', 'worli sea face'], lat: 19.0176, lng: 72.8172 },
+  { keys: ['lonavala'], lat: 18.7557, lng: 73.4091 },
+  { keys: ['pune', 'wakad', 'hinjewadi'], lat: 18.5204, lng: 73.8567 },
+  { keys: ['goa', 'panaji', 'panjim'], lat: 15.4909, lng: 73.8278 },
+  { keys: ['new delhi', 'delhi', 'connaught place', 'gurugram', 'gurgaon'], lat: 28.6315, lng: 77.2167 }
+];
+
+/**
+ * Resolves true, accurate geographic coordinates for any Mission Mode waypoint
+ * (Meeting Point, Intermediate Stop/Break, Charging Hub, or Destination).
+ */
+export function resolveTrueWaypointCoordinates(
+  input?: {
+    name?: string | null;
+    locationName?: string | null;
+    title?: string | null;
+    address?: string | null;
+    location?: string | null;
+    lat?: unknown;
+    lng?: unknown;
+    latitude?: unknown;
+    longitude?: unknown;
+    googleMapsUrl?: string | null;
+  } | null,
+  externalCandidates: PlaceSuggestion[] = []
+): {
+  lat: number;
+  lng: number;
+  latitude: number;
+  longitude: number;
+  resolvedFrom: 'explicit' | 'gmaps_url' | 'directory';
+} | null {
+  if (!input || typeof input !== 'object') return null;
+
+  const formatCoordOut = (
+    latVal: number,
+    lngVal: number,
+    resolvedFrom: 'explicit' | 'gmaps_url' | 'directory'
+  ) => {
+    const cleanLat = Number(latVal.toFixed(6));
+    const cleanLng = Number(lngVal.toFixed(6));
+    return {
+      lat: cleanLat,
+      lng: cleanLng,
+      latitude: cleanLat,
+      longitude: cleanLng,
+      resolvedFrom
+    };
+  };
+
+  const parseCoord = (v: unknown): number | undefined => {
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '') {
+      const n = Number(v.trim());
+      if (Number.isFinite(n)) return n;
+    }
+    return undefined;
+  };
+
+  const rawLat = parseCoord(input.lat) ?? parseCoord(input.latitude);
+  const rawLng = parseCoord(input.lng) ?? parseCoord(input.longitude);
+
+  const primaryName = String(
+    input.name || input.locationName || input.title || ''
+  ).trim();
+  const secondaryText = String(input.address || input.location || '').trim();
+
+  // Check if Google Maps URL has explicit coordinates first if URL was pasted
+  const urlCoords = extractCoordinatesFromGoogleMapsUrl(input.googleMapsUrl);
+
+  if (
+    rawLat !== undefined &&
+    rawLng !== undefined &&
+    rawLat >= -90 &&
+    rawLat <= 90 &&
+    rawLng >= -180 &&
+    rawLng <= 180 &&
+    !(Math.abs(rawLat) < 0.0001 && Math.abs(rawLng) < 0.0001)
+  ) {
+    // Guard against stale default Nandi Hills (13.3702, 77.6835) when the user's destination name is clearly NOT Nandi Hills
+    const isDefaultNandiCoords =
+      Math.abs(rawLat - 13.3702) < 0.001 && Math.abs(rawLng - 77.6835) < 0.001;
+    const mentionsNandi = /nandi|chikkaballapur|chickballapur|karahalli/i.test(
+      `${primaryName} ${secondaryText}`
+    );
+
+    if (!isDefaultNandiCoords || mentionsNandi || !primaryName) {
+      return formatCoordOut(rawLat, rawLng, 'explicit');
+    }
+  }
+
+  // 2. Coordinates embedded in Google Maps URL
+  if (urlCoords) {
+    return formatCoordOut(urlCoords.lat, urlCoords.lng, 'gmaps_url');
+  }
+
+  // 3. Coordinates embedded in name or address
+  const textCoords =
+    extractCoordinatesFromGoogleMapsUrl(primaryName) ||
+    extractCoordinatesFromGoogleMapsUrl(secondaryText);
+  if (textCoords) {
+    return formatCoordOut(textCoords.lat, textCoords.lng, 'gmaps_url');
+  }
+
+  // 4. Match place name / address / Google Maps query text against known places & cities
+  const urlQueryText = extractQueryTextFromGoogleMapsUrl(input.googleMapsUrl) || '';
+  const searchCandidates = [primaryName, urlQueryText, secondaryText].filter(
+    s => s && s.length >= 2
+  );
+
+  for (const queryStr of searchCandidates) {
+    const qLower = queryStr
+      .toLowerCase()
+      .replace(/\s+group\s+ride$/i, '')
+      .trim();
+
+    // 4a. Check exact match in COMMON_INDIA_WAYPOINT_COORDS
+    for (const entry of COMMON_INDIA_WAYPOINT_COORDS) {
+      if (entry.keys.some(k => k === qLower)) {
+        return formatCoordOut(entry.lat, entry.lng, 'directory');
+      }
+    }
+
+    // 4b. Search ranked places (externalCandidates + VERIFIED_INDIA_PLACES_DIRECTORY)
+    const ranked = searchAndRankPlaces(qLower, externalCandidates);
+    if (ranked.length > 0) {
+      return formatCoordOut(ranked[0].latitude, ranked[0].longitude, 'directory');
+    }
+
+    // 4c. Check partial key match in COMMON_INDIA_WAYPOINT_COORDS (longest key first)
+    let bestPartial: { lat: number; lng: number; keyLen: number } | null = null;
+    for (const entry of COMMON_INDIA_WAYPOINT_COORDS) {
+      for (const k of entry.keys) {
+        if (k.length >= 4 && (qLower.includes(k) || k.includes(qLower))) {
+          if (!bestPartial || k.length > bestPartial.keyLen) {
+            bestPartial = { lat: entry.lat, lng: entry.lng, keyLen: k.length };
+          }
+        }
+      }
+    }
+    if (bestPartial) {
+      return formatCoordOut(bestPartial.lat, bestPartial.lng, 'directory');
+    }
+  }
+
+  // If explicit coordinates were Nandi Hills default and nothing else matched, still return explicit
+  if (
+    rawLat !== undefined &&
+    rawLng !== undefined &&
+    rawLat >= -90 &&
+    rawLat <= 90 &&
+    rawLng >= -180 &&
+    rawLng <= 180 &&
+    !(Math.abs(rawLat) < 0.0001 && Math.abs(rawLng) < 0.0001)
+  ) {
+    return formatCoordOut(rawLat, rawLng, 'explicit');
+  }
+
+  return null;
+}
+
+/**
+ * Builds a direct, functional Google Maps link for any waypoint or coordinate set.
+ */
+export function buildGoogleMapsUrl(lat?: number, lng?: number, queryName?: string): string {
+  if (typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng)) {
+    return `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lng.toFixed(6)}`;
+  }
+  if (queryName && queryName.trim()) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryName.trim())}`;
+  }
+  return 'https://maps.google.com';
+}
+
+/**
+ * Opens a Google Maps link or location query directly in the browser or mobile native app.
+ */
+export function openInGoogleMaps(customUrl?: string, lat?: number, lng?: number, queryName?: string) {
+  let targetUrl = (customUrl || '').trim();
+  if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
+    targetUrl = buildGoogleMapsUrl(lat, lng, queryName);
+  }
+  if (typeof window !== 'undefined') {
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+  }
+}
+
+/**
+ * Generates a master Google Maps route direction link connecting meeting point, intermediate stops, and destination.
+ */
+export function buildMasterRouteGoogleMapsUrl(
+  params: {
+    meetingPoint?: { name: string; lat?: number; lng?: number; googleMapsUrl?: string };
+    destination?: { name: string; lat?: number; lng?: number; googleMapsUrl?: string };
+    stops?: { name: string; lat?: number; lng?: number; googleMapsUrl?: string }[];
+    chargingStops?: { locationName: string; lat?: number; lng?: number; googleMapsUrl?: string }[];
+    customRouteUrl?: string;
+  },
+  externalCandidates: PlaceSuggestion[] = []
+): string {
+  const hasStopsOrChargers =
+    (Array.isArray(params.stops) && params.stops.length > 0) ||
+    (Array.isArray(params.chargingStops) && params.chargingStops.length > 0);
+
+  const resolvedMeeting = params.meetingPoint
+    ? resolveTrueWaypointCoordinates(params.meetingPoint, externalCandidates)
+    : null;
+  const originStr = resolvedMeeting
+    ? `${resolvedMeeting.lat.toFixed(6)},${resolvedMeeting.lng.toFixed(6)}`
+    : params.meetingPoint?.name || '';
+
+  const resolvedDest = params.destination
+    ? resolveTrueWaypointCoordinates(params.destination, externalCandidates)
+    : null;
+  const destStr = resolvedDest
+    ? `${resolvedDest.lat.toFixed(6)},${resolvedDest.lng.toFixed(6)}`
+    : params.destination?.name || '';
+
+  if (!originStr && !destStr) {
+    if (params.customRouteUrl && params.customRouteUrl.trim().startsWith('http')) {
+      return params.customRouteUrl.trim();
+    }
+    return 'https://maps.google.com';
+  }
+
+  if (
+    !hasStopsOrChargers &&
+    params.customRouteUrl &&
+    params.customRouteUrl.trim().startsWith('http') &&
+    params.customRouteUrl.includes('/maps/dir/')
+  ) {
+    return params.customRouteUrl.trim();
+  }
+
+  const waypointsList: string[] = [];
+
+  if (Array.isArray(params.stops)) {
+    for (const s of params.stops as any[]) {
+      const sResolved = resolveTrueWaypointCoordinates(s, externalCandidates);
+      const sName = s.name || s.locationName || s.title || '';
+      if (sResolved) {
+        waypointsList.push(`${sResolved.lat.toFixed(6)},${sResolved.lng.toFixed(6)}`);
+      } else if (sName) {
+        waypointsList.push(sName);
+      }
+    }
+  }
+
+  if (Array.isArray(params.chargingStops)) {
+    for (const c of params.chargingStops as any[]) {
+      const cResolved = resolveTrueWaypointCoordinates(c, externalCandidates);
+      const cName = c.locationName || c.name || c.location || '';
+      if (cResolved) {
+        waypointsList.push(`${cResolved.lat.toFixed(6)},${cResolved.lng.toFixed(6)}`);
+      } else if (cName) {
+        waypointsList.push(cName);
+      }
+    }
+  }
+
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originStr)}&destination=${encodeURIComponent(destStr)}`;
+  if (waypointsList.length > 0) {
+    url += `&waypoints=${encodeURIComponent(waypointsList.join('|'))}`;
+  }
+  return url;
+}
+
 
 

@@ -40,7 +40,7 @@ export interface User {
   mobile: string;
   city: string;
   state: string;
-  motorcycleModel: 'F77 MACH 2' | 'F77 Recon' | 'F77 Original' | 'X47' | 'Other Ultraviolette' | 'F77' | 'X47 Venom';
+  motorcycleModel: 'F77' | 'X47';
   variant: string;
   registrationNumber: string; // Private
   purchaseDate?: string;
@@ -152,7 +152,13 @@ export interface Ride {
   rideDate: string;
   startTime: string;
   meetingPoint: string;
+  meetingPointLat?: number;
+  meetingPointLng?: number;
+  meetingPointGmapsUrl?: string;
   destination: string;
+  destinationLat?: number;
+  destinationLng?: number;
+  destinationGmapsUrl?: string;
   plannedRoute: string;
   maxDistanceKm: number;
   estimatedReturnTime?: string;
@@ -161,12 +167,25 @@ export interface Ride {
   rideLeaderName: string;
   specialInstructions?: string;
   pace: 'Relaxed' | 'Moderate' | 'Spirited';
-  chargingStops: {
+  stops?: {
+    id: string;
     name: string;
-    location: string;
-    chargerType: string;
-    stopDurationMin: number;
+    address?: string;
+    lat?: number;
+    lng?: number;
+    notes?: string;
+    googleMapsUrl?: string;
   }[];
+  chargingStops: {
+    id?: string;
+    locationName: string;
+    chargerType: string;
+    lat?: number;
+    lng?: number;
+    notes?: string;
+    googleMapsUrl?: string;
+  }[];
+  routeGmapsUrl?: string;
   checklistConfig: string[];
   status: RideStatus;
   cancellationReason?: string;
@@ -182,6 +201,8 @@ export interface Ride {
   }[];
   createdAt: string;
 }
+
+export type RideSortie = Ride;
 
 export interface JetEngineerSubmission {
   id: string;
@@ -211,6 +232,7 @@ export interface JetEngineerSubmission {
 
 export interface ProblemReport {
   id: string;
+  priorityOrder?: number;
   userId: string;
   reporterName: string;
   motorcycleModel: string;

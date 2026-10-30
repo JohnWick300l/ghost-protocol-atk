@@ -33,6 +33,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { ChargingStation, ChargerPlugType } from '../types';
+import { BackButton } from './BackButton';
 import {
   ChargerSource,
   VALID_CHARGER_SOURCES,
@@ -183,7 +184,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
   const [uvChargingLink, setUvChargingLink] = useState('');
   const [chargerDetails, setChargerDetails] = useState('');
   const [vehicleCompatibility, setVehicleCompatibility] = useState(
-    'F77 MACH 2, F77 Recon, F77 Original'
+    'F77, X47'
   );
   const [chargerSource, setChargerSource] = useState<ChargerSource>('Community Provided Charger');
   const [powerOutputKw, setPowerOutputKw] = useState('3.3');
@@ -211,7 +212,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
     () => currentUser?.mobile || '+91 98450 11099'
   );
   const [resBikeModel, setResBikeModel] = useState<string>(
-    () => currentUser?.motorcycleModel || 'F77 MACH 2'
+    () => currentUser?.motorcycleModel || 'F77'
   );
   const [resNotes, setResNotes] = useState<string>('');
   const [resError, setResError] = useState<string | null>(null);
@@ -226,7 +227,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
     if (currentUser) {
       setResRiderName(prev => prev || currentUser.fullName || 'Abinav Thejas K');
       setResRiderPhone(prev => prev || currentUser.mobile || '+91 98450 11099');
-      setResBikeModel(prev => prev || currentUser.motorcycleModel || 'F77 MACH 2');
+      setResBikeModel(prev => prev || currentUser.motorcycleModel || 'F77');
     }
   }, [currentUser]);
 
@@ -1819,11 +1820,8 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                             onChange={e => setResBikeModel(e.target.value)}
                             className="w-full bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
                           >
-                            <option value="F77 MACH 2">F77 MACH 2</option>
-                            <option value="F77 Recon">F77 Recon</option>
-                            <option value="F77 Original">F77 Original</option>
+                            <option value="F77">F77</option>
                             <option value="X47">X47</option>
-                            <option value="X47 Venom">X47 Venom</option>
                           </select>
                         </div>
                       </div>

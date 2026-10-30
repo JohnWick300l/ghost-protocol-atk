@@ -27,6 +27,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { NotificationItem } from '../types';
 import { AnimatePresence, motion } from './AvionicsTransition';
+import { BackButton } from './BackButton';
 
 interface NavigationProps {
   currentTab: string;
@@ -39,6 +40,7 @@ interface NavigationProps {
   cacheAge?: string;
   queuedActionCount?: number;
   onOpenWelcome?: () => void;
+  onGoBack?: () => void;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
@@ -51,7 +53,8 @@ export const Navigation: React.FC<NavigationProps> = ({
   isOffline = false,
   cacheAge = 'Live',
   queuedActionCount = 0,
-  onOpenWelcome
+  onOpenWelcome,
+  onGoBack
 }) => {
   const { currentUser, switchPersona, availableUsers, openAuthModal, logout } = useAuth();
   const { soundEnabled, toggleSound, reducedMotion, toggleReducedMotion, playTacticalClick } = useAudio();
@@ -86,6 +89,7 @@ export const Navigation: React.FC<NavigationProps> = ({
         { id: 'marketplace', label: 'MARKETPLACE', icon: ShoppingBag },
         { id: 'service', label: 'SERVICE INTEL', icon: Building2 },
         { id: 'garage', label: 'MY GARAGE', icon: Layers },
+        { id: 'squadron-showdown', label: 'SQUADRON SHOWDOWN', icon: Zap },
         ...(currentUser?.role === 'admin' || currentUser?.role === 'superadmin' || currentUser?.isOwner
           ? [{ id: 'admin', label: 'ADMIN CENTRE', icon: Shield }]
           : [])
@@ -163,8 +167,10 @@ export const Navigation: React.FC<NavigationProps> = ({
 
       {/* Primary Header Row */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between gap-2 h-14">
-        {/* Brand */}
-        <div className="flex items-center space-x-3 shrink-0">
+        {/* Back Button & Brand */}
+        <div className="flex items-center space-x-2.5 shrink-0">
+          <BackButton onBack={onGoBack} label="BACK" />
+
           <button
             onClick={() => handleNavClick('dashboard')}
             className="flex items-center space-x-2 text-left group"
@@ -428,40 +434,6 @@ export const Navigation: React.FC<NavigationProps> = ({
                       </button>
                     </div>
                   )}
-
-                  <div className="border-t border-[#282D34] mt-2 pt-2 px-2 pb-1 text-[10px] text-[#707883] uppercase flex items-center justify-between">
-                    <span>SWITCH MEMBER PERSONA:</span>
-                    <Lock className="w-3 h-3 text-[#707883]" />
-                  </div>
-                  <div className="space-y-1">
-                    {availableUsers.map(u => (
-                      <button
-                        key={u.id}
-                        onClick={() => {
-                          playTacticalClick();
-                          setShowPersonaMenu(false);
-                          void switchPersona(u.id);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded flex items-center justify-between text-xs transition-colors ${
-                          currentUser?.id === u.id
-                            ? 'bg-[#252A30] text-[#F1F3F5] font-semibold'
-                            : 'text-[#A0A7B0] hover:bg-[#191D22] hover:text-[#F1F3F5]'
-                        }`}
-                      >
-                        <div className="truncate">
-                          <div>{u.fullName}</div>
-                          <div className="text-[10px] text-[#707883]">
-                            {u.role} • {u.verificationStatus}
-                          </div>
-                        </div>
-                        {currentUser?.id === u.id ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#42B883]" />
-                        ) : (
-                          <Lock className="w-3 h-3 text-[#707883]" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
                 </motion.div>
               )}
             </AnimatePresence>

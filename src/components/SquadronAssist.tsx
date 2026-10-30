@@ -17,6 +17,7 @@ import {
   X
 } from 'lucide-react';
 import { MissionMode } from './MissionMode';
+import { BackButton } from './BackButton';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { EmergencyRequest } from '../types';

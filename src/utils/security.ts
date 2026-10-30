@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const SESSION_COOKIE_NAME = 'gp_session';
-export const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+export const DEFAULT_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 365 * 10; // 10 years (remain signed in until user logs out)
 export const DEFAULT_SETUP_TOKEN_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 export const MIN_PASSWORD_LENGTH = 8;
 export const MAX_PASSWORD_LENGTH = 128;
@@ -292,6 +292,7 @@ export interface ServerSessionRecord {
 
 export class SessionManager {
   private sessions = new Map<string, ServerSessionRecord>();
+  private revokedSessions = new Set<string>();
   private secret: string;
   private ttlMs: number;
   private persistPath?: string;
@@ -308,11 +309,30 @@ export class SessionManager {
     try {
       if (fs.existsSync(this.persistPath)) {
         const raw = JSON.parse(fs.readFileSync(this.persistPath, 'utf8'));
+        const now = Date.now();
         if (Array.isArray(raw)) {
-          const now = Date.now();
           for (const item of raw) {
-            if (item && item.id && item.userId && !item.revokedAt && Date.parse(item.expiresAt) > now) {
-              this.sessions.set(item.id, item);
+            if (item && item.id && item.userId) {
+              if (item.revokedAt) {
+                this.revokedSessions.add(item.id);
+              } else if (Date.parse(item.expiresAt) > now) {
+                this.sessions.set(item.id, item);
+              }
+            }
+          }
+        } else if (raw && typeof raw === 'object') {
+          if (Array.isArray(raw.active)) {
+            for (const item of raw.active) {
+              if (item && item.id && item.userId && Date.parse(item.expiresAt) > now) {
+                this.sessions.set(item.id, item);
+              }
+            }
+          }
+          if (Array.isArray(raw.revoked)) {
+            for (const id of raw.revoked) {
+              if (typeof id === 'string') {
+                this.revokedSessions.add(id);
+              }
             }
           }
         }
@@ -330,12 +350,14 @@ export class SessionManager {
         fs.mkdirSync(dir, { recursive: true });
       }
       const activeList = Array.from(this.sessions.values()).filter(
-        s => !s.revokedAt && Date.parse(s.expiresAt) > Date.now()
+        s => !s.revokedAt && !this.revokedSessions.has(s.id) && Date.parse(s.expiresAt) > Date.now()
       );
-      fs.writeFileSync(this.persistPath, JSON.stringify(activeList, null, 2), {
-        encoding: 'utf8',
-        mode: 0o600
-      });
+      const revokedList = Array.from(this.revokedSessions).slice(-500); // Retain last 500 revoked IDs
+      fs.writeFileSync(
+        this.persistPath,
+        JSON.stringify({ active: activeList, revoked: revokedList }, null, 2),
+        { encoding: 'utf8', mode: 0o600 }
+      );
     } catch {
       // Ignore persistence errors in restricted environments
     }
@@ -346,8 +368,9 @@ export class SessionManager {
     meta?: { ip?: string; userAgent?: string; isSecure?: boolean }
   ): { session: ServerSessionRecord; signedToken: string; setCookieHeader: string } {
     this.pruneExpired();
-    const sessionId = crypto.randomBytes(32).toString('base64url');
     const now = Date.now();
+    const entropy = crypto.randomBytes(24).toString('base64url');
+    const sessionId = `${userId}:${entropy}:${now}`;
     const session: ServerSessionRecord = {
       id: sessionId,
       userId,
@@ -371,12 +394,42 @@ export class SessionManager {
   public verifyToken(signedToken: unknown, nowMs: number = Date.now()): ServerSessionRecord | null {
     const sessionId = verifySignedSessionToken(signedToken, this.secret);
     if (!sessionId) return null;
-    const record = this.sessions.get(sessionId);
-    if (!record) return null;
+    if (this.revokedSessions.has(sessionId)) return null;
+
+    let record = this.sessions.get(sessionId);
+    if (!record) {
+      // Resilient rehydration across server restarts: signedToken has valid HMAC signature
+      const colonIdx = sessionId.indexOf(':');
+      if (colonIdx > 0) {
+        const parts = sessionId.split(':');
+        const userId = parts[0];
+        const createdAtMs = parts.length >= 3 && Number.isFinite(parseInt(parts[2], 10))
+          ? parseInt(parts[2], 10)
+          : nowMs;
+        const expiresAtMs = createdAtMs + this.ttlMs;
+        if (nowMs > expiresAtMs) {
+          this.revokedSessions.add(sessionId);
+          return null;
+        }
+        record = {
+          id: sessionId,
+          userId,
+          createdAt: new Date(createdAtMs).toISOString(),
+          expiresAt: new Date(expiresAtMs).toISOString(),
+          lastActiveAt: new Date(nowMs).toISOString()
+        };
+        this.sessions.set(sessionId, record);
+        this.saveToDisk();
+      } else {
+        return null;
+      }
+    }
+
     if (record.revokedAt) return null;
     const expiresMs = Date.parse(record.expiresAt);
     if (!Number.isFinite(expiresMs) || nowMs > expiresMs) {
       this.sessions.delete(sessionId);
+      this.revokedSessions.add(sessionId);
       return null;
     }
     record.lastActiveAt = new Date(nowMs).toISOString();
@@ -405,10 +458,12 @@ export class SessionManager {
   }
 
   public revokeSession(sessionId: string): boolean {
+    this.revokedSessions.add(sessionId);
     const record = this.sessions.get(sessionId);
-    if (!record) return false;
-    record.revokedAt = new Date().toISOString();
-    this.sessions.delete(sessionId);
+    if (record) {
+      record.revokedAt = new Date().toISOString();
+      this.sessions.delete(sessionId);
+    }
     this.saveToDisk();
     return true;
   }
@@ -444,6 +499,8 @@ export class SessionManager {
     let count = 0;
     for (const [id, session] of this.sessions.entries()) {
       if (session.userId === userId) {
+        this.revokedSessions.add(id);
+        session.revokedAt = new Date().toISOString();
         this.sessions.delete(id);
         count++;
       }
@@ -462,6 +519,7 @@ export class SessionManager {
     let removed = 0;
     for (const [id, session] of this.sessions.entries()) {
       if (session.revokedAt || Date.parse(session.expiresAt) <= nowMs) {
+        this.revokedSessions.add(id);
         this.sessions.delete(id);
         removed++;
       }

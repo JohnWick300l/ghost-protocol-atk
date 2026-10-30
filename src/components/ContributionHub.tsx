@@ -291,20 +291,6 @@ export const ContributionHub: React.FC<ContributionHubProps> = ({ onBackToCockpi
       {/* Top Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-[#050811] border border-[#1E2D42] rounded-xl px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.85)]">
         <div className="flex items-center gap-3">
-          {onBackToCockpit && (
-            <button
-              type="button"
-              data-testid="contribution-back-cockpit-btn"
-              onClick={() => {
-                playTacticalClick();
-                onBackToCockpit();
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#080F1E] hover:bg-[#0E1A32] border border-[#1E2D42] hover:border-[#38BDF8]/60 text-xs font-mono uppercase tracking-wider text-[#E2E8F0] transition-colors cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 text-[#38BDF8]" />
-              <span>Cockpit</span>
-            </button>
-          )}
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#F59E0B]/25 to-[#D97706]/10 border border-[#F59E0B]/70 flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.3)]">
               <Heart className="w-4 h-4 text-[#FDE68A] fill-[#F59E0B]" />

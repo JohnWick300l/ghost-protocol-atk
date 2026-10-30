@@ -22,6 +22,8 @@ import { AvionicsPageTransition, AnimatePresence, motion } from './components/Av
 import { Ride, EmergencyRequest, ProblemReport, DiscussionPost, ChargingStation, NotificationItem } from './types';
 import { Shield, Radio, Lock, AlertTriangle, X } from 'lucide-react';
 
+const SquadronShowdownGame = React.lazy(() => import('./games/squadron-showdown/SquadronShowdownGame'));
+
 import {
   CACHE_KEYS,
   loadCachedTelemetry,
@@ -47,8 +49,13 @@ const AppContent: React.FC = () => {
   const { currentUser, loading } = useAuth();
   const { playTacticalClick, playChime, reducedMotion } = useAudio();
 
+  const [tabHistory, setTabHistory] = useState<string[]>(['dashboard']);
+
   const [currentTab, setCurrentTabState] = useState<string>(() => {
     if (typeof window !== 'undefined') {
+      if (window.location.pathname === '/squadron-showdown') {
+        return 'squadron-showdown';
+      }
       const params = new URLSearchParams(window.location.search);
       const urlRoute = params.get('route');
       if (urlRoute) return urlRoute;
@@ -58,17 +65,28 @@ const AppContent: React.FC = () => {
     return 'dashboard';
   });
 
-  const setCurrentTab = (tab: string) => {
+  const setCurrentTab = (tab: string, isBackAction = false) => {
     setCurrentTabState(prev => {
+      if (prev !== tab && !isBackAction) {
+        setTabHistory(h => [...h, prev]);
+      }
       if (typeof window !== 'undefined') {
         try {
           sessionStorage.setItem('ghost_protocol_active_tab', tab);
-          if (prev !== tab) {
+          if (prev !== tab && !isBackAction) {
             const url = new URL(window.location.href);
-            if (tab === 'dashboard') {
+            if (tab === 'squadron-showdown' || tab === 'squadron_showdown') {
+              url.pathname = '/squadron-showdown';
               url.searchParams.delete('route');
             } else {
-              url.searchParams.set('route', tab);
+              if (url.pathname === '/squadron-showdown') {
+                url.pathname = '/';
+              }
+              if (tab === 'dashboard') {
+                url.searchParams.delete('route');
+              } else {
+                url.searchParams.set('route', tab);
+              }
             }
             window.history.pushState({ tab }, '', url.toString());
           }
@@ -79,6 +97,20 @@ const AppContent: React.FC = () => {
       return tab;
     });
   };
+
+  const handleGoBack = () => {
+    playTacticalClick();
+    if (tabHistory.length > 0 && tabHistory[tabHistory.length - 1] !== currentTab) {
+      const prevTab = tabHistory[tabHistory.length - 1];
+      setTabHistory(h => h.slice(0, h.length - 1));
+      setCurrentTab(prevTab, true);
+    } else if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+    } else {
+      setCurrentTab('dashboard', true);
+    }
+  };
+
   const [jetEngineerTab, setJetEngineerTab] = useState<'ask' | 'train'>('ask');
   const [jetEngineerModel, setJetEngineerModel] = useState<'F77' | 'X47' | 'Both'>('F77');
   const [chargingMode, setChargingMode] = useState<'map' | 'autopilot'>('map');
@@ -89,7 +121,8 @@ const AppContent: React.FC = () => {
     const handlePopState = (e: PopStateEvent) => {
       const stateTab = e.state?.tab;
       const params = new URLSearchParams(window.location.search);
-      const nextTab = stateTab || params.get('route') || 'dashboard';
+      const fromPath = window.location.pathname === '/squadron-showdown' ? 'squadron-showdown' : null;
+      const nextTab = stateTab || fromPath || params.get('route') || 'dashboard';
       setCurrentTabState(nextTab);
       try {
         sessionStorage.setItem('ghost_protocol_active_tab', nextTab);
@@ -391,6 +424,20 @@ const AppContent: React.FC = () => {
     }
   }, [currentUser?.role, currentTab]);
 
+  if (currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown') {
+    return (
+      <React.Suspense
+        fallback={
+          <div className="min-h-screen w-full bg-[#050811] flex flex-col items-center justify-center text-cyan-400 font-mono text-sm">
+            INITIALIZING SQUADRON SHOWDOWN ARENA...
+          </div>
+        }
+      >
+        <SquadronShowdownGame onExitToGhostProtocol={() => setCurrentTab('dashboard')} />
+      </React.Suspense>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#020305] flex flex-col items-center justify-center font-mono text-xs text-[#64748B] space-y-3">
@@ -435,7 +482,7 @@ const AppContent: React.FC = () => {
       >
         {/* Navigation Header - Rendered on all operational sub-systems with enter/exit animation */}
         <AnimatePresence initial={false}>
-          {currentTab !== 'dashboard' && (
+          {currentTab !== 'dashboard' && currentTab !== 'squadron-showdown' && currentTab !== 'squadron_showdown' && (
             <motion.div
               key="operational-nav-header"
               initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -10 }}
@@ -447,6 +494,7 @@ const AppContent: React.FC = () => {
               <Navigation
                 currentTab={currentTab}
                 setCurrentTab={setCurrentTab}
+                onGoBack={handleGoBack}
                 openSearch={() => setSearchOpen(true)}
                 notifications={notifications}
                 onMarkNotificationRead={handleMarkNotificationRead}
@@ -520,8 +568,19 @@ const AppContent: React.FC = () => {
         )}
 
       {/* Main Viewport Container with Directional Enter/Exit Avionics Transition */}
-      <main className={`flex-1 w-full mx-auto ${currentTab === 'dashboard' ? 'p-0 max-w-none' : 'max-w-7xl px-4 sm:px-6 py-6'}`}>
+      <main className={`flex-1 w-full mx-auto ${currentTab === 'dashboard' || currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown' ? 'p-0 max-w-none' : 'max-w-7xl px-4 sm:px-6 py-6'}`}>
         <AvionicsPageTransition activeKey={currentTab} reducedMotion={reducedMotion}>
+          {(currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown') && (
+            <React.Suspense
+              fallback={
+                <div className="min-h-screen w-full bg-[#050811] flex flex-col items-center justify-center text-cyan-400 font-mono text-sm">
+                  INITIALIZING SQUADRON SHOWDOWN ARENA...
+                </div>
+              }
+            >
+              <SquadronShowdownGame onExitToGhostProtocol={() => setCurrentTab('dashboard')} />
+            </React.Suspense>
+          )}
           {currentTab === 'dashboard' && (
             <CockpitDashboard
               rides={rides}

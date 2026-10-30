@@ -26,8 +26,6 @@ import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { PlaceSuggestion } from '../utils/rules';
 import { searchAllIndiaLocations, fetchLiveIndiaPlaces } from '../utils/indiaLocations';
-import { sendFirebasePhoneOtp, verifyFirebasePhoneOtp } from '../firebase';
-import type { ConfirmationResult } from 'firebase/auth';
 
 interface PilotWelcomeScreenProps {
   onTakeOffStart?: () => void;
@@ -42,7 +40,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   onTakeOffComplete,
   reducedMotion = false
 }) => {
-  const { currentUser, login, register, availableUsers } = useAuth();
+  const { currentUser, login, loginWithGoogle, register, availableUsers } = useAuth();
   const { soundEnabled, toggleSound, playTacticalClick, playChime } = useAudio();
 
   // Active portal mode
@@ -70,10 +68,12 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   const [regCity, setRegCity] = useState('Bengaluru');
   const [regPassword, setRegPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
   // Customer specific registration fields
   const [regBikeNumber, setRegBikeNumber] = useState('');
-  const [regBikeModel, setRegBikeModel] = useState<'F77' | 'X47' | 'X47 Venom'>('F77');
+  const [regBikeModel, setRegBikeModel] = useState<'F77' | 'X47'>('F77');
 
 
   // Home City / Registered Area Google Maps-style autocomplete state
@@ -102,14 +102,6 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   const [loadingTownSearch, setLoadingTownSearch] = useState(false);
   const townSearchContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // OTP Verification state
-  const [firebaseConfirmationResult, setFirebaseConfirmationResult] = useState<ConfirmationResult | null>(null);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCodeInput, setOtpCodeInput] = useState('');
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [otpLoading, setOtpLoading] = useState(false);
-  const [otpDispatchBanner, setOtpDispatchBanner] = useState<string | null>(null);
-  const [otpError, setOtpError] = useState<string | null>(null);
   const [regError, setRegError] = useState<string | null>(null);
   const [regLoading, setRegLoading] = useState(false);
 
@@ -305,116 +297,35 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
     }
   };
 
-  // 3. Send OTP Handler (Firebase Phone OTP + Server Fallback)
-  const handleSendOtp = async () => {
-    setOtpError(null);
-    const cleanNumber = regMobile.trim();
-    if (!cleanNumber || cleanNumber.length < 9) {
-      setOtpError('Please enter a valid Indian mobile number (+91).');
-      return;
-    }
-
-    setOtpLoading(true);
+  // 3. Firebase Google Authentication Handler
+  const handleGoogleAuth = async () => {
+    setCustLoginError(null);
+    setEmpLoginError(null);
+    setRegError(null);
+    setCustLoading(true);
     playTacticalClick();
 
     try {
-      // 1. Attempt Firebase Phone Auth OTP first
-      const confirmationResult = await sendFirebasePhoneOtp(cleanNumber, 'firebase-recaptcha-container');
-      setFirebaseConfirmationResult(confirmationResult);
-      setOtpSent(true);
-      setOtpDispatchBanner(`REAL FIREBASE SMS SENT: Verification code sent to ${cleanNumber}. Enter 6-digit code received on your phone.`);
-      playChime();
-    } catch (fbErr: any) {
-      const errorCode = fbErr?.code || '';
-      const errorMessage = fbErr?.message || String(fbErr);
-      console.warn('Firebase Phone Auth Notice:', errorCode, errorMessage);
-
-      let reasonNote = '';
-      if (errorCode === 'auth/operation-not-allowed') {
-        reasonNote = 'Phone sign-in is turned OFF in Firebase Console (Authentication -> Sign-in method -> Phone).';
-      } else if (errorCode === 'auth/invalid-app-credential') {
-        reasonNote = 'Firebase App Check or reCAPTCHA domain needs authorization in Firebase Console.';
+      const res = await loginWithGoogle();
+      if (res.success) {
+        executeTakeOffSequence();
       } else {
-        reasonNote = errorMessage;
-      }
-
-      // Fallback dispatch for preview testing
-      try {
-        const res = await fetch('/api/auth/otp/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mobile: cleanNumber })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          setOtpError(`Firebase Phone Auth Notice: ${reasonNote}`);
-        } else {
-          setOtpSent(true);
-          setOtpDispatchBanner(`TEST MODE OTP (To enable real SMS: Enable Phone Auth in Firebase Console): [ ${data.otpCode} ]`);
-          setOtpCodeInput(data.otpCode || '');
-          setOtpError(`Firebase SMS Note: ${reasonNote} (Using test code below)`);
-          playChime();
-        }
-      } catch {
-        const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
-        setOtpSent(true);
-        setOtpDispatchBanner(`TEST MODE OTP: [ ${fallbackCode} ]`);
-        setOtpCodeInput(fallbackCode);
-        setOtpError(`Firebase SMS Note: ${reasonNote}`);
-      }
-    } finally {
-      setOtpLoading(false);
-    }
-  };
-
-  // 4. Verify OTP Handler (Firebase Phone OTP Confirmation)
-  const handleVerifyOtp = async () => {
-    setOtpError(null);
-    if (!otpCodeInput || otpCodeInput.trim().length !== 6) {
-      setOtpError('Please enter the 6-digit OTP code.');
-      return;
-    }
-
-    setOtpLoading(true);
-    playTacticalClick();
-
-    try {
-      if (firebaseConfirmationResult) {
-        await verifyFirebasePhoneOtp(firebaseConfirmationResult, otpCodeInput.trim());
-        setOtpVerified(true);
-        setOtpError(null);
-        playChime();
-        return;
-      }
-
-      const res = await fetch('/api/auth/otp/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mobile: regMobile.trim(), code: otpCodeInput.trim() })
-      });
-      const data = await res.json();
-      if (res.ok && data.verified) {
-        setOtpVerified(true);
-        setOtpError(null);
-        playChime();
-      } else {
-        setOtpError(data.error || 'Invalid OTP code. Please recheck the 6-digit code.');
+        const errorMsg = res.error || 'Google Sign-In failed.';
+        setCustLoginError(errorMsg);
+        setEmpLoginError(errorMsg);
+        setRegError(errorMsg);
       }
     } catch (err: any) {
-      if (err?.message?.includes('auth/invalid-verification-code')) {
-        setOtpError('Invalid Firebase OTP code. Please recheck the 6-digit SMS code.');
-      } else {
-        // Fallback verification
-        setOtpVerified(true);
-        setOtpError(null);
-        playChime();
-      }
+      const errorMsg = err?.message || 'Failed to authenticate with Google.';
+      setCustLoginError(errorMsg);
+      setEmpLoginError(errorMsg);
+      setRegError(errorMsg);
     } finally {
-      setOtpLoading(false);
+      setCustLoading(false);
     }
   };
 
-  // 5. Complete Registration Handler
+  // 4. Complete Registration Handler
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError(null);
@@ -428,8 +339,20 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
       setRegError('Email address is compulsory.');
       return;
     }
-    if (!otpVerified) {
-      setRegError('Mobile number OTP verification is compulsory. Please verify your phone number.');
+    if (!regMobile.trim() || regMobile.trim() === '+91') {
+      setRegError('Phone number is compulsory for registration.');
+      return;
+    }
+    if (!regPassword.trim()) {
+      setRegError('Please create a password for your account.');
+      return;
+    }
+    if (regPassword.length < 8) {
+      setRegError('Password must be at least 8 characters long.');
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      setRegError('Password confirmation does not match. Please re-enter.');
       return;
     }
 
@@ -440,7 +363,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
         return;
       }
       if (!regBikeModel) {
-        setRegError('Bike model selection (F77, X47, or X47 Venom) is compulsory.');
+        setRegError('Bike model selection (F77 or X47) is compulsory.');
         return;
       }
       if (chargingStationOptIn === null) {
@@ -482,7 +405,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
       mobile: regMobile.trim(),
       city: townName,
       state: resolvedState,
-      password: regPassword || (regAccountType === 'employee' ? 'UV_Employee_2026!' : 'UV_Pilot_2026!'),
+      password: regPassword.trim(),
       accountType: regAccountType
     };
 
@@ -743,6 +666,28 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                   </div>
                 </div>
 
+                {/* FIREBASE GOOGLE AUTHENTICATION BUTTON */}
+                <button
+                  type="button"
+                  onClick={handleGoogleAuth}
+                  disabled={custLoading}
+                  className="w-full py-3 px-4 rounded-lg bg-[#182232] hover:bg-[#202E44] border border-[#38BDF8]/40 text-[#F8FAFC] font-mono font-bold text-xs sm:text-sm tracking-wide transition-all flex items-center justify-center gap-3 cursor-pointer hover:border-[#38BDF8] shadow-md my-1"
+                >
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                  </svg>
+                  <span>SIGN IN WITH GOOGLE</span>
+                </button>
+
+                <div className="flex items-center my-2">
+                  <div className="flex-grow border-t border-[#1E2D42]"></div>
+                  <span className="px-3 text-[10px] font-mono text-[#64748B] uppercase">OR USE PILOT EMAIL / PASSWORD</span>
+                  <div className="flex-grow border-t border-[#1E2D42]"></div>
+                </div>
+
                 {custLoginError && (
                   <div className="p-3 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#FCA5A5] text-xs font-mono flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-[#EF4444] shrink-0" />
@@ -799,6 +744,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                       type="button"
                       onClick={() => {
                         setCustIdentifier('vikram.sengupta@example.com');
+                        setCustPassword('GhostProtocol_F77_Pilot!');
                         playTacticalClick();
                       }}
                       className="px-2.5 py-1 rounded bg-[#131C2A] hover:bg-[#1A2638] text-[11px] font-mono text-[#E8AA45] border border-[#232F42]"
@@ -839,6 +785,28 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
 
                 <div className="p-3 rounded-lg bg-[#10B981]/10 border border-[#10B981]/30 text-[#A7F3D0] text-xs font-mono">
                   <strong>Access Policy Notice:</strong> Per Ultraviolette security guidelines, company employees are authorized to view and triage customer priority issues and manage service intelligence telemetry only. All other consumer pages are restricted.
+                </div>
+
+                {/* FIREBASE GOOGLE AUTHENTICATION BUTTON */}
+                <button
+                  type="button"
+                  onClick={handleGoogleAuth}
+                  disabled={empLoading}
+                  className="w-full py-3 px-4 rounded-lg bg-[#182232] hover:bg-[#202E44] border border-[#10B981]/40 text-[#F8FAFC] font-mono font-bold text-xs sm:text-sm tracking-wide transition-all flex items-center justify-center gap-3 cursor-pointer hover:border-[#10B981] shadow-md my-1"
+                >
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                  </svg>
+                  <span>AUTHENTICATE EMPLOYEE WITH GOOGLE</span>
+                </button>
+
+                <div className="flex items-center my-2">
+                  <div className="flex-grow border-t border-[#1E2D42]"></div>
+                  <span className="px-3 text-[10px] font-mono text-[#64748B] uppercase">OR USE WORK CREDENTIALS</span>
+                  <div className="flex-grow border-t border-[#1E2D42]"></div>
                 </div>
 
                 {empLoginError && (
@@ -896,6 +864,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                     type="button"
                     onClick={() => {
                       setEmpIdentifier('employee@ultraviolette.com');
+                      setEmpPassword('UV_Employee_2026!');
                       playTacticalClick();
                     }}
                     className="px-2.5 py-1 rounded bg-[#131C2A] hover:bg-[#1A2638] text-[11px] font-mono text-[#10B981] border border-[#232F42]"
@@ -931,6 +900,28 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                       Free membership exclusively for verified Ultraviolette customers and employees.
                     </p>
                   </div>
+                </div>
+
+                {/* FIREBASE GOOGLE AUTHENTICATION BUTTON */}
+                <button
+                  type="button"
+                  onClick={handleGoogleAuth}
+                  disabled={regLoading}
+                  className="w-full py-3 px-4 rounded-lg bg-[#182232] hover:bg-[#202E44] border border-[#38BDF8]/40 text-[#F8FAFC] font-mono font-bold text-xs sm:text-sm tracking-wide transition-all flex items-center justify-center gap-3 cursor-pointer hover:border-[#38BDF8] shadow-md my-1"
+                >
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                  </svg>
+                  <span>REGISTER / SIGN IN WITH GOOGLE</span>
+                </button>
+
+                <div className="flex items-center my-2">
+                  <div className="flex-grow border-t border-[#1E2D42]"></div>
+                  <span className="px-3 text-[10px] font-mono text-[#64748B] uppercase">OR COMPLETE FORM BELOW</span>
+                  <div className="flex-grow border-t border-[#1E2D42]"></div>
                 </div>
 
                 {regError && (
@@ -1011,88 +1002,76 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                   </div>
                 </div>
 
-                {/* Compulsory Phone with OTP Verification */}
-                <div className="p-3.5 rounded-xl border border-[#232F42] bg-[#070B12]/80 space-y-3">
-                  <div id="firebase-recaptcha-container"></div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-mono text-[#CBD5E1] font-semibold flex items-center gap-1.5">
-                      <Phone className="w-3.5 h-3.5 text-[#38BDF8]" />
-                      Phone Number & OTP Verification <span className="text-[#EF4444]">*</span>
-                    </label>
-                    {otpVerified ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#10B981]/20 border border-[#10B981]/50 text-[#10B981] font-mono text-[10px] font-bold">
-                        <CheckCircle2 className="w-3 h-3" /> VERIFIED
+                {/* Phone Number Field (Compulsory) */}
+                <div>
+                  <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    Phone Number <span className="text-[#EF4444]">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={regMobile}
+                    onChange={e => setRegMobile(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    required
+                    className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none"
+                  />
+                </div>
+
+                {/* Password and Confirm Password Fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-[#38BDF8]" />
+                        Create Password <span className="text-[#EF4444]">*</span>
                       </span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-[#F59E0B]">OTP VERIFICATION REQUIRED</span>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div className="sm:col-span-2 relative">
+                      <span className="text-[10px] text-[#64748B] font-normal">Min 8 chars</span>
+                    </label>
+                    <div className="relative">
                       <input
-                        type="tel"
-                        value={regMobile}
-                        onChange={e => {
-                          setRegMobile(e.target.value);
-                          setOtpVerified(false);
-                        }}
-                        disabled={otpVerified}
-                        placeholder="+91 98765 43210"
-                        className="w-full px-3.5 py-2 bg-[#0D121D] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none disabled:opacity-70"
+                        type={showRegPassword ? 'text' : 'password'}
+                        value={regPassword}
+                        onChange={e => setRegPassword(e.target.value)}
+                        placeholder="Create your login password"
                         required
+                        minLength={8}
+                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none pr-10"
                       />
-                    </div>
-                    <button
-                      type="button"
-                      id="btn-send-otp"
-                      onClick={handleSendOtp}
-                      disabled={otpLoading || otpVerified}
-                      className="py-2 px-3 rounded-lg bg-[#38BDF8]/20 hover:bg-[#38BDF8]/30 border border-[#38BDF8]/50 text-[#38BDF8] font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      {otpLoading ? 'Sending...' : otpSent ? 'Resend OTP' : 'Send OTP'}
-                    </button>
-                  </div>
-
-                  {/* High Visibility Tactical OTP Dispatch Banner */}
-                  {otpDispatchBanner && !otpVerified && (
-                    <div className="p-3 rounded-lg bg-[#38BDF8]/15 border border-[#38BDF8]/50 text-[#BAE6FD] text-xs font-mono flex items-center justify-between gap-2 animate-pulse">
-                      <div className="flex items-center gap-2">
-                        <Radio className="w-4 h-4 text-[#38BDF8] shrink-0" />
-                        <span>{otpDispatchBanner}</span>
-                      </div>
-                      <span className="text-[10px] text-[#38BDF8] uppercase font-bold">LIVE CODE</span>
-                    </div>
-                  )}
-
-                  {otpSent && !otpVerified && (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                      <div className="sm:col-span-2">
-                        <input
-                          type="text"
-                          maxLength={6}
-                          value={otpCodeInput}
-                          onChange={e => setOtpCodeInput(e.target.value.replace(/\D/g, ''))}
-                          placeholder="Enter 6-digit OTP code"
-                          className="w-full px-3.5 py-2 bg-[#0D121D] border border-[#38BDF8]/60 rounded-lg text-sm font-mono tracking-widest text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none"
-                        />
-                      </div>
                       <button
                         type="button"
-                        id="btn-verify-otp"
-                        onClick={handleVerifyOtp}
-                        disabled={otpLoading || otpCodeInput.length !== 6}
-                        className="py-2 px-3 rounded-lg bg-[#10B981] hover:bg-[#059669] text-[#0A0D14] font-mono text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        onClick={() => setShowRegPassword(!showRegPassword)}
+                        className="absolute right-3 top-2.5 text-[#64748B] hover:text-[#CBD5E1]"
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Verify OTP</span>
+                        {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                  )}
+                  </div>
 
-                  {otpError && (
-                    <div className="text-[11px] font-mono text-[#EF4444]">{otpError}</div>
-                  )}
+                  <div>
+                    <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-[#38BDF8]" />
+                      Confirm Password <span className="text-[#EF4444]">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showRegConfirmPassword ? 'text' : 'password'}
+                        value={regConfirmPassword}
+                        onChange={e => setRegConfirmPassword(e.target.value)}
+                        placeholder="Re-enter your password"
+                        required
+                        minLength={8}
+                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
+                        className="absolute right-3 top-2.5 text-[#64748B] hover:text-[#CBD5E1]"
+                      >
+                        {showRegConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* ----------------- CUSTOMER COMPULSORY FIELDS ----------------- */}
@@ -1133,7 +1112,6 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                         >
                           <option value="F77">F77</option>
                           <option value="X47">X47</option>
-                          <option value="X47 Venom">X47 Venom</option>
                         </select>
                       </div>
                     </div>
@@ -1484,21 +1462,27 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                   <button
                     type="submit"
                     id="btn-complete-registration"
-                    disabled={regLoading || !otpVerified}
+                    disabled={regLoading}
                     className="w-full py-3.5 rounded-lg bg-[#38BDF8] hover:bg-[#0284C7] text-[#0A0D14] font-mono font-bold text-sm tracking-wider uppercase transition-all duration-150 flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(56,189,248,0.35)] cursor-pointer disabled:opacity-50"
                   >
                     <Shield className="w-4 h-4 text-[#0A0D14]" />
                     <span>{regLoading ? 'PROCESSING REGISTRATION...' : 'COMPLETE REGISTRATION & TAKE OFF'}</span>
                     <ChevronRight className="w-4 h-4 text-[#0A0D14]" />
                   </button>
-                  {!otpVerified && (
-                    <div className="mt-1.5 text-center text-[10px] font-mono text-[#F59E0B]">
-                      * Verify mobile OTP above to activate registration
-                    </div>
-                  )}
                 </div>
               </form>
             )}
+
+            {/* Privacy Policy and Account Deletion links */}
+            <div className="mt-6 pt-4 border-t border-[#1E2D42] text-center text-[11px] font-mono text-[#64748B] flex items-center justify-center gap-4">
+              <a href="/ghost_protocol_privacy_policy.html" target="_blank" rel="noopener noreferrer" className="hover:text-[#38BDF8] hover:underline transition-colors">
+                Privacy Policy
+              </a>
+              <span>•</span>
+              <a href="/account-deletion.html" target="_blank" rel="noopener noreferrer" className="hover:text-[#38BDF8] hover:underline transition-colors">
+                Account Deletion
+              </a>
+            </div>
           </div>
         </div>
       </div>

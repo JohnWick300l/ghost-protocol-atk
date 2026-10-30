@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900" width="600" height="900">
+  <defs>
+    <linearGradient id="titanSuit" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c1917"/>
+      <stop offset="50%" stop-color="#292524"/>
+      <stop offset="100%" stop-color="#0c0a09"/>
+    </linearGradient>
+    <linearGradient id="apexOrange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fb923c"/>
+      <stop offset="50%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#ea580c"/>
+    </linearGradient>
+    <filter id="orangeGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <ellipse cx="300" cy="858" rx="165" ry="22" fill="rgba(249,115,22,0.25)"/>
+
+  <!-- Heavy Left Leg -->
+  <path d="M235 490 L175 665 L160 810 L235 815 L265 675 L298 510 Z" fill="url(#titanSuit)" stroke="#090706" stroke-width="7"/>
+  <rect x="172" y="630" width="68" height="62" rx="10" fill="#292524" stroke="#f97316" stroke-width="5"/>
+
+  <!-- Heavy Right Leg -->
+  <path d="M365 490 L425 665 L440 810 L365 815 L335 675 L302 510 Z" fill="url(#titanSuit)" stroke="#090706" stroke-width="7"/>
+  <rect x="360" y="630" width="68" height="62" rx="10" fill="#292524" stroke="#f97316" stroke-width="5"/>
+
+  <!-- Heavy Left Boot -->
+  <path d="M155 795 L238 800 L244 852 L135 854 C130 828 142 808 155 795 Z" fill="#1c1917" stroke="#090706" stroke-width="7"/>
+  <rect x="142" y="838" width="98" height="10" fill="url(#apexOrange)"/>
+
+  <!-- Heavy Right Boot -->
+  <path d="M362 800 L445 795 C458 808 470 828 465 854 L356 852 Z" fill="#1c1917" stroke="#090706" stroke-width="7"/>
+  <rect x="360" y="838" width="98" height="10" fill="url(#apexOrange)"/>
+
+  <!-- Heavy Brawler Torso -->
+  <path d="M185 225 L415 225 L378 500 L222 500 Z" fill="url(#titanSuit)" stroke="#090706" stroke-width="8"/>
+  <!-- Exoskeleton Chest Rig -->
+  <polygon points="210,245 390,245 365,395 300,425 235,395" fill="#1c1917" stroke="#f97316" stroke-width="6"/>
+  <!-- Molten Torque Core -->
+  <circle cx="300" cy="325" r="36" fill="url(#apexOrange)" stroke="#ffedd5" stroke-width="4" filter="url(#orangeGlow)"/>
+  <polygon points="285,312 315,312 300,342" fill="#090706"/>
+
+  <!-- Championship Belt -->
+  <rect x="218" y="475" width="164" height="30" rx="6" fill="#0c0a09" stroke="#f97316" stroke-width="4"/>
+  <polygon points="278,472 322,472 314,508 286,508" fill="url(#apexOrange)"/>
+
+  <!-- Massive Left Arm & Shoulder Armor -->
+  <path d="M190 240 L105 335 L150 425 L220 355 Z" fill="url(#titanSuit)" stroke="#090706" stroke-width="7"/>
+  <polygon points="145,215 220,225 205,295 125,280" fill="url(#apexOrange)" stroke="#090706" stroke-width="6"/>
+  <rect x="165" y="280" width="66" height="58" rx="14" fill="url(#apexOrange)" stroke="#ffedd5" stroke-width="4" filter="url(#orangeGlow)"/>
+
+  <!-- Massive Right Arm & Shoulder Armor -->
+  <path d="M410 240 L495 335 L450 425 L380 355 Z" fill="url(#titanSuit)" stroke="#090706" stroke-width="7"/>
+  <polygon points="455,215 380,225 395,295 475,280" fill="url(#apexOrange)" stroke="#090706" stroke-width="6"/>
+  <rect x="369" y="280" width="66" height="58" rx="14" fill="url(#apexOrange)" stroke="#ffedd5" stroke-width="4" filter="url(#orangeGlow)"/>
+
+  <!-- Heavy Armored Helmet -->
+  <path d="M235 145 C235 85 365 85 365 145 L372 215 C372 240 340 250 300 250 C260 250 228 240 228 215 Z" fill="#1c1917" stroke="#090706" stroke-width="8"/>
+  <rect x="288" y="92" width="24" height="55" fill="url(#apexOrange)"/>
+  <!-- Glowing Amber Tactical Visor -->
+  <polygon points="242,158 358,158 348,198 300,208 252,198" fill="url(#apexOrange)" stroke="#ffedd5" stroke-width="3" filter="url(#orangeGlow)"/>
+</svg>

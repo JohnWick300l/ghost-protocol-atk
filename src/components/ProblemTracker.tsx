@@ -23,7 +23,8 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { ProblemReport } from '../types';
-import { sortProblemsBySeverity, getSeverityRank } from '../utils/rules';
+import { BackButton } from './BackButton';
+import { sortProblemsBySeverity, getSeverityRank, X47_PRIORITY_ISSUES_SEED, F77_PRIORITY_ISSUES_SEED, ALL_PRIORITY_ISSUES_SEED } from '../utils/rules';
 import {
   CACHE_KEYS,
   saveToCache,
@@ -35,10 +36,32 @@ import {
   canUserModifyRecord,
   reconcileCollectionWithCache,
   recordDeletedId,
+  getDeletedIds,
   OFFLINE_SYNC_EVENT
 } from '../utils/telemetryCache';
 
 const DRAFT_KEY = 'priority_issue_form';
+
+function mergeWithX47PrioritySeed(list: ProblemReport[]): ProblemReport[] {
+  const deletedSet = new Set(getDeletedIds());
+  const seedMap = new Map(ALL_PRIORITY_ISSUES_SEED.map(s => [s.id, s]));
+  const normalized = list
+    .filter(p => p && !deletedSet.has(p.id) && p.id !== 'prob_01' && p.id !== 'prob_02')
+    .map(p => {
+      const seed = seedMap.get(p.id);
+      if (seed && typeof p.priorityOrder !== 'number') {
+        return { ...p, priorityOrder: seed.priorityOrder };
+      }
+      return p;
+    });
+  const existingIds = new Set(normalized.map(p => p.id));
+  for (const seed of ALL_PRIORITY_ISSUES_SEED) {
+    if (!existingIds.has(seed.id) && !deletedSet.has(seed.id)) {
+      normalized.push(seed as ProblemReport);
+    }
+  }
+  return sortProblemsBySeverity(normalized);
+}
 
 export function isVideoMedia(url?: string): boolean {
   if (!url) return false;
@@ -58,13 +81,14 @@ export const ProblemTracker: React.FC = () => {
   const { playTacticalClick, playChime } = useAudio();
 
   const [problems, setProblems] = useState<ProblemReport[]>(() =>
-    sortProblemsBySeverity(loadFromCache<ProblemReport[]>(CACHE_KEYS.PROBLEMS, []))
+    mergeWithX47PrioritySeed(loadFromCache<ProblemReport[]>(CACHE_KEYS.PROBLEMS, []))
   );
   const [selectedProblem, setSelectedProblem] = useState<ProblemReport | null>(() => {
-    const cached = sortProblemsBySeverity(loadFromCache<ProblemReport[]>(CACHE_KEYS.PROBLEMS, []));
+    const cached = mergeWithX47PrioritySeed(loadFromCache<ProblemReport[]>(CACHE_KEYS.PROBLEMS, []));
     return cached[0] || null;
   });
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [editingProblemId, setEditingProblemId] = useState<string | null>(null);
   const [statusNotice, setStatusNotice] = useState<{ type: 'saved' | 'offline' | 'error'; text: string } | null>(null);
 
@@ -80,12 +104,15 @@ export const ProblemTracker: React.FC = () => {
   const rawDraft = loadFormDraft<any>(DRAFT_KEY, {});
   const initialDraft = {
     formTitle: rawDraft.formTitle || '',
-    formModel: rawDraft.formModel || 'F77',
+    formModel: rawDraft.formModel || 'X47',
+    formVariant: rawDraft.formVariant || 'Crossover',
     formCategory: (rawDraft.formCategory || 'Battery & Power') as ProblemReport['category'],
     formDescription: rawDraft.formDescription || '',
     formFirstObserved: rawDraft.formFirstObserved || new Date().toISOString().split('T')[0],
+    formMileageKm: rawDraft.formMileageKm !== undefined ? String(rawDraft.formMileageKm) : '0',
     formWarningCode: rawDraft.formWarningCode || '',
     formSeverity: (rawDraft.formSeverity || 'Moderate') as ProblemReport['severity'],
+    formStatus: (rawDraft.formStatus || 'Reported') as ProblemReport['status'],
     formIsRecurring: Boolean(rawDraft.formIsRecurring),
     formTroubleshooting: rawDraft.formTroubleshooting || '',
     formServiceVisits: rawDraft.formServiceVisits || '',
@@ -95,11 +122,14 @@ export const ProblemTracker: React.FC = () => {
   // Form State
   const [formTitle, setFormTitle] = useState(initialDraft.formTitle);
   const [formModel, setFormModel] = useState<string>(initialDraft.formModel);
+  const [formVariant, setFormVariant] = useState<string>(initialDraft.formVariant);
   const [formCategory, setFormCategory] = useState<ProblemReport['category']>(initialDraft.formCategory);
   const [formDescription, setFormDescription] = useState(initialDraft.formDescription);
   const [formFirstObserved, setFormFirstObserved] = useState(initialDraft.formFirstObserved);
+  const [formMileageKm, setFormMileageKm] = useState<string>(initialDraft.formMileageKm);
   const [formWarningCode, setFormWarningCode] = useState(initialDraft.formWarningCode);
   const [formSeverity, setFormSeverity] = useState<ProblemReport['severity']>(initialDraft.formSeverity);
+  const [formStatus, setFormStatus] = useState<ProblemReport['status']>(initialDraft.formStatus);
   const [formIsRecurring, setFormIsRecurring] = useState(initialDraft.formIsRecurring);
   const [formTroubleshooting, setFormTroubleshooting] = useState(initialDraft.formTroubleshooting);
   const [formServiceVisits, setFormServiceVisits] = useState(initialDraft.formServiceVisits);
@@ -166,11 +196,14 @@ export const ProblemTracker: React.FC = () => {
       saveFormDraft(DRAFT_KEY, {
         formTitle,
         formModel,
+        formVariant,
         formCategory,
         formDescription,
         formFirstObserved,
+        formMileageKm,
         formWarningCode,
         formSeverity,
+        formStatus,
         formIsRecurring,
         formTroubleshooting,
         formServiceVisits,
@@ -181,11 +214,14 @@ export const ProblemTracker: React.FC = () => {
     editingProblemId,
     formTitle,
     formModel,
+    formVariant,
     formCategory,
     formDescription,
     formFirstObserved,
+    formMileageKm,
     formWarningCode,
     formSeverity,
+    formStatus,
     formIsRecurring,
     formTroubleshooting,
     formServiceVisits,
@@ -206,7 +242,7 @@ export const ProblemTracker: React.FC = () => {
         const data = await res.json();
         const rawProblems: ProblemReport[] = data.problems || [];
         const merged = reconcileCollectionWithCache<ProblemReport>(CACHE_KEYS.PROBLEMS, rawProblems);
-        const sorted = sortProblemsBySeverity(merged);
+        const sorted = mergeWithX47PrioritySeed(merged);
         setProblems(sorted);
         saveToCache(CACHE_KEYS.PROBLEMS, sorted);
         if (sorted.length > 0) {
@@ -217,21 +253,25 @@ export const ProblemTracker: React.FC = () => {
         }
       }
     } catch (err) {
-      const cached = sortProblemsBySeverity(loadFromCache<ProblemReport[]>(CACHE_KEYS.PROBLEMS, []));
+      const cached = mergeWithX47PrioritySeed(loadFromCache<ProblemReport[]>(CACHE_KEYS.PROBLEMS, []));
       if (cached.length > 0) setProblems(cached);
     }
   };
 
   const openEditProblem = (prob: ProblemReport) => {
     playTacticalClick();
+    setSelectedProblem(prob);
     setEditingProblemId(prob.id);
     setFormTitle(prob.title);
     setFormModel(prob.motorcycleModel.includes('X47') ? 'X47' : 'F77');
+    setFormVariant(prob.variant || (prob.motorcycleModel.includes('X47') ? 'Crossover' : 'Mach 2'));
     setFormCategory(prob.category);
     setFormDescription(prob.description);
-    setFormFirstObserved(prob.firstObservedDate);
+    setFormFirstObserved(prob.firstObservedDate || new Date().toISOString().split('T')[0]);
+    setFormMileageKm(String(prob.mileageKm ?? 0));
     setFormWarningCode(prob.warningMessageOrCode || '');
     setFormSeverity(prob.severity);
+    setFormStatus(prob.status || 'Reported');
     setFormIsRecurring(prob.isRecurring ?? false);
     setFormTroubleshooting(prob.troubleshootingAttempted || '');
     setFormServiceVisits(prob.serviceVisits || '');
@@ -257,6 +297,7 @@ export const ProblemTracker: React.FC = () => {
         saveToCache(CACHE_KEYS.PROBLEMS, next);
         if (selectedProblem?.id === prob.id) {
           setSelectedProblem(next[0] || null);
+          setShowDetailModal(false);
         }
         setStatusNotice({ type: 'saved', text: 'Priority issue deleted permanently.' });
         setTimeout(() => setStatusNotice(null), 4000);
@@ -267,6 +308,7 @@ export const ProblemTracker: React.FC = () => {
       saveToCache(CACHE_KEYS.PROBLEMS, next);
       if (selectedProblem?.id === prob.id) {
         setSelectedProblem(next[0] || null);
+        setShowDetailModal(false);
       }
     }
   };
@@ -284,12 +326,15 @@ export const ProblemTracker: React.FC = () => {
       userId: currentUser?.id,
       reporterName: currentUser?.fullName || 'Squadron Pilot',
       motorcycleModel: formModel,
+      variant: formVariant,
       category: formCategory,
       title: formTitle,
       description: formDescription,
       firstObservedDate: formFirstObserved,
+      mileageKm: Number(formMileageKm) || 0,
       warningMessageOrCode: formWarningCode,
       severity: formSeverity,
+      status: formStatus,
       isRecurring: formIsRecurring,
       troubleshootingAttempted: formTroubleshooting,
       serviceVisits: formServiceVisits,
@@ -324,14 +369,15 @@ export const ProblemTracker: React.FC = () => {
         setFormServiceVisits('');
         setFormMediaUrls([]);
         if (data.problem) {
-          const updatedList = sortProblemsBySeverity(
+          const updatedList = mergeWithX47PrioritySeed(
             editingProblemId
-              ? problems.map(p => (p.id === data.problem.id ? data.problem : p))
+              ? problems.map(p => (p.id === data.problem.id ? { ...p, ...data.problem } : p))
               : [data.problem, ...problems.filter(p => p.id !== data.problem.id)]
           );
           setProblems(updatedList);
           saveToCache(CACHE_KEYS.PROBLEMS, updatedList);
-          setSelectedProblem(data.problem);
+          const refreshed = updatedList.find(p => p.id === data.problem.id) || data.problem;
+          setSelectedProblem(refreshed);
         }
         setStatusNotice({
           type: 'saved',
@@ -347,14 +393,16 @@ export const ProblemTracker: React.FC = () => {
         'Priority Issue Report',
         clientRequestId
       );
+      const existingTarget = editingProblemId ? problems.find(p => p.id === editingProblemId) : null;
       const localProb: any = {
+        ...(existingTarget || {}),
         ...payload,
         id: editingProblemId || `prb_local_${Date.now()}`,
-        status: 'Under Investigation',
-        updates: [],
+        status: formStatus || 'Under Investigation',
+        updates: existingTarget?.updates || [],
         pendingSync: true
       };
-      const updated = sortProblemsBySeverity(
+      const updated = mergeWithX47PrioritySeed(
         editingProblemId ? problems.map(p => (p.id === editingProblemId ? localProb : p)) : [localProb, ...problems]
       );
       setProblems(updated);
@@ -386,7 +434,10 @@ export const ProblemTracker: React.FC = () => {
     try {
       const res = await fetch(`/api/problems/${selectedProblem.id}/updates`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser?.id || ''
+        },
         body: JSON.stringify(payload)
       });
 
@@ -396,12 +447,18 @@ export const ProblemTracker: React.FC = () => {
         setUpdateMediaUrls([]);
         const data = await res.json();
         if (data.problem) {
-          const next = sortProblemsBySeverity(
-            problems.map(p => (p.id === data.problem.id ? data.problem : p))
+          const next = mergeWithX47PrioritySeed(
+            problems.map(p => (p.id === data.problem.id ? { ...p, ...data.problem } : p))
           );
           setProblems(next);
           saveToCache(CACHE_KEYS.PROBLEMS, next);
-          setSelectedProblem(data.problem);
+          const refreshed = next.find(p => p.id === data.problem.id) || data.problem;
+          setSelectedProblem(refreshed);
+          setStatusNotice({
+            type: 'saved',
+            text: 'Case progress update recorded.'
+          });
+          setTimeout(() => setStatusNotice(null), 4000);
         }
       }
     } catch (err) {
@@ -420,7 +477,7 @@ export const ProblemTracker: React.FC = () => {
           }
         ]
       };
-      const next = problems.map(p => (p.id === selectedProblem.id ? updatedProb : p));
+      const next = mergeWithX47PrioritySeed(problems.map(p => (p.id === selectedProblem.id ? updatedProb : p)));
       setProblems(next);
       saveToCache(CACHE_KEYS.PROBLEMS, next);
       setSelectedProblem(updatedProb);
@@ -435,11 +492,10 @@ export const ProblemTracker: React.FC = () => {
 
   const displayedProblems = sortProblemsBySeverity(
     problems.filter(p => {
-      if (isViewAllMode) return true;
-      if (filterSeverity !== 'ALL' && p.severity !== filterSeverity) return false;
       if (filterModel !== 'ALL') {
         if (!p.motorcycleModel.includes(filterModel)) return false;
       }
+      if (!isViewAllMode && filterSeverity !== 'ALL' && p.severity !== filterSeverity) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const match =
@@ -452,22 +508,369 @@ export const ProblemTracker: React.FC = () => {
     })
   );
 
+  useEffect(() => {
+    if (displayedProblems.length > 0) {
+      if (!selectedProblem || !displayedProblems.some(p => p.id === selectedProblem.id)) {
+        setSelectedProblem(displayedProblems[0]);
+      }
+    }
+  }, [filterModel, filterSeverity, isViewAllMode, searchQuery, problems]);
+
   const getSeverityBadge = (sev: ProblemReport['severity']) => {
     const rank = getSeverityRank(sev);
     switch (rank) {
       case 1:
-        return <span className="px-2 py-0.5 rounded bg-[#E04F5F]/20 text-[#E04F5F] border border-[#E04F5F]/40 font-bold">CRITICAL / SAFETY</span>;
+        return (
+          <span className="px-2 py-0.5 rounded bg-[#E04F5F]/20 text-[#E04F5F] border border-[#E04F5F]/40 font-bold">
+            🔴 CRITICAL PRIORITY
+          </span>
+        );
       case 2:
-        return <span className="px-2 py-0.5 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40 font-bold">HIGH</span>;
+        return (
+          <span className="px-2 py-0.5 rounded bg-[#F97316]/20 text-[#FB923C] border border-[#F97316]/40 font-bold">
+            🟠 HIGH PRIORITY
+          </span>
+        );
       case 3:
-        return <span className="px-2 py-0.5 rounded bg-[#729BCB]/20 text-[#729BCB] border border-[#729BCB]/40 font-semibold">MODERATE</span>;
+        return (
+          <span className="px-2 py-0.5 rounded bg-[#EAB308]/20 text-[#FACC15] border border-[#EAB308]/40 font-semibold">
+            🟡 MODERATE
+          </span>
+        );
       case 4:
-        return <span className="px-2 py-0.5 rounded bg-[#252A30] text-[#D4D8DE] border border-[#414851]">LOW</span>;
+        return (
+          <span className="px-2 py-0.5 rounded bg-[#A855F7]/20 text-[#C084FC] border border-[#A855F7]/40 font-semibold">
+            🟣 LOW
+          </span>
+        );
       case 5:
       default:
-        return <span className="px-2 py-0.5 rounded bg-[#191D22] text-[#707883] border border-[#282D34]">INFORMATIONAL</span>;
+        return (
+          <span className="px-2 py-0.5 rounded bg-[#191D22] text-[#707883] border border-[#282D34]">
+            INFORMATIONAL
+          </span>
+        );
     }
   };
+
+  const prioritySections = [
+    {
+      rank: 1,
+      id: 'critical',
+      label: '🔴 Critical Priority',
+      headerClass: 'bg-[#E04F5F]/15 border-[#E04F5F]/40 text-[#FCA5A5]',
+      items: displayedProblems.filter(p => getSeverityRank(p.severity) === 1)
+    },
+    {
+      rank: 2,
+      id: 'high',
+      label: filterModel === 'F77' ? '🟠 High-Priority Issues' : '🟠 High Priority',
+      headerClass: 'bg-[#F97316]/15 border-[#F97316]/40 text-[#FDBA74]',
+      items: displayedProblems.filter(p => getSeverityRank(p.severity) === 2)
+    },
+    {
+      rank: 3,
+      id: 'moderate',
+      label: filterModel === 'F77' ? '🟡 Medium-Priority Issues' : '🟡 Moderate',
+      headerClass: 'bg-[#EAB308]/15 border-[#EAB308]/40 text-[#FEF08A]',
+      items: displayedProblems.filter(p => getSeverityRank(p.severity) === 3)
+    },
+    {
+      rank: 4,
+      id: 'low',
+      label: filterModel === 'F77' ? '🟣 Low-Priority / Owner-Manageable Issues' : '🟣 Low',
+      headerClass: 'bg-[#A855F7]/15 border-[#A855F7]/40 text-[#E9D5FF]',
+      items: displayedProblems.filter(p => getSeverityRank(p.severity) === 4)
+    },
+    {
+      rank: 5,
+      id: 'info',
+      label: '⚪ Informational',
+      headerClass: 'bg-[#191D22] border-[#282D34] text-[#A0A7B0]',
+      items: displayedProblems.filter(p => getSeverityRank(p.severity) >= 5)
+    }
+  ].filter(sec => sec.items.length > 0);
+
+  const renderIssueFullDetails = (prob: ProblemReport, isModal = false) => (
+    <div className="space-y-5">
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-[#282D34]">
+          <div className="text-[10px] font-mono text-[#707883] flex flex-wrap items-center gap-2">
+            <span>CASE ID: {prob.id.toUpperCase()}</span>
+            <span>•</span>
+            <span>LOGGED BY {prob.reporterName || 'Squadron Pilot'}</span>
+            {prob.isRecurring && (
+              <span className="px-1.5 py-0.5 rounded bg-[#E04F5F]/15 text-[#FCA5A5] border border-[#E04F5F]/30 font-bold">
+                RECURRING SYMPTOM
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid={isModal ? 'modal-edit-issue-btn' : 'panel-edit-issue-btn'}
+              onClick={() => openEditProblem(prob)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#E8AA45] hover:bg-[#F59E0B] text-[#08090B] font-mono text-xs font-bold transition-colors shadow-sm"
+              title="Edit Issue Details"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+              <span>EDIT ISSUE</span>
+            </button>
+            {canUserModifyRecord(currentUser, prob) && (
+              <button
+                type="button"
+                onClick={() => handleDeleteProblem(prob)}
+                className="p-1.5 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#AEB5BE] hover:text-[#E04F5F] border border-[#282D34]"
+                title="Delete Issue Report"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {getSeverityBadge(prob.severity)}
+            {isModal && (
+              <button
+                type="button"
+                data-testid="close-issue-detail-modal"
+                onClick={() => setShowDetailModal(false)}
+                className="p-1.5 rounded bg-[#191D22] hover:bg-[#252A30] text-[#A0A7B0] hover:text-[#F1F3F5] border border-[#282D34]"
+                title="Close Full Details"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+        <h3 className="text-base sm:text-lg font-bold text-[#F1F3F5] leading-snug">{prob.title}</h3>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono">
+        <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
+          <div className="text-[10px] text-[#707883]">MODEL & VARIANT</div>
+          <div className="text-[#38BDF8] font-bold mt-0.5">
+            {prob.motorcycleModel}
+            {prob.variant ? ` • ${prob.variant}` : ''}
+          </div>
+        </div>
+        <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
+          <div className="text-[10px] text-[#707883]">SYSTEM CATEGORY</div>
+          <div className="text-[#F1F3F5] font-semibold mt-0.5">{prob.category}</div>
+        </div>
+        <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
+          <div className="text-[10px] text-[#707883]">CURRENT STATUS</div>
+          <div className="text-[#42B883] font-bold mt-0.5">{prob.status}</div>
+        </div>
+        <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
+          <div className="text-[10px] text-[#707883]">FIRST OBSERVED / ODO</div>
+          <div className="text-[#F1F3F5] font-semibold mt-0.5">
+            {prob.firstObservedDate}
+            {prob.mileageKm ? ` • ${prob.mileageKm.toLocaleString()} km` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3 text-xs font-mono">
+        <div>
+          <div className="text-[#707883] mb-1">DASH / CAN BUS ERROR CODE:</div>
+          <div className="text-[#E8AA45] bg-[#13161A] p-2.5 rounded border border-[#282D34] font-bold">
+            {prob.warningMessageOrCode || 'NONE LOGGED'}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[#707883] mb-1">FULL ISSUE DESCRIPTION:</div>
+          <div className="text-[#F1F3F5] bg-[#13161A] p-3.5 rounded border border-[#282D34] leading-relaxed font-sans text-sm">
+            {prob.description}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <div className="text-[#707883] mb-1">TROUBLESHOOTING ATTEMPTED:</div>
+            <div className="text-[#D4D8DE] bg-[#13161A] p-3 rounded border border-[#282D34] leading-relaxed min-h-[60px]">
+              {prob.troubleshootingAttempted || 'No troubleshooting steps logged yet.'}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[#707883] mb-1">SERVICE VISITS & ACTIONS:</div>
+            <div className="text-[#D4D8DE] bg-[#13161A] p-3 rounded border border-[#282D34] leading-relaxed min-h-[60px]">
+              {prob.serviceVisits || 'No service visits logged yet.'}
+            </div>
+          </div>
+        </div>
+
+        {/* Evidence Media Section (Photos & Videos) */}
+        {((prob.mediaUrls && prob.mediaUrls.length > 0) || prob.photoUrl || prob.videoUrl) && (
+          <div className="pt-2 border-t border-[#282D34]/80">
+            <div className="text-[#707883] mb-1.5 flex items-center justify-between text-[11px]">
+              <span className="flex items-center gap-1.5 font-bold text-[#D4D8DE] uppercase">
+                <Camera className="w-3.5 h-3.5 text-[#E8AA45]" />
+                EVIDENCE MEDIA (PHOTOS & VIDEOS)
+              </span>
+              <span className="text-[10px] text-[#A0A7B0]">
+                {(prob.mediaUrls || [prob.photoUrl, prob.videoUrl].filter(Boolean)).length} file(s)
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-[#13161A] p-2.5 rounded border border-[#282D34]">
+              {(prob.mediaUrls || [prob.photoUrl, prob.videoUrl].filter(Boolean) as string[]).map((mUrl, mIdx) => {
+                const isVid = isVideoMedia(mUrl);
+                return (
+                  <div
+                    key={mIdx}
+                    onClick={() => {
+                      playTacticalClick();
+                      setLightboxMedia({
+                        mediaList: prob.mediaUrls || ([prob.photoUrl, prob.videoUrl].filter(Boolean) as string[]),
+                        index: mIdx,
+                        title: prob.title
+                      });
+                    }}
+                    className="relative bg-[#08090B] border border-[#282D34] hover:border-[#E8AA45]/60 rounded overflow-hidden aspect-video cursor-pointer group transition-all"
+                  >
+                    {isVid ? (
+                      <div className="w-full h-full relative flex items-center justify-center bg-black">
+                        <video src={mUrl} className="w-full h-full object-cover opacity-80" />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/20 transition-colors">
+                          <div className="w-8 h-8 rounded-full bg-[#E8AA45] text-black flex items-center justify-center font-bold">
+                            <Play className="w-4 h-4 fill-current ml-0.5" />
+                          </div>
+                        </div>
+                        <span className="absolute top-1 left-1 bg-black/80 text-[#E8AA45] text-[9px] font-bold px-1.5 py-0.2 rounded border border-[#E8AA45]/30 flex items-center gap-1">
+                          <Film className="w-2.5 h-2.5" /> VIDEO
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="w-full h-full relative">
+                        <img src={mUrl} alt={`Media ${mIdx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                        <span className="absolute top-1 left-1 bg-black/80 text-[#42B883] text-[9px] font-bold px-1.5 py-0.2 rounded border border-[#42B883]/30 flex items-center gap-1">
+                          <Camera className="w-2.5 h-2.5" /> PHOTO
+                        </span>
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <Maximize2 className="w-4 h-4 text-white" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Progress Timeline & Updates */}
+      <div className="space-y-3 pt-3 border-t border-[#282D34] text-xs font-mono">
+        <div className="text-xs font-bold text-[#D4D8DE] uppercase">
+          PROGRESS TIMELINE & SERVICE UPDATES ({prob.updates?.length || 0})
+        </div>
+
+        <div className="space-y-2">
+          {prob.updates?.map(u => (
+            <div key={u.id} className="p-3 rounded bg-[#13161A] border border-[#282D34] space-y-2">
+              <div className="flex items-center justify-between text-[10px] text-[#707883]">
+                <span className="text-[#D4D8DE] font-semibold">{u.authorName}</span>
+                <span>{u.date}</span>
+              </div>
+              <div className="text-[11px] text-[#A0A7B0]">{u.note}</div>
+              {u.mediaUrls && u.mediaUrls.length > 0 && (
+                <div className="flex items-center gap-1.5 pt-1 overflow-x-auto">
+                  {u.mediaUrls.map((mUrl, mIdx) => (
+                    <div
+                      key={mIdx}
+                      onClick={() => {
+                        playTacticalClick();
+                        setLightboxMedia({
+                          mediaList: u.mediaUrls!,
+                          index: mIdx,
+                          title: `Update Media by ${u.authorName}`
+                        });
+                      }}
+                      className="w-10 h-10 rounded border border-[#282D34] overflow-hidden bg-[#08090B] cursor-pointer shrink-0 hover:border-[#E8AA45]"
+                    >
+                      {isVideoMedia(mUrl) ? (
+                        <div className="w-full h-full flex items-center justify-center bg-black text-[#E8AA45]">
+                          <Film className="w-3.5 h-3.5" />
+                        </div>
+                      ) : (
+                        <img src={mUrl} alt={`Update media ${mIdx}`} className="w-full h-full object-cover" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Add Progress Note Form */}
+        <form onSubmit={handleAddUpdate} className="pt-2 space-y-2">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={updateNote}
+              onChange={e => setUpdateNote(e.target.value)}
+              placeholder="Add diagnostic finding, service update, or resolution note..."
+              className="flex-1 bg-[#08090B] border border-[#282D34] rounded px-3 py-2 text-[#F1F3F5] text-xs focus:outline-none"
+            />
+            <select
+              value={newStatusUpdate}
+              onChange={e => setNewStatusUpdate(e.target.value as any)}
+              className="bg-[#13161A] border border-[#282D34] text-[#D4D8DE] px-2 py-2 rounded text-xs focus:outline-none"
+            >
+              <option value="Reported">Reported</option>
+              <option value="Under Investigation">Under Investigation</option>
+              <option value="Service Scheduled">Service Scheduled</option>
+              <option value="Resolved">Resolved</option>
+              <option value="Recurring">Recurring</option>
+            </select>
+          </div>
+
+          {updateMediaUrls.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap p-1.5 rounded bg-[#13161A] border border-[#282D34]">
+              {updateMediaUrls.map((m, idx) => (
+                <div key={idx} className="relative w-12 h-12 bg-[#08090B] border border-[#282D34] rounded overflow-hidden group">
+                  {isVideoMedia(m) ? (
+                    <video src={m} className="w-full h-full object-cover" />
+                  ) : (
+                    <img src={m} alt={`Update media ${idx}`} className="w-full h-full object-cover" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMedia(idx, true)}
+                    className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[#E04F5F]"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-[10px] text-[#A0A7B0] hover:text-[#42B883] cursor-pointer flex items-center gap-1 font-mono">
+              <Upload className="w-3 h-3 text-[#42B883]" />
+              <span>+ Attach Photo / Video to Update</span>
+              <input
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                onChange={e => handleMediaUpload(e, true)}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          <button
+            type="submit"
+            disabled={!updateNote.trim()}
+            className="w-full py-2 bg-[#252A30] hover:bg-[#414851] disabled:opacity-40 text-[#F1F3F5] rounded border border-[#414851] text-xs font-mono font-bold"
+          >
+            RECORD CASE UPDATE
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -485,7 +888,7 @@ export const ProblemTracker: React.FC = () => {
               </span>
             </div>
             <div className="text-xs text-[#A0A7B0] mt-0.5">
-              Structured priority motorcycle issue records • Diagnostic codes • Empirical symptom matching
+              Press any specific issue below to inspect full details or edit the issue record
             </div>
           </div>
         </div>
@@ -536,13 +939,47 @@ export const ProblemTracker: React.FC = () => {
               setSearchQuery('');
             }}
             className={`flex items-center space-x-1.5 px-3 py-1.5 rounded font-bold transition-all border ${
-              isViewAllMode
+              isViewAllMode && filterModel === 'ALL'
                 ? 'bg-[#E8AA45] text-[#08090B] border-[#E8AA45] shadow-[0_0_12px_rgba(232,170,69,0.3)]'
                 : 'bg-[#0D0F12] text-[#D4D8DE] border-[#282D34] hover:border-[#414851] hover:text-[#F1F3F5]'
             }`}
           >
             <Eye className="w-3.5 h-3.5" />
             <span>View All Problems</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="btn-filter-model-x47"
+            onClick={() => {
+              playTacticalClick();
+              setFilterModel('X47');
+              setIsViewAllMode(false);
+            }}
+            className={`px-3 py-1.5 rounded font-bold transition-all border ${
+              filterModel === 'X47'
+                ? 'bg-[#38BDF8] text-[#08090B] border-[#38BDF8] shadow-[0_0_12px_rgba(56,189,248,0.3)]'
+                : 'bg-[#0D0F12] text-[#D4D8DE] border-[#282D34] hover:border-[#414851] hover:text-[#F1F3F5]'
+            }`}
+          >
+            X47 Model ({problems.filter(p => p.motorcycleModel.includes('X47')).length})
+          </button>
+
+          <button
+            type="button"
+            data-testid="btn-filter-model-f77"
+            onClick={() => {
+              playTacticalClick();
+              setFilterModel('F77');
+              setIsViewAllMode(false);
+            }}
+            className={`px-3 py-1.5 rounded font-bold transition-all border ${
+              filterModel === 'F77'
+                ? 'bg-[#42B883] text-[#08090B] border-[#42B883] shadow-[0_0_12px_rgba(66,184,131,0.3)]'
+                : 'bg-[#0D0F12] text-[#D4D8DE] border-[#282D34] hover:border-[#414851] hover:text-[#F1F3F5]'
+            }`}
+          >
+            F77 Model ({problems.filter(p => p.motorcycleModel.includes('F77')).length})
           </button>
 
           <span className="text-[#414851] hidden sm:inline">|</span>
@@ -556,10 +993,10 @@ export const ProblemTracker: React.FC = () => {
             className="bg-[#0D0F12] border border-[#282D34] text-[#D4D8DE] px-3 py-1.5 rounded focus:outline-none focus:border-[#414851]"
           >
             <option value="ALL">FILTER BY SEVERITY</option>
-            <option value="Critical / Safety-Related">Critical</option>
-            <option value="High">High</option>
-            <option value="Moderate">Moderate</option>
-            <option value="Low">Low</option>
+            <option value="Critical / Safety-Related">🔴 Critical Priority</option>
+            <option value="High">🟠 High Priority</option>
+            <option value="Moderate">🟡 Moderate</option>
+            <option value="Low">🟣 Low</option>
             <option value="Informational">Informational</option>
           </select>
 
@@ -600,343 +1037,156 @@ export const ProblemTracker: React.FC = () => {
           <div className="flex items-center space-x-2">
             <CheckCircle2 className="w-4 h-4 text-[#E8AA45]" />
             <span>
-              <strong>VIEW ALL PROBLEMS ACTIVE:</strong> Displaying all {problems.length} reported problems organized by severity (Critical → High → Moderate → Low → Informational).
+              <strong>VIEW ALL PROBLEMS ACTIVE:</strong> Displaying all {problems.length} reported problems organized by priority (🔴 Critical → 🟠 High → 🟡 Moderate → 🟣 Low). Press any issue to view full details or edit.
             </span>
           </div>
         </div>
       )}
 
+      {filterModel === 'F77' && (
+        <div
+          data-testid="f77-priority-banner"
+          className="p-3 rounded-lg bg-[#42B883]/10 border border-[#42B883]/40 text-xs font-mono text-[#42B883] flex items-center justify-between"
+        >
+          <div className="font-bold tracking-wide">
+            Ultraviolette F77 – Owner-Reported Issues &amp; Improvements (18 Priority Issues)
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded bg-black/40 text-[#D4D8DE]">
+            HIGH (1–9) • MEDIUM (10–13) • LOW (14–18)
+          </span>
+        </div>
+      )}
+
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 space-y-3">
+        <div className="lg:col-span-5 space-y-5">
           {displayedProblems.length === 0 ? (
             <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-10 text-center text-xs font-mono text-[#707883]">
               NO PRIORITY ISSUES MATCHING CRITERIA
             </div>
           ) : (
-            displayedProblems.map(prob => {
-              const isSelected = selectedProblem?.id === prob.id;
-              return (
+            prioritySections.map(section => (
+              <div key={section.id} data-testid={`priority-section-${section.id}`} className="space-y-2.5">
                 <div
-                  key={prob.id}
-                  onClick={() => {
-                    playTacticalClick();
-                    setSelectedProblem(prob);
-                  }}
-                  className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                    isSelected
-                      ? 'bg-[#191D22] border-[#414851] shadow-lg'
-                      : 'bg-[#0D0F12] border-[#282D34] hover:border-[#414851]/60'
-                  }`}
+                  className={`px-3.5 py-2 rounded-lg border font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-between ${section.headerClass}`}
                 >
-                  <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
-                    <span className="text-[#AEB5BE] font-semibold flex items-center gap-1.5">
-                      <span>{prob.motorcycleModel}</span>
-                      {(prob as any).pendingSync && (
-                        <span className="px-1.5 py-0.2 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40">
-                          PENDING SYNC
-                        </span>
-                      )}
-                    </span>
-                    {getSeverityBadge(prob.severity)}
-                  </div>
-
-                  <div className="text-xs font-semibold text-[#F1F3F5] line-clamp-1">{prob.title}</div>
-
-                  {prob.warningMessageOrCode && (
-                    <div className="text-[10px] font-mono text-[#E8AA45] mt-1 bg-[#13161A] px-2 py-0.5 rounded w-fit">
-                      {prob.warningMessageOrCode}
-                    </div>
-                  )}
-
-                  {/* Media Badge Indicator */}
-                  {((prob.mediaUrls && prob.mediaUrls.length > 0) || prob.photoUrl || prob.videoUrl) && (
-                    <div className="flex items-center gap-1 mt-1 text-[10px] font-mono text-[#42B883]">
-                      {prob.videoUrl || prob.mediaUrls?.some(m => isVideoMedia(m)) ? (
-                        <Film className="w-3 h-3 text-[#E8AA45]" />
-                      ) : (
-                        <Camera className="w-3 h-3 text-[#42B883]" />
-                      )}
-                      <span>
-                        {prob.mediaUrls?.length || 1} Media Attached (Photo/Video)
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between mt-3 pt-2 border-t border-[#282D34] text-[11px] font-mono text-[#707883]">
-                    <span>STATUS: {prob.status.toUpperCase()}</span>
-                    <span>{prob.firstObservedDate}</span>
-                  </div>
+                  <span>{section.label}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-black/40">
+                    {section.items.length} {section.items.length === 1 ? 'ISSUE' : 'ISSUES'}
+                  </span>
                 </div>
-              );
-            })
+
+                <div className="space-y-2.5">
+                  {section.items.map(prob => {
+                    const isSelected = selectedProblem?.id === prob.id;
+                    return (
+                      <div
+                        key={prob.id}
+                        data-testid={`problem-card-${prob.id}`}
+                        onClick={() => {
+                          playTacticalClick();
+                          setSelectedProblem(prob);
+                          setShowDetailModal(true);
+                        }}
+                        className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-[#191D22] border-[#E8AA45]/70 shadow-lg'
+                            : 'bg-[#0D0F12] border-[#282D34] hover:border-[#414851]/80'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
+                          <span className="text-[#AEB5BE] font-semibold flex items-center gap-1.5">
+                            <span
+                              className={`px-1.5 py-0.5 rounded font-bold ${
+                                prob.motorcycleModel.includes('X47')
+                                  ? 'bg-[#38BDF8]/15 text-[#38BDF8] border border-[#38BDF8]/30'
+                                  : 'bg-[#42B883]/15 text-[#42B883] border border-[#42B883]/30'
+                              }`}
+                            >
+                              {prob.motorcycleModel}
+                            </span>
+                            <span className="text-[#707883]">{prob.category}</span>
+                            {(prob as any).pendingSync && (
+                              <span className="px-1.5 py-0.2 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40">
+                                PENDING SYNC
+                              </span>
+                            )}
+                          </span>
+                          {getSeverityBadge(prob.severity)}
+                        </div>
+
+                        <div className="text-xs font-semibold text-[#F1F3F5] leading-relaxed">
+                          {/^\d+\.\s/.test(prob.title) ? prob.title : `• ${prob.title}`}
+                        </div>
+
+                        {prob.warningMessageOrCode && (
+                          <div className="text-[10px] font-mono text-[#E8AA45] mt-1.5 bg-[#13161A] px-2 py-0.5 rounded w-fit">
+                            {prob.warningMessageOrCode}
+                          </div>
+                        )}
+
+                        {/* Media Badge Indicator */}
+                        {((prob.mediaUrls && prob.mediaUrls.length > 0) || prob.photoUrl || prob.videoUrl) && (
+                          <div className="flex items-center gap-1 mt-1 text-[10px] font-mono text-[#42B883]">
+                            {prob.videoUrl || prob.mediaUrls?.some(m => isVideoMedia(m)) ? (
+                              <Film className="w-3 h-3 text-[#E8AA45]" />
+                            ) : (
+                              <Camera className="w-3 h-3 text-[#42B883]" />
+                            )}
+                            <span>
+                              {prob.mediaUrls?.length || 1} Media Attached (Photo/Video)
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[#282D34] text-[10px] font-mono text-[#707883]">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[#42B883] font-semibold">STATUS: {prob.status.toUpperCase()}</span>
+                            <span>• {prob.firstObservedDate}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              data-testid={`card-view-btn-${prob.id}`}
+                              onClick={e => {
+                                e.stopPropagation();
+                                playTacticalClick();
+                                setSelectedProblem(prob);
+                                setShowDetailModal(true);
+                              }}
+                              className="px-2 py-1 rounded bg-[#13161A] hover:bg-[#252A30] text-[#D4D8DE] border border-[#282D34] flex items-center gap-1 font-bold transition-colors"
+                            >
+                              <Eye className="w-3 h-3 text-[#38BDF8]" />
+                              <span>FULL DETAILS</span>
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`card-edit-btn-${prob.id}`}
+                              onClick={e => {
+                                e.stopPropagation();
+                                openEditProblem(prob);
+                              }}
+                              className="px-2 py-1 rounded bg-[#E8AA45]/15 hover:bg-[#E8AA45]/30 text-[#E8AA45] border border-[#E8AA45]/40 flex items-center gap-1 font-bold transition-colors"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>EDIT</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
           )}
         </div>
 
         {/* Selected Issue Detail & Progress Updates */}
         <div className="lg:col-span-7">
           {selectedProblem ? (
-            <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5 space-y-5">
-              <div>
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#282D34]">
-                  <div className="text-[10px] font-mono text-[#707883]">
-                    CASE ID: {selectedProblem.id.toUpperCase()} • LOGGED BY {selectedProblem.reporterName}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {canUserModifyRecord(currentUser, selectedProblem) && (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => openEditProblem(selectedProblem)}
-                          className="p-1 rounded bg-[#191D22] hover:bg-[#252A30] text-[#AEB5BE] hover:text-[#F1F3F5] border border-[#282D34]"
-                          title="Edit Issue Report"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteProblem(selectedProblem)}
-                          className="p-1 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#AEB5BE] hover:text-[#E04F5F] border border-[#282D34]"
-                          title="Delete Issue Report"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                    {getSeverityBadge(selectedProblem.severity)}
-                  </div>
-                </div>
-                <h3 className="text-base font-bold text-[#F1F3F5]">{selectedProblem.title}</h3>
-                <div className="text-xs font-mono text-[#A0A7B0] mt-1">
-                  MODEL: {selectedProblem.motorcycleModel} • CATEGORY: {selectedProblem.category}
-                </div>
-              </div>
-
-              <div className="p-3 rounded bg-[#13161A] border border-[#282D34] text-xs font-mono space-y-1">
-                <div className="text-[#D4D8DE] font-semibold flex items-center gap-1.5">
-                  <Info className="w-3.5 h-3.5 text-[#729BCB]" />
-                  AGGREGATE SQUADRON SYMPTOM CROSS-CHECK
-                </div>
-                <div className="text-[11px] text-[#A0A7B0] leading-relaxed">
-                  Notice: This record represents an empirical owner report. It is not an officially acknowledged manufacturer defect until verified by engineering service bulletin.
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 text-xs font-mono">
-                <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
-                  <div className="text-[10px] text-[#707883]">STATUS</div>
-                  <div className="text-[#42B883] font-bold mt-0.5">{selectedProblem.status}</div>
-                </div>
-                <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
-                  <div className="text-[10px] text-[#707883]">FIRST OBSERVED</div>
-                  <div className="text-[#F1F3F5] font-semibold mt-0.5">{selectedProblem.firstObservedDate}</div>
-                </div>
-              </div>
-
-              <div className="space-y-3 text-xs font-mono">
-                {selectedProblem.warningMessageOrCode && (
-                  <div>
-                    <div className="text-[#707883] mb-1">DASH / CAN BUS ERROR CODE:</div>
-                    <div className="text-[#E8AA45] bg-[#13161A] p-2 rounded border border-[#282D34] font-bold">
-                      {selectedProblem.warningMessageOrCode}
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <div className="text-[#707883] mb-1">DESCRIPTION:</div>
-                  <div className="text-[#D4D8DE] bg-[#13161A] p-3 rounded border border-[#282D34] leading-relaxed font-sans">
-                    {selectedProblem.description}
-                  </div>
-                </div>
-
-                {selectedProblem.troubleshootingAttempted && (
-                  <div>
-                    <div className="text-[#707883] mb-1">TROUBLESHOOTING ATTEMPTED:</div>
-                    <div className="text-[#AEB5BE] bg-[#13161A] p-2.5 rounded border border-[#282D34]">
-                      {selectedProblem.troubleshootingAttempted}
-                    </div>
-                  </div>
-                )}
-
-                {selectedProblem.serviceVisits && (
-                  <div>
-                    <div className="text-[#707883] mb-1">SERVICE VISITS & ACTIONS:</div>
-                    <div className="text-[#AEB5BE] bg-[#13161A] p-2.5 rounded border border-[#282D34]">
-                      {selectedProblem.serviceVisits}
-                    </div>
-                  </div>
-                )}
-
-                {/* Evidence Media Section (Photos & Videos) */}
-                {((selectedProblem.mediaUrls && selectedProblem.mediaUrls.length > 0) || selectedProblem.photoUrl || selectedProblem.videoUrl) && (
-                  <div className="pt-2 border-t border-[#282D34]/80">
-                    <div className="text-[#707883] mb-1.5 flex items-center justify-between text-[11px]">
-                      <span className="flex items-center gap-1.5 font-bold text-[#D4D8DE] uppercase">
-                        <Camera className="w-3.5 h-3.5 text-[#E8AA45]" />
-                        EVIDENCE MEDIA (PHOTOS & VIDEOS)
-                      </span>
-                      <span className="text-[10px] text-[#A0A7B0]">
-                        {(selectedProblem.mediaUrls || [selectedProblem.photoUrl, selectedProblem.videoUrl].filter(Boolean)).length} file(s)
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-[#13161A] p-2.5 rounded border border-[#282D34]">
-                      {(selectedProblem.mediaUrls || [selectedProblem.photoUrl, selectedProblem.videoUrl].filter(Boolean) as string[]).map((mUrl, mIdx) => {
-                        const isVid = isVideoMedia(mUrl);
-                        return (
-                          <div
-                            key={mIdx}
-                            onClick={() => {
-                              playTacticalClick();
-                              setLightboxMedia({
-                                mediaList: selectedProblem.mediaUrls || [selectedProblem.photoUrl, selectedProblem.videoUrl].filter(Boolean) as string[],
-                                index: mIdx,
-                                title: selectedProblem.title
-                              });
-                            }}
-                            className="relative bg-[#08090B] border border-[#282D34] hover:border-[#E8AA45]/60 rounded overflow-hidden aspect-video cursor-pointer group transition-all"
-                          >
-                            {isVid ? (
-                              <div className="w-full h-full relative flex items-center justify-center bg-black">
-                                <video src={mUrl} className="w-full h-full object-cover opacity-80" />
-                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/20 transition-colors">
-                                  <div className="w-8 h-8 rounded-full bg-[#E8AA45] text-black flex items-center justify-center font-bold">
-                                    <Play className="w-4 h-4 fill-current ml-0.5" />
-                                  </div>
-                                </div>
-                                <span className="absolute top-1 left-1 bg-black/80 text-[#E8AA45] text-[9px] font-bold px-1.5 py-0.2 rounded border border-[#E8AA45]/30 flex items-center gap-1">
-                                  <Film className="w-2.5 h-2.5" /> VIDEO
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="w-full h-full relative">
-                                <img src={mUrl} alt={`Media ${mIdx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                                <span className="absolute top-1 left-1 bg-black/80 text-[#42B883] text-[9px] font-bold px-1.5 py-0.2 rounded border border-[#42B883]/30 flex items-center gap-1">
-                                  <Camera className="w-2.5 h-2.5" /> PHOTO
-                                </span>
-                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                  <Maximize2 className="w-4 h-4 text-white" />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Progress Timeline & Updates */}
-              <div className="space-y-3 pt-3 border-t border-[#282D34] text-xs font-mono">
-                <div className="text-xs font-bold text-[#D4D8DE] uppercase">
-                  PROGRESS TIMELINE & SERVICE UPDATES ({selectedProblem.updates?.length || 0})
-                </div>
-
-                <div className="space-y-2">
-                  {selectedProblem.updates?.map(u => (
-                    <div key={u.id} className="p-3 rounded bg-[#13161A] border border-[#282D34] space-y-2">
-                      <div className="flex items-center justify-between text-[10px] text-[#707883]">
-                        <span className="text-[#D4D8DE] font-semibold">{u.authorName}</span>
-                        <span>{u.date}</span>
-                      </div>
-                      <div className="text-[11px] text-[#A0A7B0]">{u.note}</div>
-                      {u.mediaUrls && u.mediaUrls.length > 0 && (
-                        <div className="flex items-center gap-1.5 pt-1 overflow-x-auto">
-                          {u.mediaUrls.map((mUrl, mIdx) => (
-                            <div
-                              key={mIdx}
-                              onClick={() => {
-                                playTacticalClick();
-                                setLightboxMedia({
-                                  mediaList: u.mediaUrls!,
-                                  index: mIdx,
-                                  title: `Update Media by ${u.authorName}`
-                                });
-                              }}
-                              className="w-10 h-10 rounded border border-[#282D34] overflow-hidden bg-[#08090B] cursor-pointer shrink-0 hover:border-[#E8AA45]"
-                            >
-                              {isVideoMedia(mUrl) ? (
-                                <div className="w-full h-full flex items-center justify-center bg-black text-[#E8AA45]">
-                                  <Film className="w-3.5 h-3.5" />
-                                </div>
-                              ) : (
-                                <img src={mUrl} alt={`Update media ${mIdx}`} className="w-full h-full object-cover" />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Add Progress Note Form */}
-                <form onSubmit={handleAddUpdate} className="pt-2 space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={updateNote}
-                      onChange={e => setUpdateNote(e.target.value)}
-                      placeholder="Add diagnostic finding, service update, or resolution note..."
-                      className="flex-1 bg-[#08090B] border border-[#282D34] rounded px-3 py-2 text-[#F1F3F5] text-xs focus:outline-none"
-                    />
-                    <select
-                      value={newStatusUpdate}
-                      onChange={e => setNewStatusUpdate(e.target.value as any)}
-                      className="bg-[#13161A] border border-[#282D34] text-[#D4D8DE] px-2 py-1 rounded text-xs focus:outline-none"
-                    >
-                      <option value="Under Investigation">Under Investigation</option>
-                      <option value="Service Scheduled">Service Scheduled</option>
-                      <option value="Resolved">Resolved</option>
-                      <option value="Recurring">Recurring</option>
-                    </select>
-                  </div>
-
-                  {updateMediaUrls.length > 0 && (
-                    <div className="flex items-center gap-1.5 flex-wrap p-1.5 rounded bg-[#13161A] border border-[#282D34]">
-                      {updateMediaUrls.map((m, idx) => (
-                        <div key={idx} className="relative w-12 h-12 bg-[#08090B] border border-[#282D34] rounded overflow-hidden group">
-                          {isVideoMedia(m) ? (
-                            <video src={m} className="w-full h-full object-cover" />
-                          ) : (
-                            <img src={m} alt={`Update media ${idx}`} className="w-full h-full object-cover" />
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveMedia(idx, true)}
-                            className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[#E04F5F]"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-[10px] text-[#A0A7B0] hover:text-[#42B883] cursor-pointer flex items-center gap-1 font-mono">
-                      <Upload className="w-3 h-3 text-[#42B883]" />
-                      <span>+ Attach Photo / Video to Update</span>
-                      <input
-                        type="file"
-                        accept="image/*,video/*"
-                        multiple
-                        onChange={e => handleMediaUpload(e, true)}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={!updateNote.trim()}
-                    className="w-full py-2 bg-[#252A30] hover:bg-[#414851] disabled:opacity-40 text-[#F1F3F5] rounded border border-[#414851] text-xs font-mono font-bold"
-                  >
-                    RECORD CASE UPDATE
-                  </button>
-                </form>
-              </div>
+            <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5 lg:sticky lg:top-4">
+              {renderIssueFullDetails(selectedProblem, false)}
             </div>
           ) : (
             <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-12 text-center text-xs font-mono text-[#707883]">
@@ -946,12 +1196,38 @@ export const ProblemTracker: React.FC = () => {
         </div>
       </div>
 
+      {/* Modal: Full Details & Actions when User Presses on a Specific Issue */}
+      {showDetailModal && selectedProblem && (
+        <div
+          data-testid="issue-detail-modal"
+          onClick={() => setShowDetailModal(false)}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-[#0D0F12] border border-[#414851] rounded-xl max-w-3xl w-full p-5 sm:p-6 max-h-[90vh] overflow-y-auto shadow-2xl"
+          >
+            {renderIssueFullDetails(selectedProblem, true)}
+          </div>
+        </div>
+      )}
+
       {/* Modal: Report / Edit Issue */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-[#13161A] border border-[#414851] rounded-lg max-w-lg w-full p-6 space-y-4 font-mono text-xs max-h-[90vh] overflow-y-auto">
-            <div className="text-sm font-bold text-[#F1F3F5] pb-2 border-b border-[#282D34]">
-              {editingProblemId ? 'EDIT PRIORITY ISSUE' : 'REPORT PRIORITY ISSUE'}
+        <div className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            data-testid="issue-edit-modal"
+            className="bg-[#13161A] border border-[#414851] rounded-lg max-w-2xl w-full p-6 space-y-4 font-mono text-xs max-h-[90vh] overflow-y-auto shadow-2xl"
+          >
+            <div className="flex items-center justify-between text-sm font-bold text-[#F1F3F5] pb-2 border-b border-[#282D34]">
+              <span>{editingProblemId ? 'EDIT PRIORITY ISSUE DETAILS' : 'REPORT PRIORITY ISSUE'}</span>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="p-1 rounded bg-[#191D22] text-[#A0A7B0] hover:text-[#F1F3F5]"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
             <form onSubmit={handleCreateProblem} className="space-y-3">
@@ -959,6 +1235,7 @@ export const ProblemTracker: React.FC = () => {
                 <label className="block text-[#D4D8DE] mb-1">ISSUE TITLE *</label>
                 <input
                   type="text"
+                  data-testid="input-issue-title"
                   value={formTitle}
                   onChange={e => setFormTitle(e.target.value)}
                   placeholder="e.g. Throttle detent sticky in high humidity"
@@ -967,7 +1244,7 @@ export const ProblemTracker: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[#D4D8DE] mb-1">MODEL *</label>
                   <select
@@ -975,9 +1252,19 @@ export const ProblemTracker: React.FC = () => {
                     onChange={e => setFormModel(e.target.value)}
                     className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
                   >
-                    <option value="F77">F77</option>
                     <option value="X47">X47</option>
+                    <option value="F77">F77</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-[#D4D8DE] mb-1">VARIANT</label>
+                  <input
+                    type="text"
+                    value={formVariant}
+                    onChange={e => setFormVariant(e.target.value)}
+                    placeholder="e.g. Crossover / Recon / Mach 2"
+                    className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
+                  />
                 </div>
                 <div>
                   <label className="block text-[#D4D8DE] mb-1">CATEGORY *</label>
@@ -996,19 +1283,71 @@ export const ProblemTracker: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[#D4D8DE] mb-1">SEVERITY *</label>
-                <select
-                  value={formSeverity}
-                  onChange={e => setFormSeverity(e.target.value as any)}
-                  className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
-                >
-                  <option value="Critical / Safety-Related">Critical</option>
-                  <option value="High">High</option>
-                  <option value="Moderate">Moderate</option>
-                  <option value="Low">Low</option>
-                  <option value="Informational">Informational</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#D4D8DE] mb-1">PRIORITY / SEVERITY *</label>
+                  <select
+                    data-testid="select-issue-severity"
+                    value={formSeverity}
+                    onChange={e => setFormSeverity(e.target.value as any)}
+                    className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
+                  >
+                    <option value="Critical / Safety-Related">🔴 Critical Priority</option>
+                    <option value="High">🟠 High Priority</option>
+                    <option value="Moderate">🟡 Moderate</option>
+                    <option value="Low">🟣 Low</option>
+                    <option value="Informational">Informational</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[#D4D8DE] mb-1">CURRENT STATUS *</label>
+                  <select
+                    data-testid="select-issue-status"
+                    value={formStatus}
+                    onChange={e => setFormStatus(e.target.value as any)}
+                    className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
+                  >
+                    <option value="Reported">Reported</option>
+                    <option value="Under Investigation">Under Investigation</option>
+                    <option value="Service Scheduled">Service Scheduled</option>
+                    <option value="Resolved">Resolved</option>
+                    <option value="Recurring">Recurring</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[#D4D8DE] mb-1">FIRST OBSERVED DATE</label>
+                  <input
+                    type="date"
+                    value={formFirstObserved}
+                    onChange={e => setFormFirstObserved(e.target.value)}
+                    className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#D4D8DE] mb-1">ODOMETER / MILEAGE (KM)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formMileageKm}
+                    onChange={e => setFormMileageKm(e.target.value)}
+                    className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-[#D4D8DE] select-none">
+                    <input
+                      type="checkbox"
+                      checked={formIsRecurring}
+                      onChange={e => setFormIsRecurring(e.target.checked)}
+                      className="rounded border-[#282D34] bg-[#08090B]"
+                    />
+                    <span>RECURRING SYMPTOM</span>
+                  </label>
+                </div>
               </div>
 
               <div>
@@ -1023,15 +1362,41 @@ export const ProblemTracker: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[#D4D8DE] mb-1">DESCRIPTION *</label>
+                <label className="block text-[#D4D8DE] mb-1">FULL ISSUE DESCRIPTION *</label>
                 <textarea
                   rows={3}
+                  data-testid="textarea-issue-description"
                   value={formDescription}
                   onChange={e => setFormDescription(e.target.value)}
                   placeholder="Describe operating conditions, symptom details, and frequency..."
                   className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
                   required
                 />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#D4D8DE] mb-1">TROUBLESHOOTING ATTEMPTED</label>
+                  <textarea
+                    rows={2}
+                    data-testid="textarea-issue-troubleshooting"
+                    value={formTroubleshooting}
+                    onChange={e => setFormTroubleshooting(e.target.value)}
+                    placeholder="Key-cycle reset, app cache clear, fuse check..."
+                    className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#D4D8DE] mb-1">SERVICE VISITS & ACTIONS</label>
+                  <textarea
+                    rows={2}
+                    data-testid="textarea-issue-service"
+                    value={formServiceVisits}
+                    onChange={e => setFormServiceVisits(e.target.value)}
+                    placeholder="Hangar visit dates, technician notes, parts replaced..."
+                    className="w-full bg-[#08090B] border border-[#282D34] rounded p-2 text-[#F1F3F5] focus:outline-none"
+                  />
+                </div>
               </div>
 
               {/* Photos & Videos Upload Section */}
@@ -1140,7 +1505,8 @@ export const ProblemTracker: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded bg-[#252A30] hover:bg-[#414851] text-[#F1F3F5] border border-[#414851] font-bold"
+                  data-testid="save-issue-btn"
+                  className="px-4 py-2 rounded bg-[#E8AA45] hover:bg-[#F59E0B] text-[#08090B] font-bold transition-colors"
                 >
                   {editingProblemId ? 'SAVE CHANGES' : 'TRANSMIT REPORT'}
                 </button>

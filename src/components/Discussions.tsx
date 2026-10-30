@@ -22,6 +22,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { DiscussionPost, DiscussionPoll, DiscussionPetition } from '../types';
+import { BackButton } from './BackButton';
 import {
   validatePollCreation,
   castPollVote,

@@ -19,6 +19,8 @@ import {
 } from '../utils/rules';
 import { Shield, Lock, Key, AlertTriangle, CheckCircle2, X, LogOut, UserCheck } from 'lucide-react';
 
+import { signInWithGoogleForCloudSync } from '../firebase';
+
 export { getStoredSessionToken, setStoredSessionToken };
 
 export interface IdentityUpdatePayload {
@@ -41,10 +43,11 @@ interface AuthContextType {
   openAuthModal: (targetUserId?: string, initialMode?: 'login' | 'setup') => void;
   closeAuthModal: () => void;
   login: (emailOrId: string, password?: string) => Promise<{ success: boolean; error?: string; code?: string }>;
+  loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   setupPassword: (params: {
     userId?: string;
     email?: string;
-    setupToken: string;
+    setupToken?: string;
     newPassword: string;
   }) => Promise<{ success: boolean; error?: string }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
@@ -94,7 +97,7 @@ const PUBLIC_FALLBACK_ACCOUNTS: User[] = [
     mobile: '',
     city: 'Bengaluru',
     state: 'Karnataka',
-    motorcycleModel: 'F77 MACH 2',
+    motorcycleModel: 'F77',
     variant: 'Recon Laser Black (10.3 kWh)',
     registrationNumber: '',
     purchaseDate: '',
@@ -120,7 +123,7 @@ const PUBLIC_FALLBACK_ACCOUNTS: User[] = [
     mobile: '',
     city: 'Bengaluru',
     state: 'Karnataka',
-    motorcycleModel: 'F77 Recon',
+    motorcycleModel: 'F77',
     variant: 'Shadow Stealth (10.3 kWh)',
     registrationNumber: '',
     purchaseDate: '',
@@ -167,8 +170,20 @@ const PUBLIC_FALLBACK_ACCOUNTS: User[] = [
 ];
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Never default to u_admin when unauthenticated
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // Initialize currentUser from local cache so authenticated pilots remain in session without login flash
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = localStorage.getItem('ghost_protocol_current_user_obj');
+      const token = getStoredSessionToken();
+      if (stored && token) {
+        return normalizeUserRecord(JSON.parse(stored));
+      }
+    } catch {
+      // Ignore parse error
+    }
+    return null;
+  });
   const [availableUsers, setAvailableUsers] = useState<User[]>(PUBLIC_FALLBACK_ACCOUNTS);
   const [loading, setLoading] = useState(true);
 
@@ -379,10 +394,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginWithGoogle = async () => {
+    try {
+      const fbUser = await signInWithGoogleForCloudSync();
+      if (!fbUser || !fbUser.email) {
+        return { success: false, error: 'Google sign-in was canceled or failed to return email.' };
+      }
+
+      const res = await gpApiFetch('/api/auth/google', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: getSessionAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          email: fbUser.email,
+          name: fbUser.displayName || fbUser.email.split('@')[0],
+          googleUid: fbUser.uid,
+          photoUrl: fbUser.photoURL || undefined
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Google authentication failed' };
+      }
+
+      if (data.sessionToken) {
+        setStoredSessionToken(data.sessionToken);
+      }
+      const normalized = normalizeUserRecord(data.user);
+      setCurrentUser(normalized);
+      localStorage.setItem('ghost_protocol_user_id', normalized.id);
+      localStorage.setItem('ghost_protocol_current_user_obj', JSON.stringify(normalized));
+      await fetchAuthData();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to authenticate with Google' };
+    }
+  };
+
   const setupPassword = async (params: {
     userId?: string;
     email?: string;
-    setupToken: string;
+    setupToken?: string;
     newPassword: string;
   }) => {
     try {
@@ -748,11 +801,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           closeAuthModal();
         }
       } else {
-        if (!authSetupToken.trim()) {
-          setAuthError('One-time setup token is required.');
-          setAuthSubmitting(false);
-          return;
-        }
         if (authPassword.length < 8) {
           setAuthError('Password must be at least 8 characters long.');
           setAuthSubmitting(false);
@@ -766,11 +814,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const res = await setupPassword({
           userId: authTargetUserId || undefined,
           email: !authTargetUserId ? authEmailOrId.trim() : undefined,
-          setupToken: authSetupToken.trim(),
           newPassword: authPassword
         });
         if (!res.success) {
-          setAuthError(res.error || 'Failed to initialize password');
+          setAuthError(res.error || 'Failed to update password');
         } else {
           closeAuthModal();
         }
@@ -791,6 +838,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         openAuthModal,
         closeAuthModal,
         login,
+        loginWithGoogle,
         setupPassword,
         changePassword,
         issueSetupToken,
@@ -835,35 +883,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             </div>
 
             <div className="p-5 space-y-4">
-              {/* Target Account Selector */}
-              <div>
-                <label className="block text-[10px] text-[#707883] uppercase mb-1">
-                  SELECT SQUADRON ACCOUNT TO AUTHENTICATE
-                </label>
-                <select
-                  value={authTargetUserId}
-                  onChange={e => {
-                    const nextId = e.target.value;
-                    setAuthTargetUserId(nextId);
-                    const acc = availableUsers.find(u => u.id === nextId);
-                    if (acc?.requiresPasswordSetup) {
-                      setAuthMode('setup');
-                    } else {
-                      setAuthMode('login');
-                    }
-                    setAuthError(null);
-                  }}
-                  className="w-full bg-[#13161A] border border-[#282D34] rounded p-2.5 text-[#F1F3F5] text-xs focus:border-[#42B883] focus:outline-none"
-                >
-                  {availableUsers.map(u => (
-                    <option key={u.id} value={u.id}>
-                      {u.fullName} ({u.isOwner ? 'OWNER' : u.role.toUpperCase()})
-                      {u.requiresPasswordSetup ? ' — SETUP REQUIRED' : ''}
-                    </option>
-                  ))}
-                  <option value="">Other Account (Sign in by Email)</option>
-                </select>
-              </div>
 
               {selectedTargetAccount && (
                 <div className="p-3 rounded bg-[#13161A] border border-[#282D34] flex items-center justify-between">
@@ -913,7 +932,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       : 'text-[#707883] hover:text-[#D4D8DE]'
                   }`}
                 >
-                  ONE-TIME SETUP TOKEN
+                  SET / RESET PASSWORD
                 </button>
               </div>
 
@@ -944,27 +963,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       className="w-full bg-[#13161A] border border-[#282D34] rounded p-2.5 text-[#F1F3F5] focus:border-[#42B883] focus:outline-none"
                       required
                     />
-                  </div>
-                )}
-
-                {authMode === 'setup' && (
-                  <div>
-                    <label className="block text-[10px] text-[#E8AA45] uppercase mb-1">
-                      ONE-TIME SETUP / BOOTSTRAP TOKEN *
-                    </label>
-                    <input
-                      type="password"
-                      value={authSetupToken}
-                      onChange={e => setAuthSetupToken(e.target.value)}
-                      placeholder="Paste single-use setup token"
-                      className="w-full bg-[#13161A] border border-[#282D34] rounded p-2.5 text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
-                      required
-                    />
-                    <div className="text-[10px] text-[#707883] mt-1 font-sans">
-                      {authTargetUserId === 'u_admin'
-                        ? 'Owner bootstrap token is saved in data/.owner_bootstrap_token.txt if GHOST_OWNER_INITIAL_PASSWORD was not set.'
-                        : 'Request a 24-hour single-use setup token from the Website Owner in Admin Centre.'}
-                    </div>
                   </div>
                 )}
 

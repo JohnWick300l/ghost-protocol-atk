@@ -45,6 +45,7 @@ export const CACHE_KEYS = {
   CACHED_ROUTES: 'ghost_cache_routes_v1',
   CACHED_WEATHER: 'ghost_cache_weather_v1',
   CACHED_PLACES: 'ghost_cache_places_v1',
+  NOTIFICATIONS: 'ghost_cache_notifications_v1',
   OFFLINE_PACK_META: 'ghost_cache_offline_pack_meta_v1'
 };
 
