@@ -1,0 +1,9 @@
+{
+  "appId": "com.ghostprotocol.atk",
+  "appName": "Ghost Protocol",
+  "webDir": "dist",
+  "server": {
+    "url": "https://ghost-protocol.ai.studio",
+    "cleartext": true
+  }
+}
