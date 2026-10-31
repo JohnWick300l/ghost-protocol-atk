@@ -26,14 +26,15 @@ import {
 } from './storage/progressionStorage';
 
 describe('SQUADRON SHOWDOWN — Roster & Arena Integrity', () => {
-  it('contains all 9 official fighters (FIGHTER_001 to FIGHTER_009) with exact stats and specials', () => {
-    assert.equal(OFFICIAL_FIGHTERS.length, 9);
+  it('contains all 8 official fighters (FIGHTER_001 to FIGHTER_008) with exact stats and specials', () => {
+    assert.equal(OFFICIAL_FIGHTERS.length, 8);
     assert.equal(BONUS_FIGHTERS.length, 4);
-    assert.equal(SQUADRON_ROSTER.length, 13);
+    assert.equal(SQUADRON_ROSTER.length, 12);
 
     const naresh = getFighterById('FIGHTER_001');
     assert.equal(naresh.name, 'NARESH');
     assert.equal(naresh.specialName, 'THUNDER PUNCH');
+    assert.equal(naresh.tagline, 'True innovation should reward its early adopters, not punish them.');
     assert.deepEqual(naresh.stats, { strength: 80, speed: 80, defense: 75, stamina: 80 });
 
     const dheeraj = getFighterById('FIGHTER_002');
@@ -54,55 +55,25 @@ describe('SQUADRON SHOWDOWN — Roster & Arena Integrity', () => {
     const lexi = getFighterById('FIGHTER_005');
     assert.equal(lexi.name, 'LEXI');
     assert.equal(lexi.specialName, 'VOLTAGE KICK');
+    assert.equal(lexi.tagline, 'we will get back to you later');
     assert.deepEqual(lexi.stats, { strength: 75, speed: 90, defense: 75, stamina: 85 });
 
     const penguin = getFighterById('FIGHTER_006');
     assert.equal(penguin.name, 'PENGUIN BHAI');
     assert.equal(penguin.specialName, 'BELLY BOUNCE');
+    assert.equal(penguin.tagline, 'i put poilce case in u');
     assert.deepEqual(penguin.stats, { strength: 65, speed: 85, defense: 70, stamina: 100 });
 
     const girimon = getFighterById('FIGHTER_007');
     assert.equal(girimon.name, 'GIRIMON');
     assert.equal(girimon.specialName, 'ELECTRIC IMPACT');
+    assert.equal(girimon.tagline, 'i turn around and swapp!');
     assert.deepEqual(girimon.stats, { strength: 80, speed: 75, defense: 85, stamina: 85 });
 
     const dq = getFighterById('FIGHTER_008');
     assert.equal(dq.name, 'DQ (THE SHADOW RIDER)');
     assert.equal(dq.specialName, 'SHADOW STRIKE');
     assert.deepEqual(dq.stats, { strength: 85, speed: 90, defense: 80, stamina: 85 });
-
-    const livin = getFighterById('FIGHTER_009');
-    assert.equal(livin.name, 'LIVIN CHETTAN');
-    assert.equal(livin.title, 'THE SQUADRON LEGEND');
-    assert.equal(livin.style, 'BALANCED SQUADRON FIGHTER');
-    assert.equal(livin.isOfficial, true);
-    assert.equal(livin.specialName, 'SQUADRON SURGE');
-    assert.deepEqual(livin.stats, { strength: 80, speed: 85, defense: 80, stamina: 85 });
-  });
-
-  it('executes Livin Chettan SQUADRON SURGE special attack with energy consumption, forward dash, and knockback', () => {
-    const state = createInitialMatchState({
-      playerFighterId: 'FIGHTER_009',
-      opponentFighterId: 'FIGHTER_008',
-      arenaId: 'ARENA_001',
-      difficulty: 'MEDIUM',
-    });
-    state.phase = 'FIGHTING';
-    state.player.energy = 100;
-    state.player.x = 500;
-    state.opponent.x = 620;
-    const prevOppHp = state.opponent.hp;
-
-    stepBattleSimulation(state, { ...EMPTY_INPUT, special: true }, EMPTY_INPUT, 20);
-    assert.equal(state.player.action, 'SPECIAL');
-    assert.equal(state.player.energy, 0);
-    assert.ok(state.player.specialCooldownMs > 0);
-    assert.ok(state.player.vx > 0, 'Expected forward dash velocity during SQUADRON SURGE');
-
-    for (let i = 0; i < 6; i++) {
-      stepBattleSimulation(state, EMPTY_INPUT, EMPTY_INPUT, 20);
-    }
-    assert.ok(state.opponent.hp < prevOppHp, 'Expected SQUADRON SURGE hitbox to deal damage');
   });
 
   it('contains all 4 official battle arenas', () => {

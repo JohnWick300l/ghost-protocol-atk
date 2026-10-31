@@ -3307,6 +3307,15 @@ export const ROTARY_NAVIGATION_REGISTRY: RotaryDestinationItem[] = [
     iconKey: 'key'
   },
   {
+    id: 'rotary_squadron_showdown',
+    label: 'SQUADRON SHOWDOWN',
+    segmentLines: ['SQUADRON', 'SHOWDOWN'],
+    subtitle: '',
+    segmentSubLines: [''],
+    routeId: 'squadron-showdown',
+    iconKey: 'zap'
+  },
+  {
     id: 'rotary_admin_centre',
     label: 'ADMIN CENTRE',
     segmentLines: ['ADMIN', 'CENTRE'],

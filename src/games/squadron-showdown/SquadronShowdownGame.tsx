@@ -624,9 +624,11 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                 <div className="text-[11px] text-cyan-300 font-bold tracking-wider uppercase truncate">
                   {playerDef.title}
                 </div>
-                <div className="text-xs text-amber-400 font-bold uppercase">
-                  SPECIAL: {playerDef.specialName}
-                </div>
+                {playerDef.tagline && (
+                  <div className="text-[11px] italic font-semibold text-cyan-300/90 bg-cyan-950/40 border-l-2 border-cyan-400 px-2 py-1 rounded-r">
+                    &ldquo;{playerDef.tagline}&rdquo;
+                  </div>
+                )}
                 <p className="text-xs text-slate-400 line-clamp-2">
                   {playerDef.style} — {playerDef.specialDescription}
                 </p>
@@ -764,9 +766,11 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                 <div className="text-[11px] text-rose-300 font-bold tracking-wider uppercase truncate">
                   {opponentDef.title}
                 </div>
-                <div className="text-xs text-amber-400 font-bold uppercase">
-                  SPECIAL: {opponentDef.specialName}
-                </div>
+                {opponentDef.tagline && (
+                  <div className="text-[11px] italic font-semibold text-rose-300/90 bg-rose-950/40 border-l-2 border-rose-400 px-2 py-1 rounded-r">
+                    &ldquo;{opponentDef.tagline}&rdquo;
+                  </div>
+                )}
                 <p className="text-xs text-slate-400 line-clamp-2">
                   {opponentDef.style} — {opponentDef.specialDescription}
                 </p>
@@ -1850,6 +1854,11 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                       <div className="text-xs text-cyan-400 font-bold">
                         {fav.specialName}
                       </div>
+                      {fav.tagline && (
+                        <div className="text-xs italic font-bold text-amber-300 bg-amber-950/30 border-l-2 border-amber-400 px-2.5 py-1.5 rounded-r mt-2">
+                          &ldquo;{fav.tagline}&rdquo;
+                        </div>
+                      )}
                       <p className="text-xs text-slate-400 mt-1">{fav.lore}</p>
                     </div>
                   </div>

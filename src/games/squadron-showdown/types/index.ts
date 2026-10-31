@@ -47,6 +47,7 @@ export interface FighterDefinition {
   secondaryColor: string;
   specialName: string;
   specialDescription: string;
+  tagline?: string;
   lore: string;
   stats: FighterStats;
 }

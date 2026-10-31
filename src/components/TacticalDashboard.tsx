@@ -140,20 +140,6 @@ export const TacticalDashboard: React.FC<TacticalDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono">
-          {onOpenWelcome && (
-            <button
-              onClick={() => {
-                playTacticalClick();
-                onOpenWelcome();
-              }}
-              className="px-3 py-1.5 rounded bg-[#191D22] border border-[#E8AA45]/60 hover:bg-[#E8AA45]/20 text-[#E8AA45] transition-colors flex items-center gap-1.5 font-bold"
-              title="Return to Pilot Welcome & Take-Off Cockpit"
-            >
-              <Zap className="w-3.5 h-3.5 text-[#E8AA45]" />
-              <span>PILOT BRIEFING</span>
-            </button>
-          )}
-
           {onToggleSimulateOffline && (
             <button
               onClick={handleToggleOffline}

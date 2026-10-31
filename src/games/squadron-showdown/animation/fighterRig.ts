@@ -578,64 +578,6 @@ export const CHARACTER_ANATOMICAL_PROFILES: Record<
     shoeAccent: '#38bdf8',
   },
 
-  // 9. LIVIN CHETTAN (THE SQUADRON LEGEND) — Black & white UV pilot hoodie, bare clenched fists, black cargo pants, black/white high-top sneakers
-  FIGHTER_009: {
-    fighterId: 'FIGHTER_009',
-    shoulderRx: 0.48,
-    shoulderRy: 0.25,
-    hipRx: 0.56,
-    hipRy: 0.50,
-    upperArmStrip: {
-      p0Rx: 0.17,
-      p0Ry: 0.22,
-      p1Rx: 0.12,
-      p1Ry: 0.34,
-      thicknessRatio: 0.13,
-      flipY: false,
-    },
-    armStrip: {
-      p0Rx: 0.13,
-      p0Ry: 0.33,
-      p1Rx: 0.395,
-      p1Ry: 0.285,
-      thicknessRatio: 0.135,
-      flipY: false,
-      clearDarkBgAtTip: true,
-    },
-    legStrip: {
-      p0Rx: 0.55,
-      p0Ry: 0.50,
-      p1Rx: 0.85,
-      p1Ry: 0.96,
-      thicknessRatio: 0.32,
-      flipY: false,
-    },
-    outerArmCutout: {
-      rx: 0.77,
-      ry: 0.25,
-      rw: 0.23,
-      rh: 0.16,
-    },
-    sleeveStyle: 'LONG_JACKET',
-    handStyle: 'BARE_FIST',
-    sleevePrimary: '#f8fafc',
-    sleeveSecondary: '#18181b',
-    sleeveHighlight: '#00d2ff',
-    cuffColor: '#09090b',
-    skinTone: '#e09a6c',
-    skinShadow: '#a8643c',
-    gloveColor: '#e09a6c',
-    gloveAccent: '#00d2ff',
-    bootStyle: 'TACTICAL_SNEAKER',
-    pantsPrimary: '#18181b',
-    pantsSecondary: '#09090b',
-    pantsHighlight: '#00d2ff',
-    shoePrimary: '#0f172a',
-    shoeSecondary: '#f8fafc',
-    shoeSole: '#e2e8f0',
-    shoeAccent: '#00d2ff',
-  },
-
   // 10. KAEL VANCE — Cyber-Volt blue/slate armored biker suit
   FIGHTER_010: {
     fighterId: 'FIGHTER_010',
@@ -1238,6 +1180,7 @@ function detectCharacterBounds(
  * while preserving 100% of the character's original appearance and outfit.
  */
 export class ArticulatedFighterPuppet {
+  public fighterId: string;
   private sourceImg: HTMLImageElement | HTMLCanvasElement;
   private bounds: CharacterBounds;
   private profile: CharacterAnatomicalProfile;
@@ -1251,6 +1194,7 @@ export class ArticulatedFighterPuppet {
     sourceImg: HTMLImageElement | HTMLCanvasElement,
     fighterId = 'FIGHTER_001'
   ) {
+    this.fighterId = fighterId;
     this.sourceImg = sourceImg;
     this.bounds = detectCharacterBounds(sourceImg);
     this.profile = getCharacterAnatomicalProfile(fighterId);
@@ -1583,138 +1527,81 @@ export class ArticulatedFighterPuppet {
     ctx.restore();
   }
 
-  /**
-   * Draws the articulated fighter onto the target 2D canvas context (`520 x 460`).
-   * Feet rest near `groundY = 428`, centered horizontally at `centerX = 228`.
-   */
   public renderPose(
     ctx: CanvasRenderingContext2D,
     canvasWidth: number,
     canvasHeight: number,
     pose: FighterRigPose,
     accentColor: string,
-    _secondaryColor: string
+    _secondaryColor?: string
   ): void {
+    // Clear previous frame canvas pixels to prevent image accumulation/ghosting
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    const targetHeight = 295;
-    const aspect = this.bounds.sw / Math.max(1, this.bounds.sh);
-    const targetWidth = Math.min(240, Math.round(targetHeight * aspect));
+    // Body dimensions scaled naturally to original compact arcade fighter scale
+    const bodyHeight = Math.min(canvasHeight * 0.64, 295);
+    const aspect = (this.bounds.sw || 1) / (this.bounds.sh || 1);
+    const bodyWidth = Math.max(120, bodyHeight * aspect);
 
     const baseCenterX = canvasWidth * 0.44 + pose.bodyOffsetX;
     const groundY = canvasHeight - 32 + pose.bodyOffsetY;
-    const topY = groundY - targetHeight;
-    const leftX = baseCenterX - targetWidth / 2;
+    const topY = groundY - bodyHeight;
+    const leftX = baseCenterX - bodyWidth / 2;
 
     const joints = computeArticulatedLimbJoints(
       pose,
       this.profile,
       canvasWidth,
       canvasHeight,
-      targetWidth,
-      targetHeight
+      bodyWidth,
+      bodyHeight
     );
 
     ctx.save();
 
-    // -------------------------------------------------------------------------
-    // 1. LOWER & UPPER BODY + KICKING LEG ARTICULATION
-    // -------------------------------------------------------------------------
-    if (!pose.isKickActive) {
-      // Standing / Walking / Punching lower & upper body (100% seamless original sprite)
-      ctx.save();
-      ctx.translate(baseCenterX, groundY);
-      ctx.scale(pose.torsoScaleX, pose.torsoScaleY);
-      ctx.rotate((pose.torsoLeanDeg * Math.PI) / 180);
-      ctx.drawImage(
-        this.sourceImg,
-        this.bounds.sx,
-        this.bounds.sy,
-        this.bounds.sw,
-        this.bounds.sh,
-        -targetWidth / 2,
-        -targetHeight,
-        targetWidth,
-        targetHeight
-      );
-
-      // Erase only the outer protruding front elbow/fist in transparent space when the arm unfolds to punch
-      if (
-        (pose.isPunchActive || pose.punchArmExtendPx > 12) &&
-        this.profile.outerArmCutout
-      ) {
-        const c = this.profile.outerArmCutout;
-        ctx.save();
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.beginPath();
-        ctx.roundRect(
-          -targetWidth / 2 + targetWidth * c.rx,
-          -targetHeight + targetHeight * c.ry,
-          targetWidth * c.rw,
-          targetHeight * c.rh,
-          12
-        );
-        ctx.fill();
-        ctx.restore();
-      }
-
-      ctx.restore();
+    // Pivot transform at the character's feet base so all torso leans and crouching scale smoothly
+    ctx.translate(baseCenterX, groundY);
+    if (pose.headNodDeg !== 0) {
+      ctx.rotate(((pose.torsoLeanDeg + pose.headNodDeg * 0.3) * Math.PI) / 180);
     } else {
-      // High Kick Split-Leg Mode: Support Leg planted + Upper Body leaning back + Real Sprite Kick Leg rising!
-      const hipY = topY + targetHeight * 0.50;
-      const supportHipX = leftX + targetWidth * 0.34;
-      const legH = targetHeight * 0.52;
-      const legW = targetWidth * 0.54;
-
-      // 1A. Rear / Support Leg planted and pivoting from hip
-      ctx.save();
-      ctx.translate(supportHipX, hipY);
-      ctx.rotate((pose.supportLegAngleDeg * Math.PI) / 180);
-      ctx.drawImage(
-        this.supportLegCanvas,
-        -legW * 0.48,
-        -legH * 0.06,
-        legW,
-        legH
-      );
-      ctx.restore();
-
-      // 1B. Upper Body (Head + Torso + Resting Arms) pivoting at waist
-      ctx.save();
-      ctx.translate(baseCenterX, hipY + 12);
-      ctx.scale(pose.torsoScaleX, pose.torsoScaleY);
       ctx.rotate((pose.torsoLeanDeg * Math.PI) / 180);
-      const upperH = targetHeight * 0.54;
-      ctx.drawImage(
-        this.upperBodyCanvas,
-        -targetWidth / 2,
-        -upperH + 10,
-        targetWidth,
-        upperH
-      );
-      ctx.restore();
-
-      // 1C. Lead / Kicking Leg (Real Extracted Thigh + Shin + Sneaker/Boot/Foot!)
-      this.drawRealSpriteKickLeg(
-        ctx,
-        joints,
-        pose,
-        targetWidth,
-        targetHeight,
-        accentColor
-      );
     }
+    ctx.scale(pose.torsoScaleX, pose.torsoScaleY);
+    ctx.translate(-baseCenterX, -groundY);
 
-    // -------------------------------------------------------------------------
-    // 2. PHYSICAL RIGHT / LEAD HAND PUNCH (Real Sprite Forearm + Fist Knuckles)
-    // -------------------------------------------------------------------------
+    // 1. Draw pristine full photo character sprite
+    ctx.drawImage(
+      this.sourceImg,
+      this.bounds.sx,
+      this.bounds.sy,
+      this.bounds.sw,
+      this.bounds.sh,
+      leftX,
+      topY,
+      bodyWidth,
+      bodyHeight
+    );
+
+    // 2. Lead Hand Punch extension overlay
     if (pose.isPunchActive || pose.punchArmExtendPx > 4) {
       this.drawRealSpritePunchArm(
         ctx,
         joints,
         pose,
-        targetWidth,
-        targetHeight,
+        bodyWidth,
+        bodyHeight,
+        accentColor
+      );
+    }
+
+    // 3. Lead Leg Kick extension overlay
+    if (pose.isKickActive || Math.abs(pose.kickLegAngleDeg) > 12) {
+      this.drawRealSpriteKickLeg(
+        ctx,
+        joints,
+        pose,
+        bodyWidth,
+        bodyHeight,
         accentColor
       );
     }

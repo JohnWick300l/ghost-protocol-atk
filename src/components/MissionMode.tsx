@@ -3115,13 +3115,13 @@ export const MissionMode: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-mono text-slate-400 uppercase mb-1">
-                  RIDE BRIEFING & DESCRIPTION
+                  RIDE DETAILS & DESCRIPTION
                 </label>
                 <textarea
                   rows={2}
                   value={createForm.description}
                   onChange={e => setCreateForm({ ...createForm, description: e.target.value })}
-                  placeholder="Provide ride briefing, road expectations, gear recommendations..."
+                  placeholder="Provide ride description, road expectations, gear recommendations..."
                   className="w-full bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-400"
                 />
               </div>

@@ -502,7 +502,6 @@ const AppContent: React.FC = () => {
                 isOffline={effectiveOffline}
                 cacheAge={cacheAge}
                 queuedActionCount={queuedActions.length}
-                onOpenWelcome={() => setShowWelcome(true)}
               />
             </motion.div>
           )}
@@ -609,7 +608,6 @@ const AppContent: React.FC = () => {
               onToggleSimulateOffline={handleToggleSimulateOffline}
               cacheAge={cacheAge}
               queuedActionCount={queuedActions.length}
-              onOpenWelcome={() => setShowWelcome(true)}
               notifications={notifications}
               onMarkNotificationRead={handleMarkNotificationRead}
               onMarkAllNotificationsRead={handleMarkAllNotificationsRead}

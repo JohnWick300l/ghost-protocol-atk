@@ -2165,7 +2165,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
       {planResult && planResult.valid && (
         <>
           {/* ========================================================= */}
-          {/* 2. INTERACTIVE ROUTE MAP & MISSION BRIEFING GRID          */}
+          {/* 2. INTERACTIVE ROUTE MAP & ROUTE SUMMARY GRID             */}
           {/* ========================================================= */}
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
             {/* Left 7 Cols: Interactive Route Map + External Google Maps Handoff */}
@@ -2298,13 +2298,13 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
               </div>
             </div>
 
-            {/* Right 5 Cols: Mission Briefing Panel */}
+            {/* Right 5 Cols: Route Summary Panel */}
             <div className="xl:col-span-5 space-y-6">
               <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-5 shadow-xl">
                 <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
                   <div>
                     <div className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold">
-                      PRE-FLIGHT TELEMETRY // MISSION BRIEFING
+                      PRE-FLIGHT TELEMETRY // ROUTE SUMMARY
                     </div>
                     <h4 className="text-lg font-display font-bold text-white uppercase tracking-wider">
                       Route &amp; Charging Summary

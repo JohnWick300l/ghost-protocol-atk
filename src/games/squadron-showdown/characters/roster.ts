@@ -14,6 +14,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#dc2626',
     specialName: 'THUNDER PUNCH',
     specialDescription: 'High-voltage heavy straight punch that sends a shockwave across the tarmac.',
+    tagline: 'True innovation should reward its early adopters, not punish them.',
     lore: 'Armored in full black-and-crimson racing leathers, Naresh anchors the frontline with unshakeable composure and devastating counter-punches.',
     stats: {
       strength: 80,
@@ -35,6 +36,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#f97316',
     specialName: 'PRECISION STRIKE',
     specialDescription: 'Laser-sighted rapid three-hit combo targeting guard weak points.',
+    tagline: 'Precision timing, absolute control.',
     lore: 'Rocking signature yellow tactical gear and neon kicks, Dheeraj reads every frame of an opponent’s rhythm before dismantling their guard.',
     stats: {
       strength: 75,
@@ -56,6 +58,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#ec4899',
     specialName: 'PHANTOM DASH',
     specialDescription: 'Supersonic afterimage dash strike that phases through frontal pressure.',
+    tagline: 'Catch me if telemetry allows.',
     lore: 'Built for pure speed and reflex evasion, Vijay blurs across the arena like a midnight superbike hitting peak telemetry.',
     stats: {
       strength: 70,
@@ -77,7 +80,8 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#dc2626',
     specialName: 'REDLINE OVERDRIVE',
     specialDescription: 'Full-throttle crimson rush unleashing maximum ballistic impact.',
-    lore: 'Clad in black-and-red track armor with helmet at the ready, Abhiyan pushes every battle past redline with relentless power.',
+    tagline: 'Pushing past redline!',
+    lore: 'Clad in black-and-red track armor, Abhiyan pushes every battle past redline with relentless power.',
     stats: {
       strength: 95,
       speed: 80,
@@ -98,6 +102,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#f59e0b',
     specialName: 'VOLTAGE KICK',
     specialDescription: 'Electrified spinning high-kick that discharges golden arc lightning.',
+    tagline: 'we will get back to you later',
     lore: 'Combining lightning-fast footwork with razor-sharp martial technique, Lexi dominates mid-range spacing with high-voltage kicks.',
     stats: {
       strength: 75,
@@ -119,6 +124,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#f97316',
     specialName: 'BELLY BOUNCE',
     specialDescription: 'High-momentum aerodynamic belly slam that sends opponents flying across the stage.',
+    tagline: 'i put poilce case in u',
     lore: 'Do not let the adorable smile fool you—Penguin Bhai brings boundless stamina, deceptive agility, and the most feared Belly Bounce in the squadron.',
     stats: {
       strength: 65,
@@ -140,6 +146,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#60a5fa',
     specialName: 'ELECTRIC IMPACT',
     specialDescription: 'Concentrated electromagnetic ground-pulse strike with heavy knockback.',
+    tagline: 'i turn around and swapp!',
     lore: 'Wearing the official Ultraviolette tactical crew uniform, Girimon blends rock-solid defense with calculated high-voltage counters.',
     stats: {
       strength: 80,
@@ -161,31 +168,11 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#38bdf8',
     specialName: 'SHADOW STRIKE',
     specialDescription: 'High-speed shadow dash with electric blue and violet dual-blade energy slashes.',
+    tagline: 'Shadows fall, telemetry rises.',
     lore: 'Emerging from the neon night with dual blades and cyber-visor glowing violet-blue, DQ strikes before his target even registers movement.',
     stats: {
       strength: 85,
       speed: 90,
-      defense: 80,
-      stamina: 85,
-    },
-  },
-  {
-    id: 'FIGHTER_009',
-    code: 'FIGHTER_009',
-    name: 'LIVIN CHETTAN',
-    title: 'THE SQUADRON LEGEND',
-    style: 'BALANCED SQUADRON FIGHTER',
-    isOfficial: true,
-    spriteAsset: '/assets/squadron-showdown/characters/livin_chettan_clean.png',
-    cardAsset: '/assets/aistudio/Livin_chettan_f0287255.png',
-    accentColor: '#00d2ff',
-    secondaryColor: '#06b6d4',
-    specialName: 'SQUADRON SURGE',
-    specialDescription: 'Channels electric blue energy into an explosive forward dash followed by a thunderous shockwave punch with heavy knockback.',
-    lore: 'Known across the Ultraviolette flight ranks as The Squadron Legend, Livin Chettan balances lightning speed with unyielding defense, charging into battle with his signature Squadron Surge.',
-    stats: {
-      strength: 80,
-      speed: 85,
       defense: 80,
       stamina: 85,
     },

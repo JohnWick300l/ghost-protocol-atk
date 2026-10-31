@@ -675,14 +675,14 @@ test('Cockpit reference image hotspots are strictly non-overlapping and map to r
   assert.ok(ALL_SYSTEM_CONTROLS_DIRECTORY.length >= 10);
 });
 
-test('Rotary navigation registry enforces role security (10 main pages including MISSION MODE, 11 for admin) and uses MY GARAGE', () => {
+test('Rotary navigation registry enforces role security (11 main pages including MISSION MODE & SQUADRON SHOWDOWN, 12 for admin) and uses MY GARAGE', () => {
   assert.equal(COCKPIT_ROTARY_STAGE_ASSET_PATH, '/assets/ghost-protocol-rotary-stage.jpg');
   assert.equal(COCKPIT_ROTARY_REFERENCE_ASSET_PATH, '/assets/ghost-protocol-rotary-reference.png');
   assert.deepEqual(COCKPIT_ROTARY_STAGE_DIMENSIONS, { width: 848, height: 1855 });
 
-  // Visitor / unauthenticated user sees 10 main application pages including MISSION MODE ("01 / 10")
+  // Visitor / unauthenticated user sees 11 main application pages including MISSION MODE & SQUADRON SHOWDOWN ("01 / 11")
   const visitorItems = getAuthorizedRotaryDestinations(null);
-  assert.equal(visitorItems.length, 10);
+  assert.equal(visitorItems.length, 11);
   assert.deepEqual(
     visitorItems.map(i => i.label),
     [
@@ -695,7 +695,8 @@ test('Rotary navigation registry enforces role security (10 main pages including
       'MARKETPLACE',
       'MY GARAGE',
       'SERVICE INTEL & REVIEWS',
-      'MODIFICATIONS'
+      'MODIFICATIONS',
+      'SQUADRON SHOWDOWN'
     ]
   );
 
@@ -737,30 +738,30 @@ test('Rotary navigation registry enforces role security (10 main pages including
   assert.equal(autoPilotDirItem?.label, 'AUTO PILOT');
   assert.equal(autoPilotDirItem?.chargingMode, 'autopilot');
 
-  // Ordinary verified member also sees 10 destinations without ADMIN CENTRE
+  // Ordinary verified member also sees 11 destinations without ADMIN CENTRE
   const memberItems = getAuthorizedRotaryDestinations({
     email: 'pilot@example.com',
     role: 'verified'
   });
-  assert.equal(memberItems.length, 10);
+  assert.equal(memberItems.length, 11);
   assert.equal(
     memberItems.some(i => i.routeId === 'admin'),
     false
   );
 
-  // Authorized administrator or owner sees 11 destinations including ADMIN CENTRE
+  // Authorized administrator or owner sees 12 destinations including ADMIN CENTRE
   const adminItems = getAuthorizedRotaryDestinations({
     email: 'abinavthejas2001@gmail.com',
     role: 'owner'
   });
-  assert.equal(adminItems.length, 11);
-  assert.equal(adminItems[10].label, 'ADMIN CENTRE');
-  assert.equal(adminItems[10].routeId, 'admin');
+  assert.equal(adminItems.length, 12);
+  assert.equal(adminItems[11].label, 'ADMIN CENTRE');
+  assert.equal(adminItems[11].routeId, 'admin');
 
-  // Selection counter formatting ("01 / 10" for standard users, "01 / 11" for admins)
-  assert.equal(formatRotarySelectionCounter(0, 10), '01 / 10');
-  assert.equal(formatRotarySelectionCounter(9, 10), '10 / 10');
+  // Selection counter formatting ("01 / 11" for standard users, "01 / 12" for admins)
+  assert.equal(formatRotarySelectionCounter(0, 11), '01 / 11');
   assert.equal(formatRotarySelectionCounter(10, 11), '11 / 11');
+  assert.equal(formatRotarySelectionCounter(11, 12), '12 / 12');
 });
 
 test('Rotary angular math, 0°/360° boundary handling, and magnetic snapping', () => {

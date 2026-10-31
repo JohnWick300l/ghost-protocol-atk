@@ -440,6 +440,16 @@ export class BattleScene extends Phaser.Scene {
       } else if (c.action === 'SPECIAL') {
         this.bikeHeadlightPulseMs = 1200;
         this.spawnTarmacDust(c.x, GROUND_Y, 14, 0xfacc15);
+        const def = isPlayer ? this.playerDef : this.opponentDef;
+        if (def.tagline) {
+          this.spawnTaglineSpeechBubble(
+            c.x,
+            c.y - 210,
+            def.name,
+            def.tagline,
+            def.accentColor
+          );
+        }
       }
     }
 
@@ -643,6 +653,65 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  private spawnTaglineSpeechBubble(
+    x: number,
+    y: number,
+    speakerName: string,
+    tagline: string,
+    accentHex: string
+  ): void {
+    const bubbleContainer = this.add.container(x, y).setDepth(28);
+
+    const fullText = `"${tagline}"`;
+    const label = this.add.text(0, 4, fullText, {
+      fontFamily: 'Orbitron, Rajdhani, sans-serif',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#ffffff',
+      stroke: '#050811',
+      strokeThickness: 4,
+      align: 'center',
+      wordWrap: { width: 320, useAdvancedWrap: true },
+    }).setOrigin(0.5);
+
+    const titleLabel = this.add.text(0, -label.height / 2 - 8, `${speakerName} — SUPERPOWER!`, {
+      fontFamily: 'Orbitron, Rajdhani, sans-serif',
+      fontSize: '11px',
+      fontStyle: '900',
+      color: accentHex,
+      stroke: '#000000',
+      strokeThickness: 3,
+    }).setOrigin(0.5);
+
+    const bgWidth = Math.max(200, Math.min(360, label.width + 28));
+    const bgHeight = label.height + titleLabel.height + 20;
+
+    const bgRect = this.add.graphics();
+    const accentCol = Phaser.Display.Color.HexStringToColor(accentHex).color;
+    bgRect.fillStyle(0x070b16, 0.92);
+    bgRect.lineStyle(2.5, accentCol, 0.95);
+    bgRect.fillRoundedRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight, 10);
+    bgRect.strokeRoundedRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight, 10);
+
+    // Pointer notch pointing down toward fighter head
+    bgRect.fillStyle(0x070b16, 0.92);
+    bgRect.fillTriangle(-8, bgHeight / 2, 8, bgHeight / 2, 0, bgHeight / 2 + 10);
+    bgRect.lineStyle(2, accentCol, 0.95);
+    bgRect.lineBetween(-8, bgHeight / 2, 0, bgHeight / 2 + 10);
+    bgRect.lineBetween(0, bgHeight / 2 + 10, 8, bgHeight / 2);
+
+    bubbleContainer.add([bgRect, titleLabel, label]);
+
+    this.tweens.add({
+      targets: bubbleContainer,
+      y: y - 50,
+      alpha: { from: 1, to: 0 },
+      duration: 2200,
+      ease: 'Cubic.easeOut',
+      onComplete: () => bubbleContainer.destroy(),
+    });
+  }
+
   private updateArticulatedFighter(
     state: CombatantRuntimeState,
     sprite: Phaser.GameObjects.Image | undefined,
@@ -662,6 +731,7 @@ export class BattleScene extends Phaser.Scene {
     // Compute exact articulated limb angles & physical punch/kick extensions
     const pose = extractCombatPoseFromState(state, time);
     const ctx = canvasTex.getContext();
+    ctx.clearRect(0, 0, PUPPET_CANVAS_WIDTH, PUPPET_CANVAS_HEIGHT);
     puppet.renderPose(
       ctx,
       PUPPET_CANVAS_WIDTH,
@@ -738,31 +808,6 @@ export class BattleScene extends Phaser.Scene {
         g.lineBetween(beamX - 95, beamY + 75, beamX + 95, beamY - 75);
         g.fillStyle(0xe0f2fe, 0.45);
         g.fillCircle(beamX, beamY, 55);
-      } else if (def.id === 'FIGHTER_009') {
-        // LIVIN CHETTAN (THE SQUADRON LEGEND) — SQUADRON SURGE: Electric Blue & Cyan Forward Strike
-        // 1. Electric blue charging aura surrounding Livin's body
-        g.lineStyle(6, 0x00d2ff, 0.95);
-        g.strokeEllipse(c.x, c.y - 120, 150 + Math.sin(time * 0.05) * 16, 220);
-        // 2. Cyan forward energy surge cone & impact flash
-        g.fillStyle(0x06b6d4, 0.45);
-        g.fillEllipse(beamX, beamY, 230, 140);
-        g.lineStyle(7, 0x22d3ee, 0.95);
-        g.strokeEllipse(beamX, beamY, 245, 150);
-        // 3. Short supersonic dash trail
-        g.fillStyle(0x00d2ff, 0.25);
-        g.fillTriangle(
-          c.x - c.facing * 70, c.y - 120,
-          beamX - c.facing * 30, beamY - 70,
-          beamX - c.facing * 30, beamY + 70
-        );
-        // 4. Arc lightning branching from knuckles into impact zone
-        g.lineStyle(4, 0xffffff, 0.95);
-        for (let arc = 0; arc < 3; arc++) {
-          const jitter1 = Math.sin(time * 0.08 + arc * 1.8) * 22;
-          const jitter2 = Math.cos(time * 0.08 + arc * 2.4) * 22;
-          g.lineBetween(c.x + c.facing * 40, beamY + jitter1, beamX - 20, beamY - 10 + jitter2);
-          g.lineBetween(beamX - 20, beamY - 10 + jitter2, beamX + 75, beamY + jitter1 * 0.6);
-        }
       } else {
         g.fillStyle(accent, 0.38);
         g.fillEllipse(beamX, beamY, 215, 130);

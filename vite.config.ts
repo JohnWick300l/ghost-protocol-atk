@@ -14,6 +14,34 @@ export default defineConfig(() => {
         '@': fileURLToPath(new URL('.', import.meta.url)),
       },
     },
+    build: {
+      sourcemap: false,
+      minify: 'esbuild',
+      cssMinify: true,
+      target: 'esnext',
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/phaser')) {
+              return 'vendor-phaser';
+            }
+            if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) {
+              return 'vendor-firebase';
+            }
+            if (id.includes('node_modules/leaflet') || id.includes('node_modules/qrcode')) {
+              return 'vendor-maps';
+            }
+            if (
+              id.includes('node_modules/react') ||
+              id.includes('node_modules/react-dom') ||
+              id.includes('node_modules/lucide-react')
+            ) {
+              return 'vendor-react';
+            }
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.

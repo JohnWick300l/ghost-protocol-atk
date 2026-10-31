@@ -124,19 +124,6 @@ export const Navigation: React.FC<NavigationProps> = ({
           <span className="text-[#38BDF8]">AVIONICS: ONLINE</span>
         </div>
         <div className="flex items-center space-x-3">
-          {onOpenWelcome && (
-            <button
-              onClick={() => {
-                playTacticalClick();
-                onOpenWelcome();
-              }}
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono tracking-wider uppercase text-[#F59E0B] hover:bg-[#F59E0B]/15 transition-colors border border-[#F59E0B]/40"
-              title="Return to Pilot Welcome & Take-Off Interface"
-            >
-              <Zap className="w-3 h-3 text-[#F59E0B]" />
-              <span>COCKPIT BRIEFING</span>
-            </button>
-          )}
           <button
             onClick={() => {
               playTacticalClick();
@@ -482,20 +469,6 @@ export const Navigation: React.FC<NavigationProps> = ({
                 MOTION: {reducedMotion ? 'MIN' : 'FULL'}
               </button>
             </div>
-
-            {onOpenWelcome && (
-              <button
-                onClick={() => {
-                  playTacticalClick();
-                  setMobileMenuOpen(false);
-                  onOpenWelcome();
-                }}
-                className="w-full mb-2 flex items-center justify-center gap-2 py-2 px-3 rounded bg-[#E8AA45]/15 border border-[#E8AA45]/40 text-xs font-mono font-bold text-[#E8AA45]"
-              >
-                <Zap className="w-4 h-4 text-[#E8AA45]" />
-                <span>PILOT COCKPIT BRIEFING & TAKE OFF</span>
-              </button>
-            )}
 
             {navItems.map(item => {
               const Icon = item.icon;

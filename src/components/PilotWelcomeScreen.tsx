@@ -689,9 +689,41 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                 </div>
 
                 {custLoginError && (
-                  <div className="p-3 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#FCA5A5] text-xs font-mono flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-[#EF4444] shrink-0" />
-                    <span>{custLoginError}</span>
+                  <div className="p-3.5 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#FCA5A5] text-xs font-mono space-y-2.5">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
+                      <div className="leading-relaxed">{custLoginError}</div>
+                    </div>
+                    {(custLoginError.includes('missing initial state') ||
+                      custLoginError.includes('sessionStorage') ||
+                      custLoginError.includes('Play Store') ||
+                      custLoginError.includes('WebView') ||
+                      custLoginError.includes('browser')) && (
+                      <div className="pt-2 border-t border-[#EF4444]/30 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playTacticalClick();
+                            window.open(window.location.href, '_blank');
+                          }}
+                          className="px-3 py-1.5 rounded bg-[#38BDF8] hover:bg-[#0EA5E9] text-[#08090B] font-bold text-[11px] flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>OPEN IN EXTERNAL BROWSER</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustIdentifier('vikram.sengupta@example.com');
+                            setCustPassword('GhostProtocol_F77_Pilot!');
+                            playTacticalClick();
+                          }}
+                          className="px-3 py-1.5 rounded bg-[#191D22] hover:bg-[#232930] text-[#E8AA45] font-bold text-[11px] border border-[#E8AA45]/50 cursor-pointer"
+                        >
+                          FILL PILOT DEMO CREDENTIALS
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -810,9 +842,41 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                 </div>
 
                 {empLoginError && (
-                  <div className="p-3 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#FCA5A5] text-xs font-mono flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-[#EF4444] shrink-0" />
-                    <span>{empLoginError}</span>
+                  <div className="p-3.5 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#FCA5A5] text-xs font-mono space-y-2.5">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
+                      <div className="leading-relaxed">{empLoginError}</div>
+                    </div>
+                    {(empLoginError.includes('missing initial state') ||
+                      empLoginError.includes('sessionStorage') ||
+                      empLoginError.includes('Play Store') ||
+                      empLoginError.includes('WebView') ||
+                      empLoginError.includes('browser')) && (
+                      <div className="pt-2 border-t border-[#EF4444]/30 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playTacticalClick();
+                            window.open(window.location.href, '_blank');
+                          }}
+                          className="px-3 py-1.5 rounded bg-[#38BDF8] hover:bg-[#0EA5E9] text-[#08090B] font-bold text-[11px] flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>OPEN IN EXTERNAL BROWSER</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEmpIdentifier('arjun.engineer@ultraviolette.com');
+                            setEmpPassword('JetEngineer_2026_Secure!');
+                            playTacticalClick();
+                          }}
+                          className="px-3 py-1.5 rounded bg-[#191D22] hover:bg-[#232930] text-[#38BDF8] font-bold text-[11px] border border-[#38BDF8]/50 cursor-pointer"
+                        >
+                          FILL EMPLOYEE DEMO CREDENTIALS
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 

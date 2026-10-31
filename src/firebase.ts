@@ -1,6 +1,10 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
+  initializeAuth,
+  browserLocalPersistence,
+  indexedDBLocalPersistence,
+  browserPopupRedirectResolver,
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
@@ -15,7 +19,23 @@ import firebaseConfig from '../firebase-applet-config.json';
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+
+// Initialize Firebase Auth with partitioned storage resilience & local persistence
+function createFirebaseAuth() {
+  if (typeof window !== 'undefined') {
+    try {
+      return initializeAuth(app, {
+        persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+        popupRedirectResolver: browserPopupRedirectResolver
+      });
+    } catch {
+      return getAuth(app);
+    }
+  }
+  return getAuth(app);
+}
+
+export const auth = createFirebaseAuth();
 
 export enum OperationType {
   CREATE = 'create',
@@ -155,10 +175,29 @@ export async function signInWithGoogleForCloudSync(): Promise<FirebaseUser | nul
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   try {
-    const cred = await signInWithPopup(auth, provider);
+    const cred = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     return cred.user;
   } catch (err: unknown) {
+    const code = (err as any)?.code || '';
     const msg = err instanceof Error ? err.message : String(err);
+    const isWebView = typeof navigator !== 'undefined' && /wv|Android.*Version\/[0-9]/i.test(navigator.userAgent);
+
+    if (code === 'auth/missing-initial-state' || msg.includes('missing initial state') || msg.includes('sessionStorage is inaccessible') || isWebView) {
+      const guidance = isWebView
+        ? 'Google Sign-In is restricted inside Play Store App WebViews because Android isolates web storage across popups. Please sign in using your Pilot ID & Password, or tap "Open in External Browser".'
+        : 'Google Sign-In blocked by browser storage partitioning. When previewed inside an iframe, Play Store WebView, or private window with third-party cookie blocking, browser sessionStorage is restricted. To resolve: 1) Sign in using your Pilot ID & Password, or 2) Open this app in an external browser tab.';
+      console.warn('Firebase Auth Storage Partitioning / WebView Notice:', msg);
+      throw new Error(guidance);
+    }
+
+    if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user') {
+      throw new Error('Sign-in popup was blocked or closed. Please allow popups or use Pilot ID & Password.');
+    }
+
+    if (code === 'auth/unauthorized-domain') {
+      throw new Error(`This domain is not authorized in Firebase Console -> Authentication -> Settings -> Authorized Domains. Please add ${window.location.hostname} to authorized domains.`);
+    }
+
     if (msg.includes('token-service-api') || msg.includes('securetoken.googleapis.com')) {
       const detailedMsg =
         'Google Cloud Token Service API (securetoken.googleapis.com) is disabled on project 214972545002. Please enable it in Google Cloud Console: https://console.developers.google.com/apis/api/securetoken.googleapis.com/overview?project=214972545002';

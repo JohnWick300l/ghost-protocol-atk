@@ -765,21 +765,6 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
           {soundEnabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
           <span>Audio: {soundEnabled ? 'Online' : 'Muted'}</span>
         </button>
-
-        {onOpenWelcome && (
-          <button
-            type="button"
-            onClick={() => {
-              setShowPersonaMenu(false);
-              playTacticalClick();
-              onOpenWelcome();
-            }}
-            className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded bg-[#05080F] border border-[#1E2D42] text-[#F59E0B] hover:border-[#F59E0B]/60 font-mono text-[10px] uppercase transition-colors cursor-pointer"
-          >
-            <Compass className="w-3 h-3" />
-            <span>Briefing</span>
-          </button>
-        )}
       </div>
     </div>
   );
@@ -1808,49 +1793,6 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
           </div>
         </div>
       )}
-
-      {/* =====================================================================
-          SQUADRON SHOWDOWN — DEDICATED ARCADE ARENA LAUNCHER CARD
-          ===================================================================== */}
-      <div className="w-full max-w-[920px] px-4 pb-8 pt-2">
-        <div
-          data-testid="squadron-showdown-launcher-card"
-          className="relative overflow-hidden rounded-2xl border border-[#38BDF8]/40 bg-gradient-to-r from-[#050B16] via-[#0B1528] to-[#140C24] p-5 sm:p-6 shadow-[0_12px_40px_rgba(0,0,0,0.85)] flex flex-col sm:flex-row items-center justify-between gap-5"
-        >
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-20 rounded-xl bg-[#03060C] border border-[#38BDF8]/40 flex items-center justify-center p-1.5 shrink-0">
-              <img
-                src="/assets/squadron-showdown/characters/dq_sprite.png"
-                alt="Squadron Showdown Fighter"
-                className="max-h-full max-w-full object-contain"
-              />
-            </div>
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#38BDF8]/15 border border-[#38BDF8]/40 text-[#38BDF8] font-mono text-[10px] font-bold tracking-widest uppercase mb-1">
-                <span>FIGHT. RIDE. DOMINATE. • OFFLINE 2D ARENA</span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-black tracking-wider text-white uppercase">
-                SQUADRON SHOWDOWN
-              </h2>
-              <p className="text-xs sm:text-sm text-[#CBD5E1] mt-0.5">
-                Enter the arena. Challenge the squadron. Your squadron. Your fighter. Your battle.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            data-testid="enter-arena-btn"
-            onClick={() => {
-              playTacticalClick();
-              onNavigate('squadron-showdown');
-            }}
-            className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-[#38BDF8] to-[#2563EB] hover:from-[#7DD3FC] hover:to-[#3B82F6] text-[#020408] font-black tracking-wider text-xs sm:text-sm uppercase shadow-[0_0_24px_rgba(56,189,248,0.35)] transition cursor-pointer shrink-0"
-          >
-            ENTER ARENA →
-          </button>
-        </div>
-      </div>
     </div>
   );
 };
