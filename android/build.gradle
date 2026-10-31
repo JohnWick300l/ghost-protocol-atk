@@ -1,0 +1,31 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    ext.minSdkVersion = 24
+    ext.compileSdkVersion = 36
+    ext.targetSdkVersion = 36
+    ext.androidxAppCompatVersion = '1.7.1'
+    ext.androidxCoreVersion = '1.15.0'
+    ext.androidxActivityVersion = '1.10.0'
+    ext.androidxFragmentVersion = '1.8.5'
+    ext.cordovaAndroidVersion = '14.0.1'
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}

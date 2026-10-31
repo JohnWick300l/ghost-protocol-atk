@@ -1,11 +1,11 @@
 // GHOST PROTOCOL - Core Business Rules & Pure Logic Engine
 
-export type BloodGroup = 
-  | 'A+' | 'A-' 
-  | 'B+' | 'B-' 
-  | 'AB+' | 'AB-' 
-  | 'O+' | 'O-' 
-  | 'Unknown' 
+export type BloodGroup =
+  | 'A+' | 'A-'
+  | 'B+' | 'B-'
+  | 'AB+' | 'AB-'
+  | 'O+' | 'O-'
+  | 'Unknown'
   | 'Prefer not to disclose';
 
 export const VALID_BLOOD_GROUPS: BloodGroup[] = [
@@ -82,7 +82,7 @@ export const VALID_ADMIN_PERMISSIONS: AdminPermission[] = ADMIN_PERMISSIONS_CATA
 export const OWNER_ACCOUNT_ID = 'u_admin';
 export const OWNER_ACCOUNT_EMAIL = 'abinavthejas2001@gmail.com';
 
-export type RiderStatus = 
+export type RiderStatus =
   | 'Registered'
   | 'Checked In'
   | 'Riding'
@@ -92,7 +92,7 @@ export type RiderStatus =
   | 'Needs Assistance'
   | 'Status Not Updated';
 
-export type RideStatus = 
+export type RideStatus =
   | 'Planning'
   | 'Registration Open'
   | 'Full'
@@ -7031,6 +7031,7 @@ export function openInGoogleMaps(
 ): string {
   let navLat = lat;
   let navLng = lng;
+
   if ((navLat === undefined || navLng === undefined) && customUrl) {
     const coords = extractCoordinatesFromGoogleMapsUrl(customUrl);
     if (coords) {
@@ -7039,29 +7040,19 @@ export function openInGoogleMaps(
     }
   }
 
-  const targetUrl = sanitizeGoogleMapsUrl(customUrl, navLat, navLng, queryName);
+  const targetUrl = sanitizeGoogleMapsUrl(
+    customUrl,
+    navLat,
+    navLng,
+    queryName
+  );
 
   if (typeof window !== 'undefined') {
-    try {
-      const anchor = document.createElement('a');
-      anchor.href = targetUrl;
-      anchor.target = '_blank';
-      anchor.rel = 'noopener noreferrer';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-    } catch {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    }
+    window.location.assign(targetUrl);
   }
 
   return targetUrl;
 }
-
-/**
- * Generates a master Google Maps route direction link connecting meeting point, intermediate stops, and destination.
- * Uses clean https://maps.google.com/maps?saddr=...&daddr=... format.
- */
 export function buildMasterRouteGoogleMapsUrl(
   params: {
     meetingPoint?: { name: string; lat?: number; lng?: number; googleMapsUrl?: string };

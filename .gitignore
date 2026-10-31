@@ -17,3 +17,37 @@ data/.owner_bootstrap_token.txt
 data/sessions.json
 data/*.token*
 
+# Android Studio and Gradle
+.idea/
+android/.idea/
+android/.gradle/
+android/local.properties
+android/**/build/
+android/captures/
+
+# Generated Android bundles
+*.apk
+*.aab
+
+# Signing keys
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.key
+
+# Local backups
+*.backup
+*.backup-*
+*.bak
+android-backup-existing/
+
+# Local test data
+data-test/
+
+# Temporary files
+*.tmp
+
+# Local database backup files
+data/*.backup*
+data/*.safety-backup

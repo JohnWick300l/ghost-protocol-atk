@@ -1,0 +1,214 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Dramatic Drop Shadow & Rim Glow -->
+    <filter id="batDropShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.9" />
+    </filter>
+    <filter id="eyeGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Cowl Armor Gradients -->
+    <linearGradient id="cowlMain" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#263244" />
+      <stop offset="45%" stop-color="#111722" />
+      <stop offset="100%" stop-color="#070A10" />
+    </linearGradient>
+    <linearGradient id="cowlLeftHighlight" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3B4D6B" />
+      <stop offset="100%" stop-color="#151C28" />
+    </linearGradient>
+    <linearGradient id="cowlRightShadow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0F141D" />
+      <stop offset="100%" stop-color="#05070B" />
+    </linearGradient>
+
+    <!-- Exposed Jaw / Skin Dramatic Comic Shading -->
+    <linearGradient id="jawSkinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E5C2A3" />
+      <stop offset="55%" stop-color="#C69B7B" />
+      <stop offset="100%" stop-color="#8C6246" />
+    </linearGradient>
+    <linearGradient id="jawShadowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#5A3A28" stop-opacity="0.75" />
+      <stop offset="40%" stop-color="#8C6246" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="#3E2518" stop-opacity="0.65" />
+    </linearGradient>
+
+    <!-- Gold Trim Gradient -->
+    <linearGradient id="batGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047" />
+      <stop offset="50%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+  </defs>
+
+  <g filter="url(#batDropShadow)">
+    <!-- Subtle Golden Halo Ring Behind Head for Map Contrast -->
+    <circle cx="256" cy="268" r="176" fill="#06090F" stroke="url(#batGold)" stroke-width="8" opacity="0.95" />
+    <circle cx="256" cy="268" r="164" fill="none" stroke="#38BDF8" stroke-width="2" stroke-dasharray="10 6" opacity="0.45" />
+
+    <!-- Armored Neck & Shoulders Base / Map Pin Point -->
+    <path d="M 148 392 L 116 436 L 210 478 L 256 502 L 302 478 L 396 436 L 364 392 Z"
+          fill="#0B0F17" stroke="url(#batGold)" stroke-width="5" stroke-linejoin="round" />
+
+    <!-- Neck Armor Plates -->
+    <polygon points="172,395 224,442 192,462 142,424" fill="#161E2E" stroke="#2E3D52" stroke-width="2" />
+    <polygon points="340,395 288,442 320,462 370,424" fill="#0B1018" stroke="#1E293B" stroke-width="2" />
+
+    <!-- ============================================================ -->
+    <!-- MAIN BATMAN COWL SILHOUETTE (TALL VERTICAL EARS + DOME HEAD) -->
+    <!-- ============================================================ -->
+    <path d="
+      M 256 116
+      C 292 116, 320 124, 338 138
+      L 368 18
+      L 380 184
+      L 390 232
+      L 378 308
+      L 354 388
+      L 296 436
+      L 256 444
+      L 216 436
+      L 158 388
+      L 134 308
+      L 122 232
+      L 132 184
+      L 144 18
+      L 174 138
+      C 192 124, 220 116, 256 116 Z"
+      fill="url(#cowlMain)"
+      stroke="#3B4D6B"
+      stroke-width="4"
+      stroke-linejoin="round"
+    />
+
+    <!-- Left Tall Bat Ear 3D Facet (Lit Side) -->
+    <polygon points="144,18 174,138 156,192 132,184" fill="url(#cowlLeftHighlight)" />
+    <polygon points="144,18 156,192 146,196" fill="#475E82" opacity="0.7" />
+
+    <!-- Right Tall Bat Ear 3D Facet (Shadow Side) -->
+    <polygon points="368,18 338,138 356,192 380,184" fill="url(#cowlRightShadow)" />
+    <polygon points="368,18 356,192 366,196" fill="#2A3950" opacity="0.65" />
+
+    <!-- Cranial Forehead Armor Seams & Furrowed Brow Contours -->
+    <path d="M 176 140 C 204 128, 308 128, 336 140" fill="none" stroke="#334155" stroke-width="3" />
+    <path d="M 196 156 L 238 232 L 256 238 L 274 232 L 316 156" fill="none" stroke="#263346" stroke-width="3.5" />
+    <!-- Deep Scowl Brow V-Crease -->
+    <polygon points="256,170 234,234 256,248 278,234" fill="#0B0F17" opacity="0.8" />
+
+    <!-- Left Cheek Cowl Guard (Lit Facet) -->
+    <polygon points="122,232 162,272 192,334 184,404 158,388 134,308" fill="url(#cowlLeftHighlight)" stroke="#2E3D52" stroke-width="2" />
+    <!-- Right Cheek Cowl Guard (Shadow Facet) -->
+    <polygon points="390,232 350,272 320,334 328,404 354,388 378,308" fill="url(#cowlRightShadow)" stroke="#1E293B" stroke-width="2" />
+
+    <!-- Heavy Scowling Brow Ridge Overhang -->
+    <path d="M 134 218 L 234 254 L 256 260 L 278 254 L 378 218 L 366 238 L 256 274 L 146 238 Z"
+          fill="#070A10" stroke="#3B4D6B" stroke-width="2" />
+
+    <!-- ============================================================ -->
+    <!-- EXPOSED LOWER FACE / CHISELLED SQUARE JAW & CHIN CUTOUT      -->
+    <!-- ============================================================ -->
+    <path d="
+      M 216 322
+      L 182 344
+      L 190 406
+      L 226 432
+      L 256 438
+      L 286 432
+      L 322 406
+      L 330 344
+      L 296 322
+      L 256 338
+      Z"
+      fill="url(#jawSkinGrad)"
+      stroke="#070A10"
+      stroke-width="6"
+      stroke-linejoin="round"
+    />
+
+    <!-- Dramatic Under-Nose & Cheek Shadow on Skin -->
+    <path d="
+      M 216 322
+      L 182 344
+      L 190 406
+      L 226 432
+      L 256 438
+      L 286 432
+      L 322 406
+      L 330 344
+      L 296 322
+      L 256 338
+      Z"
+      fill="url(#jawShadowGrad)"
+    />
+
+    <!-- Right-Side Dramatic Comic Shadow on Jaw -->
+    <polygon points="256,338 296,322 330,344 322,406 286,432 256,438 256,404 282,374" fill="#3B2114" opacity="0.45" />
+
+    <!-- Under-Nose Philtrum Shadow -->
+    <polygon points="244,334 268,334 262,360 250,360" fill="#5A3825" opacity="0.7" />
+
+    <!-- Stern Batman Grimacing Mouth Line -->
+    <path d="M 214 374 Q 256 360 298 374" fill="none" stroke="#2A150D" stroke-width="6" stroke-linecap="round" />
+    <!-- Upper Lip Shadow -->
+    <path d="M 218 371 Q 256 357 294 371" fill="none" stroke="#47281A" stroke-width="3" stroke-linecap="round" />
+    <!-- Lower Lip Highlight & Crease -->
+    <path d="M 232 384 Q 256 379 280 384" fill="none" stroke="#F3D6BC" stroke-width="2.5" stroke-linecap="round" opacity="0.75" />
+    <path d="M 236 390 Q 256 396 276 390" fill="none" stroke="#5A3825" stroke-width="3.5" stroke-linecap="round" />
+
+    <!-- Square Chin Guard & Cleft Dimple -->
+    <path d="M 256 410 L 256 430" fill="none" stroke="#5A3825" stroke-width="4" stroke-linecap="round" />
+    <path d="M 224 414 Q 256 426 288 414" fill="none" stroke="#F3D6BC" stroke-width="2.5" stroke-linecap="round" opacity="0.55" />
+
+    <!-- ============================================================ -->
+    <!-- SCULPTED ANGULAR COWL NOSE GUARD                             -->
+    <!-- ============================================================ -->
+    <!-- Left Nose Bridge Facet -->
+    <polygon points="256,258 228,274 214,316 256,338" fill="#2A3950" stroke="#090D14" stroke-width="2" />
+    <!-- Right Nose Bridge Facet -->
+    <polygon points="256,258 284,274 298,316 256,338" fill="#101622" stroke="#090D14" stroke-width="2" />
+    <!-- Center Nose Ridge Highlight -->
+    <line x1="256" y1="258" x2="256" y2="336" stroke="#64748B" stroke-width="3" stroke-linecap="round" />
+
+    <!-- Cheekbone Armor Edge Lines Framing the Nose & Eyes -->
+    <polyline points="146,246 172,286 214,316" fill="none" stroke="#475E82" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+    <polyline points="366,246 340,286 298,316" fill="none" stroke="#263346" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- ============================================================ -->
+    <!-- ICONIC MENACING WHITE ANGULAR BATMAN EYES                    -->
+    <!-- ============================================================ -->
+    <g filter="url(#eyeGlow)">
+      <!-- Left Narrow Scowling Eye -->
+      <polygon points="156,238 232,264 222,280 164,264" fill="#FFFFFF" stroke="#E0F2FE" stroke-width="2" stroke-linejoin="round" />
+      <!-- Right Narrow Scowling Eye -->
+      <polygon points="356,238 280,264 290,280 348,264" fill="#FFFFFF" stroke="#E0F2FE" stroke-width="2" stroke-linejoin="round" />
+    </g>
+
+    <!-- ============================================================ -->
+    <!-- CLASSIC GOLD BATMAN CHEST EMBLEM ON COLLAR BASE              -->
+    <!-- ============================================================ -->
+    <path d="
+      M 256 452
+      L 248 460
+      L 245 452
+      L 241 460
+      C 226 458, 208 452, 192 444
+      C 202 458, 214 468, 232 472
+      L 256 488
+      L 280 472
+      C 298 468, 310 458, 320 444
+      C 304 452, 286 458, 271 460
+      L 267 452
+      L 264 460
+      Z"
+      fill="url(#batGold)"
+      stroke="#090D14"
+      stroke-width="2"
+    />
+  </g>
+</svg>
