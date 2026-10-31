@@ -44,6 +44,7 @@ interface AuthContextType {
   closeAuthModal: () => void;
   login: (emailOrId: string, password?: string) => Promise<{ success: boolean; error?: string; code?: string }>;
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogleEmail: (email: string, name?: string) => Promise<{ success: boolean; error?: string }>;
   setupPassword: (params: {
     userId?: string;
     email?: string;
@@ -410,6 +411,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           name: fbUser.displayName || fbUser.email.split('@')[0],
           googleUid: fbUser.uid,
           photoUrl: fbUser.photoURL || undefined
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Google authentication failed' };
+      }
+
+      if (data.sessionToken) {
+        setStoredSessionToken(data.sessionToken);
+      }
+      const normalized = normalizeUserRecord(data.user);
+      setCurrentUser(normalized);
+      localStorage.setItem('ghost_protocol_user_id', normalized.id);
+      localStorage.setItem('ghost_protocol_current_user_obj', JSON.stringify(normalized));
+      await fetchAuthData();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to authenticate with Google' };
+    }
+  };
+
+  const loginWithGoogleEmail = async (email: string, name?: string) => {
+    try {
+      const cleanedEmail = email.trim().toLowerCase();
+      if (!cleanedEmail || !cleanedEmail.includes('@')) {
+        return { success: false, error: 'Please enter a valid Google email address.' };
+      }
+
+      const res = await gpApiFetch('/api/auth/google', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: getSessionAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          email: cleanedEmail,
+          name: name || cleanedEmail.split('@')[0]
         })
       });
 
@@ -839,6 +876,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         closeAuthModal,
         login,
         loginWithGoogle,
+        loginWithGoogleEmail,
         setupPassword,
         changePassword,
         issueSetupToken,

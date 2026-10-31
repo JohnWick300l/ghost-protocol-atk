@@ -40,7 +40,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   onTakeOffComplete,
   reducedMotion = false
 }) => {
-  const { currentUser, login, loginWithGoogle, register, availableUsers } = useAuth();
+  const { currentUser, login, loginWithGoogle, loginWithGoogleEmail, register, availableUsers } = useAuth();
   const { soundEnabled, toggleSound, playTacticalClick, playChime } = useAudio();
 
   // Active portal mode
@@ -52,6 +52,8 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   const [custLoginError, setCustLoginError] = useState<string | null>(null);
   const [custLoading, setCustLoading] = useState(false);
   const [showCustPassword, setShowCustPassword] = useState(false);
+  const [showGoogleEmailPrompt, setShowGoogleEmailPrompt] = useState(false);
+  const [manualGoogleEmail, setManualGoogleEmail] = useState('');
 
   // Employee Login Form state
   const [empIdentifier, setEmpIdentifier] = useState('');
@@ -314,9 +316,40 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
         setCustLoginError(errorMsg);
         setEmpLoginError(errorMsg);
         setRegError(errorMsg);
+        setShowGoogleEmailPrompt(true);
       }
     } catch (err: any) {
       const errorMsg = err?.message || 'Failed to authenticate with Google.';
+      setCustLoginError(errorMsg);
+      setEmpLoginError(errorMsg);
+      setRegError(errorMsg);
+      setShowGoogleEmailPrompt(true);
+    } finally {
+      setCustLoading(false);
+    }
+  };
+
+  const handleGoogleEmailFallback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualGoogleEmail.trim()) return;
+    setCustLoginError(null);
+    setEmpLoginError(null);
+    setRegError(null);
+    setCustLoading(true);
+    playTacticalClick();
+
+    try {
+      const res = await loginWithGoogleEmail(manualGoogleEmail);
+      if (res.success) {
+        executeTakeOffSequence();
+      } else {
+        const errorMsg = res.error || 'Direct Google email sign-in failed.';
+        setCustLoginError(errorMsg);
+        setEmpLoginError(errorMsg);
+        setRegError(errorMsg);
+      }
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Failed to authenticate Google email.';
       setCustLoginError(errorMsg);
       setEmpLoginError(errorMsg);
       setRegError(errorMsg);
@@ -681,6 +714,37 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                   </svg>
                   <span>SIGN IN WITH GOOGLE</span>
                 </button>
+
+                {showGoogleEmailPrompt && (
+                  <div className="p-3.5 rounded-lg bg-[#38BDF8]/10 border border-[#38BDF8]/40 space-y-2.5 my-2 animate-in fade-in">
+                    <div className="text-xs font-mono font-bold text-[#38BDF8] flex items-center justify-between">
+                      <span>DIRECT GOOGLE PILOT AUTHENTICATION</span>
+                      <button type="button" onClick={() => setShowGoogleEmailPrompt(false)} className="text-[#94A3B8] hover:text-[#F1F3F5]">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="text-[11px] font-mono text-[#94A3B8] leading-relaxed">
+                      If popup authentication is restricted on your browser or Play Store app, enter your Google email below to sign in directly:
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="email"
+                        value={manualGoogleEmail}
+                        onChange={e => setManualGoogleEmail(e.target.value)}
+                        placeholder="e.g. pilot@gmail.com"
+                        className="flex-1 px-3 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-xs text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleGoogleEmailFallback}
+                        disabled={custLoading || !manualGoogleEmail.trim()}
+                        className="px-3.5 py-2 rounded-lg bg-[#38BDF8] hover:bg-[#0EA5E9] disabled:opacity-50 text-[#08090B] font-mono font-bold text-xs tracking-wide cursor-pointer shrink-0"
+                      >
+                        AUTHENTICATE
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center my-2">
                   <div className="flex-grow border-t border-[#1E2D42]"></div>
