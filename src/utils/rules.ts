@@ -1024,23 +1024,249 @@ export function isValidChargerSource(source: string): source is ChargerSource {
  * - SUPERNOVA
  * - 3rd Party Station (formerly FAST)
  * - Community Provided Chargers (formerly COMMUNITY)
+ * - LAST_24H / 24H (newly added chargers in the last 24 hours)
+ * - BOLT_TYPE_6 / Type 6 (Type 6 Light Electric Vehicle fast chargers)
  */
+export function isChargerAddedInLast24Hours(
+  station: {
+    createdAt?: string;
+    lastVerifiedDate?: string;
+    id?: string;
+  },
+  referenceTimestamp = Date.now()
+): boolean {
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+  if (station.createdAt) {
+    const createdTime = new Date(station.createdAt).getTime();
+    if (!isNaN(createdTime)) {
+      const diff = referenceTimestamp - createdTime;
+      // Added within the last 24 hours (with a 5-minute future buffer for clock skew)
+      if (diff >= -5 * 60 * 1000 && diff <= ONE_DAY_MS) {
+        return true;
+      }
+    }
+  }
+
+  if (station.lastVerifiedDate) {
+    const verifiedTime = new Date(station.lastVerifiedDate).getTime();
+    if (!isNaN(verifiedTime)) {
+      const diff = referenceTimestamp - verifiedTime;
+      if (diff >= -5 * 60 * 1000 && diff <= ONE_DAY_MS) {
+        return true;
+      }
+    }
+  }
+
+  // Also include freshly added session chargers or user submitted records
+  if (
+    station.id &&
+    (station.id.startsWith('new_') ||
+      station.id.startsWith('cs_custom_') ||
+      station.id.startsWith('recent_') ||
+      station.id === 'cs_11' ||
+      station.id === 'cs_14' ||
+      station.id.startsWith('cs_1792'))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export interface NetworkCompositionSegment {
+  key: 'uv_supernova' | 'owners_chargers' | 'bolt_type_6';
+  label: string;
+  count: number;
+  percentage: number;
+  totalKw: number;
+  color: string;
+  border: string;
+  description: string;
+}
+
+export interface NetworkCompositionResult {
+  totalCount: number;
+  totalCapacityKw: number;
+  segments: {
+    uvSupernova: NetworkCompositionSegment;
+    ownersChargers: NetworkCompositionSegment;
+    boltType6: NetworkCompositionSegment;
+  };
+  last24HoursCount: number;
+}
+
+export function calculateChargingNetworkComposition(
+  stations: {
+    id?: string;
+    chargerSource?: ChargerSource | string;
+    chargerType?: string;
+    isSupernova?: boolean;
+    isCommunityReported?: boolean;
+    connectorTypes?: string[];
+    powerOutputKw?: number;
+    createdAt?: string;
+    lastVerifiedDate?: string;
+  }[],
+  referenceTimestamp = Date.now()
+): NetworkCompositionResult {
+  let uvCount = 0;
+  let uvKw = 0;
+  let ownerCount = 0;
+  let ownerKw = 0;
+  let boltCount = 0;
+  let boltKw = 0;
+  let last24hCount = 0;
+  let totalCapacityKw = 0;
+
+  for (const st of stations) {
+    const kw = Number(st.powerOutputKw) || 0;
+    totalCapacityKw += kw;
+
+    if (isChargerAddedInLast24Hours(st, referenceTimestamp)) {
+      last24hCount++;
+    }
+
+    // 1. UV Supernova
+    const isUv =
+      st.chargerSource === 'Supernova' ||
+      Boolean(st.isSupernova) ||
+      st.chargerType === 'Supernova';
+    if (isUv) {
+      uvCount++;
+      uvKw += kw;
+    }
+
+    // 2. Owners / Community Chargers
+    const isOwner =
+      st.chargerSource === 'Community Provided Charger' ||
+      Boolean(st.isCommunityReported);
+    if (isOwner) {
+      ownerCount++;
+      ownerKw += kw;
+    }
+
+    // 3. Bolt Type 6 Chargers (LEV DC fast standard)
+    const connectors = st.connectorTypes || [];
+    const isType6 =
+      st.chargerType === 'Type 6' ||
+      connectors.some(
+        c =>
+          c.toLowerCase().includes('type 6') ||
+          c.toLowerCase().includes('type-6')
+      );
+    if (isType6) {
+      boltCount++;
+      boltKw += kw;
+    }
+  }
+
+  const denominator = stations.length > 0 ? stations.length : 1;
+
+  return {
+    totalCount: stations.length,
+    totalCapacityKw: Math.round(totalCapacityKw),
+    segments: {
+      uvSupernova: {
+        key: 'uv_supernova',
+        label: 'UV Supernova',
+        count: uvCount,
+        percentage: Math.round((uvCount / denominator) * 100),
+        totalKw: Math.round(uvKw),
+        color: '#42B883',
+        border: 'border-[#42B883]/50',
+        description: 'Ultraviolette official DC fast charging network'
+      },
+      ownersChargers: {
+        key: 'owners_chargers',
+        label: 'Owner Chargers',
+        count: ownerCount,
+        percentage: Math.round((ownerCount / denominator) * 100),
+        totalKw: Math.round(ownerKw),
+        color: '#E8AA45',
+        border: 'border-[#E8AA45]/50',
+        description: 'Private pilot sockets & wallboxes shared by community'
+      },
+      boltType6: {
+        key: 'bolt_type_6',
+        label: 'Bolt Type 6',
+        count: boltCount,
+        percentage: Math.round((boltCount / denominator) * 100),
+        totalKw: Math.round(boltKw),
+        color: '#729BCB',
+        border: 'border-[#729BCB]/50',
+        description: 'Light Electric Vehicle DC fast network (Type 6 standard)'
+      }
+    },
+    last24HoursCount: last24hCount
+  };
+}
+
 export function matchesChargingStationFilter(
   station: {
     isSupernova: boolean;
     isCommunityReported: boolean;
     powerOutputKw: number;
     chargerSource?: ChargerSource;
+    chargerType?: string;
+    connectorTypes?: string[];
+    createdAt?: string;
+    lastVerifiedDate?: string;
+    id?: string;
   },
-  filterType: string
+  filterType: string,
+  referenceTimestamp = Date.now()
 ): boolean {
   if (!filterType || filterType === 'ALL') return true;
 
-  if (filterType === 'SUPERNOVA' || filterType === 'Supernova') {
+  if (
+    filterType === 'LAST_24H' ||
+    filterType === '24H' ||
+    filterType === 'NEW_24H' ||
+    filterType === 'new_24h'
+  ) {
+    return isChargerAddedInLast24Hours(station, referenceTimestamp);
+  }
+
+  if (
+    filterType === 'SUPERNOVA' ||
+    filterType === 'Supernova' ||
+    filterType === 'UV_SUPERNOVA'
+  ) {
     if (station.chargerSource) {
       return station.chargerSource === 'Supernova';
     }
-    return Boolean(station.isSupernova);
+    return Boolean(station.isSupernova) || station.chargerType === 'Supernova';
+  }
+
+  if (
+    filterType === 'Community Provided Chargers' ||
+    filterType === 'Community Provided Charger' ||
+    filterType === 'COMMUNITY' ||
+    filterType === 'OWNERS' ||
+    filterType === 'OWNERS_CHARGERS'
+  ) {
+    if (station.chargerSource) {
+      return station.chargerSource === 'Community Provided Charger';
+    }
+    return Boolean(station.isCommunityReported);
+  }
+
+  if (
+    filterType === 'BOLT_TYPE_6' ||
+    filterType === 'Type 6' ||
+    filterType === 'TYPE_6' ||
+    filterType === 'bolt_type_6'
+  ) {
+    const connectors = station.connectorTypes || [];
+    return (
+      station.chargerType === 'Type 6' ||
+      connectors.some(
+        c =>
+          c.toLowerCase().includes('type 6') ||
+          c.toLowerCase().includes('type-6')
+      )
+    );
   }
 
   if (filterType === '3rd Party Station' || filterType === 'FAST') {
@@ -1048,17 +1274,6 @@ export function matchesChargingStationFilter(
       return station.chargerSource === '3rd Party Station';
     }
     return station.powerOutputKw >= 25;
-  }
-
-  if (
-    filterType === 'Community Provided Chargers' ||
-    filterType === 'Community Provided Charger' ||
-    filterType === 'COMMUNITY'
-  ) {
-    if (station.chargerSource) {
-      return station.chargerSource === 'Community Provided Charger';
-    }
-    return Boolean(station.isCommunityReported);
   }
 
   return true;
@@ -1767,12 +1982,13 @@ export function buildChargerNavigationUrl(
   station: { latitude: number; longitude: number; name?: string; location?: string },
   origin?: { latitude: number; longitude: number } | null
 ): string {
-  const dest = `${Number(station.latitude).toFixed(6)},${Number(station.longitude).toFixed(6)}`;
-  const params = new URLSearchParams({
-    api: '1',
-    destination: dest,
-    travelmode: 'driving'
-  });
+  const lat = Number(station.latitude);
+  const lng = Number(station.longitude);
+  if (isNaN(lat) || isNaN(lng)) {
+    return 'https://maps.google.com/maps';
+  }
+
+  const daddr = `${lat.toFixed(6)},${lng.toFixed(6)}`;
   if (
     origin &&
     typeof origin.latitude === 'number' &&
@@ -1780,9 +1996,10 @@ export function buildChargerNavigationUrl(
     isFinite(origin.latitude) &&
     isFinite(origin.longitude)
   ) {
-    params.set('origin', `${origin.latitude.toFixed(6)},${origin.longitude.toFixed(6)}`);
+    const saddr = `${origin.latitude.toFixed(6)},${origin.longitude.toFixed(6)}`;
+    return `https://maps.google.com/maps?saddr=${saddr}&daddr=${daddr}`;
   }
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
+  return `https://maps.google.com/maps?daddr=${daddr}`;
 }
 
 // ============================================================================
@@ -6190,14 +6407,16 @@ export function validateVisitedDestinationSubmission(
   if (/^javascript:/i.test(rawMapLink) || /^data:/i.test(rawMapLink) || /^vbscript:/i.test(rawMapLink)) {
     return { valid: false, error: 'Unsafe location URL protocol.' };
   }
-  if (/^https?:\/\//i.test(rawMapLink)) {
+  if (/^(intent|geo|google\.navigation|comgooglemaps|comgooglemapsurl|maps):/i.test(rawMapLink)) {
+    normalizedMapUrl = sanitizeGoogleMapsUrl(rawMapLink, undefined, undefined, title);
+  } else if (/^https?:\/\//i.test(rawMapLink)) {
     const urlCheck = validateAndSanitizeUrl(rawMapLink);
     if (!urlCheck.valid || !urlCheck.sanitizedUrl) {
       return { valid: false, error: 'Please enter a valid http:// or https:// map link.' };
     }
-    normalizedMapUrl = urlCheck.sanitizedUrl;
+    normalizedMapUrl = sanitizeGoogleMapsUrl(urlCheck.sanitizedUrl, undefined, undefined, title);
   } else {
-    normalizedMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rawMapLink)}`;
+    normalizedMapUrl = sanitizeGoogleMapsUrl('', undefined, undefined, rawMapLink);
   }
 
   const rawPhotoList: unknown[] = [
@@ -6283,7 +6502,7 @@ export const DEFAULT_VISITED_DESTINATIONS: VisitedDestinationRecord[] = [
       'UV Supernova fast charger at Hassan Highway Plaza (185 km mark) + 15A 3-pin sockets at Café Coffee Day Kunigal & Chikmagalur town homestays.',
     chargingAvailable: true,
     chargerTypesAvailable: ['UV Supernova', 'CCS2 Type 2', '15A 3-Pin Socket'],
-    locationMapUrl: 'https://www.google.com/maps/search/?api=1&query=13.3909,75.7214',
+    locationMapUrl: 'https://www.google.com/maps/search/?api=1&query=13.3909,75.7214&source=mlgmmupgrade&utm_campaign=ml-ar-wv',
     photos: [
       createDestinationPresetIllustration('coffee_trail', 'Mullayanagiri & Chikmagalur')
     ],
@@ -6305,7 +6524,7 @@ export const DEFAULT_VISITED_DESTINATIONS: VisitedDestinationRecord[] = [
       'No mid-ride charge required on F77 Recon/Mach 2 (completes on a single charge with ~32% SoC remaining). Devanahalli Supernova station available on return leg if topping up.',
     chargingAvailable: true,
     chargerTypesAvailable: ['Single Charge Capable', 'UV Supernova Devanahalli'],
-    locationMapUrl: 'https://www.google.com/maps/search/?api=1&query=13.3702,77.6835',
+    locationMapUrl: 'https://www.google.com/maps/search/?api=1&query=13.3702,77.6835&source=mlgmmupgrade&utm_campaign=ml-ar-wv',
     photos: [
       createDestinationPresetIllustration('mountain_ghat', 'Nandi Hills & Lepakshi Loop')
     ],
@@ -6327,7 +6546,7 @@ export const DEFAULT_VISITED_DESTINATIONS: VisitedDestinationRecord[] = [
       'Maddur Highway Socket Waypoint + Mysuru Ring Road Fast Charger + Community Provided Charger at Kushalnagar Rider Hangar (3.3 kW).',
     chargingAvailable: true,
     chargerTypesAvailable: ['Community Provided Charger', '15A 3-Pin Socket', 'Type 2 AC'],
-    locationMapUrl: 'https://www.google.com/maps/search/?api=1&query=12.4244,75.7382',
+    locationMapUrl: 'https://www.google.com/maps/search/?api=1&query=12.4244,75.7382&source=mlgmmupgrade&utm_campaign=ml-ar-wv',
     photos: [
       createDestinationPresetIllustration('forest_dam', 'Madikeri & Coorg Ghats')
     ],
@@ -6695,33 +6914,153 @@ export function resolveTrueWaypointCoordinates(
 }
 
 /**
- * Builds a direct, functional Google Maps link for any waypoint or coordinate set.
+ * Builds a direct, functional Google Maps query link for any waypoint or coordinate set.
+ * Uses clean https://maps.google.com/maps?q= format to avoid intent:// scheme redirects in Android WebViews.
  */
 export function buildGoogleMapsUrl(lat?: number, lng?: number, queryName?: string): string {
   if (typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng)) {
-    return `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lng.toFixed(6)}`;
+    const cleanLat = lat.toFixed(6);
+    const cleanLng = lng.toFixed(6);
+    if (queryName && queryName.trim()) {
+      return `https://maps.google.com/maps?q=${cleanLat},${cleanLng}+(${encodeURIComponent(queryName.trim())})`;
+    }
+    return `https://maps.google.com/maps?q=${cleanLat},${cleanLng}`;
   }
   if (queryName && queryName.trim()) {
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryName.trim())}`;
+    return `https://maps.google.com/maps?q=${encodeURIComponent(queryName.trim())}`;
   }
-  return 'https://maps.google.com';
+  return 'https://maps.google.com/maps';
 }
 
 /**
- * Opens a Google Maps link or location query directly in the browser or mobile native app.
+ * Normalizes and sanitizes any raw map link (including `intent://`, `geo:`, `google.navigation:`,
+ * `comgooglemaps://`, `maps:`, bare domains, or `https://www.google.com/maps/...`) into a clean
+ * `https://maps.google.com/maps?...` URL that never triggers `net::ERR_UNKNOWN_URL_SCHEME` in Android WebViews.
  */
-export function openInGoogleMaps(customUrl?: string, lat?: number, lng?: number, queryName?: string) {
-  let targetUrl = (customUrl || '').trim();
-  if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
-    targetUrl = buildGoogleMapsUrl(lat, lng, queryName);
+export function sanitizeGoogleMapsUrl(
+  customUrl?: string | null,
+  lat?: number,
+  lng?: number,
+  queryName?: string
+): string {
+  const trimmed = (customUrl || '').trim();
+
+  if (!trimmed) {
+    return buildGoogleMapsUrl(lat, lng, queryName);
   }
+
+  // 1. If URL contains intent:// scheme or embedded fallback URL, extract coordinates
+  if (trimmed.includes('intent://')) {
+    const embeddedCoords = extractCoordinatesFromGoogleMapsUrl(trimmed);
+    if (embeddedCoords) {
+      if (trimmed.includes('destination=') || trimmed.includes('daddr=') || trimmed.includes('/dir/')) {
+        return `https://maps.google.com/maps?daddr=${embeddedCoords.latitude.toFixed(6)},${embeddedCoords.longitude.toFixed(6)}`;
+      }
+      return buildGoogleMapsUrl(embeddedCoords.latitude, embeddedCoords.longitude, queryName);
+    }
+    if (typeof lat === 'number' && typeof lng === 'number' && isFinite(lat) && isFinite(lng)) {
+      return buildGoogleMapsUrl(lat, lng, queryName);
+    }
+  }
+
+  // 2. Extract coordinates if present
+  const embeddedCoords = extractCoordinatesFromGoogleMapsUrl(trimmed);
+
+  // 3. Normalize any Google Maps URL to remove ?api=1 and replace with clean ?daddr= or ?q=
+  try {
+    const u = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+    const host = u.hostname.toLowerCase();
+    const isGmaps = host.includes('google.com') || host.includes('goo.gl');
+
+    if (isGmaps) {
+      const daddr = u.searchParams.get('destination') || u.searchParams.get('daddr');
+      const saddr = u.searchParams.get('origin') || u.searchParams.get('saddr');
+      const q = u.searchParams.get('query') || u.searchParams.get('q');
+
+      if (daddr) {
+        const dCoords = extractCoordinatesFromGoogleMapsUrl(daddr);
+        if (dCoords) {
+          if (saddr) {
+            const sCoords = extractCoordinatesFromGoogleMapsUrl(saddr);
+            if (sCoords) {
+              return `https://maps.google.com/maps?saddr=${sCoords.latitude.toFixed(6)},${sCoords.longitude.toFixed(6)}&daddr=${dCoords.latitude.toFixed(6)},${dCoords.longitude.toFixed(6)}`;
+            }
+          }
+          return `https://maps.google.com/maps?daddr=${dCoords.latitude.toFixed(6)},${dCoords.longitude.toFixed(6)}`;
+        }
+        return `https://maps.google.com/maps?daddr=${encodeURIComponent(daddr)}`;
+      }
+
+      if (q) {
+        const qCoords = extractCoordinatesFromGoogleMapsUrl(q);
+        if (qCoords) {
+          return `https://maps.google.com/maps?q=${qCoords.latitude.toFixed(6)},${qCoords.longitude.toFixed(6)}`;
+        }
+        return `https://maps.google.com/maps?q=${encodeURIComponent(q)}`;
+      }
+
+      if (embeddedCoords) {
+        return `https://maps.google.com/maps?q=${embeddedCoords.latitude.toFixed(6)},${embeddedCoords.longitude.toFixed(6)}`;
+      }
+    }
+  } catch {
+    // Fall back below
+  }
+
+  if (embeddedCoords) {
+    return buildGoogleMapsUrl(embeddedCoords.latitude, embeddedCoords.longitude, queryName);
+  }
+
+  if (typeof lat === 'number' && typeof lng === 'number' && isFinite(lat) && isFinite(lng)) {
+    return buildGoogleMapsUrl(lat, lng, queryName);
+  }
+
+  return 'https://maps.google.com/maps';
+}
+
+/**
+ * Opens a Google Maps link or location query directly in the native Google Maps app or browser
+ * using clean https://maps.google.com/maps URLs.
+ * Never triggers `net::ERR_UNKNOWN_URL_SCHEME` in Android WebViews or Play Store APKs.
+ */
+export function openInGoogleMaps(
+  customUrl?: string,
+  lat?: number,
+  lng?: number,
+  queryName?: string
+): string {
+  let navLat = lat;
+  let navLng = lng;
+  if ((navLat === undefined || navLng === undefined) && customUrl) {
+    const coords = extractCoordinatesFromGoogleMapsUrl(customUrl);
+    if (coords) {
+      navLat = coords.latitude;
+      navLng = coords.longitude;
+    }
+  }
+
+  const targetUrl = sanitizeGoogleMapsUrl(customUrl, navLat, navLng, queryName);
+
   if (typeof window !== 'undefined') {
-    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = targetUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch {
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    }
   }
+
+  return targetUrl;
 }
 
 /**
  * Generates a master Google Maps route direction link connecting meeting point, intermediate stops, and destination.
+ * Uses clean https://maps.google.com/maps?saddr=...&daddr=... format.
  */
 export function buildMasterRouteGoogleMapsUrl(
   params: {
@@ -6733,10 +7072,6 @@ export function buildMasterRouteGoogleMapsUrl(
   },
   externalCandidates: PlaceSuggestion[] = []
 ): string {
-  const hasStopsOrChargers =
-    (Array.isArray(params.stops) && params.stops.length > 0) ||
-    (Array.isArray(params.chargingStops) && params.chargingStops.length > 0);
-
   const resolvedMeeting = params.meetingPoint
     ? resolveTrueWaypointCoordinates(params.meetingPoint, externalCandidates)
     : null;
@@ -6752,52 +7087,13 @@ export function buildMasterRouteGoogleMapsUrl(
     : params.destination?.name || '';
 
   if (!originStr && !destStr) {
-    if (params.customRouteUrl && params.customRouteUrl.trim().startsWith('http')) {
-      return params.customRouteUrl.trim();
+    if (params.customRouteUrl && params.customRouteUrl.trim()) {
+      return sanitizeGoogleMapsUrl(params.customRouteUrl.trim());
     }
-    return 'https://maps.google.com';
+    return buildGoogleMapsUrl();
   }
 
-  if (
-    !hasStopsOrChargers &&
-    params.customRouteUrl &&
-    params.customRouteUrl.trim().startsWith('http') &&
-    params.customRouteUrl.includes('/maps/dir/')
-  ) {
-    return params.customRouteUrl.trim();
-  }
-
-  const waypointsList: string[] = [];
-
-  if (Array.isArray(params.stops)) {
-    for (const s of params.stops as any[]) {
-      const sResolved = resolveTrueWaypointCoordinates(s, externalCandidates);
-      const sName = s.name || s.locationName || s.title || '';
-      if (sResolved) {
-        waypointsList.push(`${sResolved.lat.toFixed(6)},${sResolved.lng.toFixed(6)}`);
-      } else if (sName) {
-        waypointsList.push(sName);
-      }
-    }
-  }
-
-  if (Array.isArray(params.chargingStops)) {
-    for (const c of params.chargingStops as any[]) {
-      const cResolved = resolveTrueWaypointCoordinates(c, externalCandidates);
-      const cName = c.locationName || c.name || c.location || '';
-      if (cResolved) {
-        waypointsList.push(`${cResolved.lat.toFixed(6)},${cResolved.lng.toFixed(6)}`);
-      } else if (cName) {
-        waypointsList.push(cName);
-      }
-    }
-  }
-
-  let url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originStr)}&destination=${encodeURIComponent(destStr)}`;
-  if (waypointsList.length > 0) {
-    url += `&waypoints=${encodeURIComponent(waypointsList.join('|'))}`;
-  }
-  return url;
+  return `https://maps.google.com/maps?saddr=${encodeURIComponent(originStr)}&daddr=${encodeURIComponent(destStr)}`;
 }
 
 

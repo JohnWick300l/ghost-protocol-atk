@@ -295,6 +295,64 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "ServerVaultSnapshot": {
+      "title": "ServerVaultSnapshot",
+      "description": "Authoritative server-to-server cross-container synchronization vault for users and permanently deleted IDs.",
+      "type": "object",
+      "properties": {
+        "vaultId": {
+          "type": "string",
+          "description": "Fixed vault identifier.",
+          "minLength": 10,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "serverKey": {
+          "type": "string",
+          "description": "Cryptographic server authentication key.",
+          "minLength": 32,
+          "maxLength": 128
+        },
+        "revision": {
+          "type": "number",
+          "description": "Monotonically increasing database revision number."
+        },
+        "deletedIds": {
+          "type": "array",
+          "description": "Bounded list of permanently deleted user and record IDs (max 500)."
+        },
+        "users": {
+          "type": "array",
+          "description": "Bounded list of active user records (max 200)."
+        },
+        "collectionsJson": {
+          "type": "string",
+          "description": "Serialized JSON payload of all synced application collections (chargingStations, modifications, marketplace, rides, discussions, problems, etc.).",
+          "minLength": 2,
+          "maxLength": 850000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "vaultId",
+        "serverKey",
+        "revision",
+        "deletedIds",
+        "users",
+        "collectionsJson",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -317,6 +375,10 @@
     "/community_records/{recordId}": {
       "schema": { "$ref": "#/entities/CommunityRecord" },
       "description": "Individual shared community items created by verified pilots."
+    },
+    "/server_vault/{vaultId}": {
+      "schema": { "$ref": "#/entities/ServerVaultSnapshot" },
+      "description": "Backend server-to-server cross-container synchronization vault."
     }
   }
 }

@@ -12,6 +12,7 @@ import {
   loadFromCache,
   saveToCache,
   getDeletedIds,
+  recordDeletedId,
   gpApiFetch
 } from './telemetryCache.ts';
 import {
@@ -25,6 +26,7 @@ import {
   mergeHybridDataset,
   recordCloudRead,
   recordCloudWrite,
+  recordCloudQuotaExhausted,
   sanitizeBundleItemsForFirestore,
   sanitizeFirestoreId,
   type DailyQuotaUsage,
@@ -155,7 +157,17 @@ export async function syncPublicPilotProfileToFirestore(pilot: {
         updatedAt: serverTimestamp()
       });
     }
-  } catch (error) {
+  } catch (error: any) {
+    const errMsg = String(error?.message || error);
+    if (
+      error?.code === 'resource-exhausted' ||
+      error?.code === 8 ||
+      errMsg.includes('RESOURCE_EXHAUSTED') ||
+      errMsg.includes('Quota limit exceeded')
+    ) {
+      recordCloudQuotaExhausted('Firebase Firestore daily write limit reached (Spark plan)', 60 * 60 * 1000);
+      return;
+    }
     if (error instanceof Error && error.message.includes('Missing or insufficient permissions')) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
@@ -212,7 +224,17 @@ export async function pullModuleFromFirestore(
       return merged;
     }
     return rawItems;
-  } catch (error) {
+  } catch (error: any) {
+    const errMsg = String(error?.message || error);
+    if (
+      error?.code === 'resource-exhausted' ||
+      error?.code === 8 ||
+      errMsg.includes('RESOURCE_EXHAUSTED') ||
+      errMsg.includes('Quota limit exceeded')
+    ) {
+      recordCloudQuotaExhausted('Firebase Firestore daily read limit reached (Spark plan)', 60 * 60 * 1000);
+      return null;
+    }
     if (error instanceof Error && error.message.includes('Missing or insufficient permissions')) {
       handleFirestoreError(error, OperationType.GET, path);
     }
@@ -324,7 +346,17 @@ async function executePushModuleToFirestore(
     recordCloudWrite(moduleId, checksum);
     lastGlobalSyncedAt = new Date().toISOString();
     return true;
-  } catch (error) {
+  } catch (error: any) {
+    const errMsg = String(error?.message || error);
+    if (
+      error?.code === 'resource-exhausted' ||
+      error?.code === 8 ||
+      errMsg.includes('RESOURCE_EXHAUSTED') ||
+      errMsg.includes('Quota limit exceeded')
+    ) {
+      recordCloudQuotaExhausted('Firebase Firestore daily write limit reached (Spark plan)', 60 * 60 * 1000);
+      return false;
+    }
     if (error instanceof Error && error.message.includes('Missing or insufficient permissions')) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
@@ -351,12 +383,107 @@ export async function runHybridSyncCycle(options?: { force?: boolean }): Promise
   emitSyncStatus();
 
   try {
+    // Step 0: Sync server quota exhaustion circuit breaker
+    try {
+      const qRes = await gpApiFetch('/api/admin/firestore-quota-status');
+      if (qRes.ok) {
+        const qData = await qRes.json();
+        if (qData.exhausted && typeof qData.resetAtMs === 'number' && qData.resetAtMs > Date.now()) {
+          recordCloudQuotaExhausted(
+            qData.reason || 'Firebase Firestore daily write limit reached (Spark plan)',
+            qData.resetAtMs - Date.now()
+          );
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
     // Step 1: Lightweight server digest check & merge
     const res = await gpApiFetch('/api/hybrid-sync');
     if (res.ok) {
       const payload = await res.json();
+      const beforeDeletedCount = getDeletedIds().length;
+      if (Array.isArray(payload.deletedIds) && payload.deletedIds.length > 0) {
+        recordDeletedId(payload.deletedIds);
+      }
       const deletedIds = getDeletedIds();
+      const deletedSet = new Set(deletedIds);
 
+      if (Array.isArray(payload.accounts)) {
+        const filteredAccounts = payload.accounts.filter(
+          (u: any) => u && u.id && !deletedSet.has(u.id)
+        );
+        saveToCache(CACHE_KEYS.USERS, filteredAccounts, { silent: true });
+      } else if (deletedIds.length !== beforeDeletedCount) {
+        const cachedUsers = loadFromCache<any[]>(CACHE_KEYS.USERS, []);
+        saveToCache(
+          CACHE_KEYS.USERS,
+          cachedUsers.filter((u: any) => u && u.id && !deletedSet.has(u.id)),
+          { silent: true }
+        );
+      }
+
+      if (deletedIds.length !== beforeDeletedCount && typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(
+            new CustomEvent('ghost-users-synced', {
+              detail: { deletedIds, accounts: payload.accounts }
+            })
+          );
+        } catch {
+          // Ignore in non-DOM environments
+        }
+      }
+
+      if (Array.isArray(payload.chargingStations)) {
+        const merged = mergeHybridDataset(
+          loadFromCache<any[]>(CACHE_KEYS.CHARGING, []),
+          payload.chargingStations,
+          deletedIds
+        );
+        saveToCache(CACHE_KEYS.CHARGING, merged, { silent: true });
+      }
+      if (Array.isArray(payload.chargerReports)) {
+        const merged = mergeHybridDataset(
+          loadFromCache<any[]>(CACHE_KEYS.CHARGER_REPORTS, []),
+          payload.chargerReports,
+          deletedIds
+        );
+        saveToCache(CACHE_KEYS.CHARGER_REPORTS, merged, { silent: true });
+      }
+      if (Array.isArray(payload.modifications)) {
+        const merged = mergeHybridDataset(
+          loadFromCache<any[]>(CACHE_KEYS.MODIFICATIONS, []),
+          payload.modifications,
+          deletedIds
+        );
+        saveToCache(CACHE_KEYS.MODIFICATIONS, merged, { silent: true });
+      }
+      if (Array.isArray(payload.visitedDestinations)) {
+        const merged = mergeHybridDataset(
+          loadFromCache<any[]>(CACHE_KEYS.VISITED_DESTINATIONS, []),
+          payload.visitedDestinations,
+          deletedIds
+        );
+        saveToCache(CACHE_KEYS.VISITED_DESTINATIONS, merged, { silent: true });
+      }
+      if (Array.isArray(payload.serviceReviews)) {
+        const merged = mergeHybridDataset(
+          loadFromCache<any[]>(CACHE_KEYS.SERVICE_REVIEWS, []),
+          payload.serviceReviews,
+          deletedIds
+        );
+        saveToCache(CACHE_KEYS.SERVICE_REVIEWS, merged, { silent: true });
+      }
+      if (Array.isArray(payload.jetSubmissions)) {
+        const merged = mergeHybridDataset(
+          loadFromCache<any[]>(CACHE_KEYS.JET_SUBMISSIONS, []),
+          payload.jetSubmissions,
+          deletedIds
+        );
+        saveToCache(CACHE_KEYS.JET_SUBMISSIONS, merged, { silent: true });
+      }
       if (Array.isArray(payload.emergencies)) {
         const merged = mergeHybridDataset(
           loadFromCache<any[]>(CACHE_KEYS.EMERGENCY, []),
@@ -372,6 +499,22 @@ export async function runHybridSyncCycle(options?: { force?: boolean }): Promise
           deletedIds
         );
         saveToCache(CACHE_KEYS.DISCUSSIONS, merged, { silent: true });
+      }
+      if (Array.isArray(payload.polls)) {
+        const merged = mergeHybridDataset(
+          loadFromCache<any[]>(CACHE_KEYS.POLLS, []),
+          payload.polls,
+          deletedIds
+        );
+        saveToCache(CACHE_KEYS.POLLS, merged, { silent: true });
+      }
+      if (Array.isArray(payload.petitions)) {
+        const merged = mergeHybridDataset(
+          loadFromCache<any[]>(CACHE_KEYS.PETITIONS, []),
+          payload.petitions,
+          deletedIds
+        );
+        saveToCache(CACHE_KEYS.PETITIONS, merged, { silent: true });
       }
       if (Array.isArray(payload.problems)) {
         const merged = mergeHybridDataset(
@@ -396,6 +539,14 @@ export async function runHybridSyncCycle(options?: { force?: boolean }): Promise
           deletedIds
         );
         saveToCache(CACHE_KEYS.MARKETPLACE, merged, { silent: true });
+      }
+      if (Array.isArray(payload.contributions)) {
+        const merged = mergeHybridDataset(
+          loadFromCache<any[]>(CACHE_KEYS.CONTRIBUTIONS, []),
+          payload.contributions,
+          deletedIds
+        );
+        saveToCache(CACHE_KEYS.CONTRIBUTIONS, merged, { silent: true });
       }
       lastGlobalSyncedAt = payload.syncedAt || new Date().toISOString();
     }
@@ -474,6 +625,14 @@ export function initHybridDatabaseEngine(): void {
   window.addEventListener('offline', () => {
     emitSyncStatus();
   });
+
+  // Initial & periodic hybrid sync so user deletions and roster updates propagate across all open devices
+  void runHybridSyncCycle({ force: false });
+  setInterval(() => {
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      void runHybridSyncCycle({ force: false });
+    }
+  }, 8000);
 }
 
 export { ALLOWED_SHARED_MODULE_IDS };

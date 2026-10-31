@@ -47,6 +47,7 @@ import {
   resolveTrueWaypointCoordinates,
   extractCoordinatesFromGoogleMapsUrl,
   extractQueryTextFromGoogleMapsUrl,
+  sanitizeGoogleMapsUrl,
   type PlaceSuggestion
 } from '../utils/rules';
 import {
@@ -2515,7 +2516,12 @@ export const MissionMode: React.FC = () => {
                   {/* Card Footer: Map Link & Plan a Ride Button */}
                   <div className="p-4 pt-0 flex flex-col sm:flex-row gap-2">
                     <a
-                      href={dest.locationMapUrl}
+                      href={sanitizeGoogleMapsUrl(
+                        dest.locationMapUrl,
+                        undefined,
+                        undefined,
+                        dest.title
+                      )}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex-1 flex items-center justify-center space-x-1.5 px-3 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 font-display font-bold text-xs tracking-wider uppercase transition-all"

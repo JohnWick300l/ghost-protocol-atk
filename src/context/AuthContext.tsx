@@ -9,7 +9,10 @@ import {
   setStoredSessionToken,
   getSessionAuthHeaders,
   recordDeletedId,
-  gpApiFetch
+  getDeletedIds,
+  gpApiFetch,
+  scheduleServerReconciliation,
+  processOfflineQueue
 } from '../utils/telemetryCache';
 import {
   resolveUserDisplayIdentity,
@@ -39,6 +42,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   availableUsers: User[];
   loading: boolean;
+  authModalOpen: boolean;
   switchPersona: (userId: string) => Promise<void>;
   openAuthModal: (targetUserId?: string, initialMode?: 'login' | 'setup') => void;
   closeAuthModal: () => void;
@@ -114,59 +118,6 @@ const PUBLIC_FALLBACK_ACCOUNTS: User[] = [
       showCity: true,
       showMotorcycleDetails: true
     }
-  }),
-  normalizeUserRecord({
-    id: 'u_pilot07',
-    originalName: 'Vikram Sengupta',
-    fullName: 'Vikram Sengupta',
-    pilotNickname: 'F77 PILOT',
-    email: '',
-    mobile: '',
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    motorcycleModel: 'F77',
-    variant: 'Shadow Stealth (10.3 kWh)',
-    registrationNumber: '',
-    purchaseDate: '',
-    bloodGroup: 'Prefer not to disclose',
-    emergencyContact: { name: '', relationship: '', phone: '' },
-    role: 'verified_member',
-    verificationStatus: 'verified',
-    joinedAt: '2024-02-20T18:10:00Z',
-    optInSquadronAssist: true,
-    privacySettings: {
-      showStartingPoint: false,
-      showCity: true,
-      showMotorcycleDetails: true
-    }
-  }),
-  normalizeUserRecord({
-    id: 'u_uv_employee',
-    originalName: 'UV Service Engineer',
-    fullName: 'UV Service Engineer',
-    pilotNickname: 'F77 PILOT',
-    email: 'employee@ultraviolette.com',
-    mobile: '+91 98800 11223',
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    motorcycleModel: 'F77',
-    variant: 'Factory Service Diagnostics Unit',
-    registrationNumber: 'UV-ENG-001',
-    purchaseDate: '2024-01-15',
-    bloodGroup: 'Prefer not to disclose',
-    emergencyContact: { name: 'UV Corporate Desk', relationship: 'Corporate', phone: '+91 80 4719 0000' },
-    role: 'uv_employee',
-    accountType: 'employee',
-    employeeId: 'UV-EMP-7701',
-    department: 'Service Engineering & Quality Assurance',
-    verificationStatus: 'verified',
-    joinedAt: '2024-01-15T08:00:00Z',
-    optInSquadronAssist: false,
-    privacySettings: {
-      showStartingPoint: false,
-      showCity: true,
-      showMotorcycleDetails: true
-    }
   })
 ];
 
@@ -176,16 +127,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (typeof window === 'undefined') return null;
     try {
       const stored = localStorage.getItem('ghost_protocol_current_user_obj');
-      const token = getStoredSessionToken();
-      if (stored && token) {
-        return normalizeUserRecord(JSON.parse(stored));
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const deletedSet = new Set(getDeletedIds());
+        if (parsed && parsed.id && !deletedSet.has(parsed.id)) {
+          return normalizeUserRecord(parsed);
+        }
       }
     } catch {
       // Ignore parse error
     }
     return null;
   });
-  const [availableUsers, setAvailableUsers] = useState<User[]>(PUBLIC_FALLBACK_ACCOUNTS);
+  const [availableUsers, setAvailableUsers] = useState<User[]>(() => {
+    const deletedSet = new Set(getDeletedIds());
+    return PUBLIC_FALLBACK_ACCOUNTS.filter(u => !deletedSet.has(u.id));
+  });
   const [loading, setLoading] = useState(true);
 
   // Authentication & Account Switch Modal State (Decision 2A & 1A)
@@ -200,6 +157,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
+  const restoreSessionFromServer = async (
+    cachedPilot: User
+  ): Promise<{ user: User | null; deleted: boolean }> => {
+    try {
+      const restoreRes = await gpApiFetch('/api/auth/session-restore', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: getSessionAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ user: cachedPilot })
+      });
+      const restoreData = await restoreRes.json().catch(() => ({}));
+      if (Array.isArray(restoreData.deletedIds) && restoreData.deletedIds.length > 0) {
+        recordDeletedId(restoreData.deletedIds);
+      }
+      if (restoreRes.status === 403 || restoreData.deleted) {
+        recordDeletedId(cachedPilot.id);
+        return { user: null, deleted: true };
+      }
+      if (restoreRes.ok && restoreData.authenticated && restoreData.user) {
+        if (restoreData.sessionToken) {
+          setStoredSessionToken(restoreData.sessionToken);
+        }
+        return { user: normalizeUserRecord(restoreData.user), deleted: false };
+      }
+    } catch {
+      // Offline / transient network error — keep cached pilot
+    }
+    const deletedSet = new Set(getDeletedIds());
+    if (deletedSet.has(cachedPilot.id)) {
+      return { user: null, deleted: true };
+    }
+    return { user: cachedPilot, deleted: false };
+  };
+
   const fetchAuthData = async () => {
     try {
       const authHeaders = getSessionAuthHeaders();
@@ -208,26 +200,127 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         gpApiFetch('/api/auth/accounts', { credentials: 'same-origin', cache: 'no-store', headers: authHeaders })
       ]);
 
-      let publicAccounts: User[] = PUBLIC_FALLBACK_ACCOUNTS;
+      let serverDeletedIds: string[] = [];
+      let rawPublicAccounts: any[] = [];
+
       if (accountsRes.ok) {
-        const { accounts } = await accountsRes.json();
-        if (Array.isArray(accounts) && accounts.length > 0) {
-          publicAccounts = accounts.map(normalizeUserRecord);
+        const accountsData = await accountsRes.json().catch(() => ({}));
+        if (Array.isArray(accountsData.deletedIds) && accountsData.deletedIds.length > 0) {
+          serverDeletedIds.push(...accountsData.deletedIds);
+        }
+        if (Array.isArray(accountsData.accounts)) {
+          rawPublicAccounts = accountsData.accounts;
         }
       }
 
       let activeSessionUser: User | null = null;
+      let accountExplicitlyDeleted = false;
+
       if (meRes.ok) {
-        const meData = await meRes.json();
-        if (meData.authenticated && meData.user) {
+        const meData = await meRes.json().catch(() => ({}));
+        if (Array.isArray(meData.deletedIds) && meData.deletedIds.length > 0) {
+          serverDeletedIds.push(...meData.deletedIds);
+        }
+        if (meData.deleted) {
+          accountExplicitlyDeleted = true;
+        } else if (meData.authenticated && meData.user) {
           activeSessionUser = normalizeUserRecord(meData.user);
         }
       }
 
-      if (activeSessionUser) {
+      if (serverDeletedIds.length > 0) {
+        recordDeletedId(serverDeletedIds);
+      }
+
+      const deletedSet = new Set(getDeletedIds());
+      let publicAccounts: User[] = PUBLIC_FALLBACK_ACCOUNTS.filter(u => !deletedSet.has(u.id));
+      if (rawPublicAccounts.length > 0) {
+        publicAccounts = rawPublicAccounts
+          .filter((u: any) => u && u.id && !deletedSet.has(u.id))
+          .map(normalizeUserRecord);
+      }
+
+      if (!activeSessionUser && !accountExplicitlyDeleted) {
+        const autostartMode =
+          typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('autostart')
+            : null;
+        if (autostartMode === '1') {
+          const demoPilot = normalizeUserRecord({
+            id: 'u_pilot07',
+            originalName: 'Vikram Sengupta',
+            fullName: 'Vikram Sengupta',
+            pilotNickname: 'F77 PILOT',
+            email: 'vikram.sengupta@example.com',
+            mobile: '+91 98860 22345',
+            city: 'Bengaluru',
+            state: 'Karnataka',
+            motorcycleModel: 'F77',
+            variant: 'Shadow Stealth (10.3 kWh)',
+            registrationNumber: 'KA 03 EV 4077',
+            purchaseDate: '2024-06-20',
+            bloodGroup: 'B+',
+            emergencyContact: { name: 'Ananya Sengupta', relationship: 'Spouse', phone: '+91 98860 77654' },
+            role: 'verified_member',
+            verificationStatus: 'verified',
+            joinedAt: '2024-02-20T18:10:00Z',
+            optInSquadronAssist: true,
+            privacySettings: {
+              showStartingPoint: false,
+              showCity: true,
+              showMotorcycleDetails: true
+            }
+          });
+          setCurrentUser(demoPilot);
+          localStorage.setItem('ghost_protocol_user_id', demoPilot.id);
+          localStorage.setItem('ghost_protocol_current_user_obj', JSON.stringify(demoPilot));
+          setAvailableUsers(publicAccounts);
+          saveToCache(CACHE_KEYS.USERS, publicAccounts);
+          return;
+        } else if (autostartMode === 'admin') {
+          const demoAdmin = normalizeUserRecord({
+            ...PUBLIC_FALLBACK_ACCOUNTS[0],
+            email: 'abinavthejas2001@gmail.com',
+            mobile: '+91 98450 11099'
+          });
+          setCurrentUser(demoAdmin);
+          localStorage.setItem('ghost_protocol_user_id', demoAdmin.id);
+          localStorage.setItem('ghost_protocol_current_user_obj', JSON.stringify(demoAdmin));
+          setAvailableUsers(publicAccounts);
+          saveToCache(CACHE_KEYS.USERS, publicAccounts);
+          return;
+        } else {
+          // If user previously logged in, restore server session token automatically across updates/republishes
+          const storedUserObj =
+            typeof window !== 'undefined' ? localStorage.getItem('ghost_protocol_current_user_obj') : null;
+          if (storedUserObj) {
+            try {
+              const cachedPilot = normalizeUserRecord(JSON.parse(storedUserObj));
+              if (cachedPilot && cachedPilot.id) {
+                if (deletedSet.has(cachedPilot.id)) {
+                  accountExplicitlyDeleted = true;
+                } else {
+                  const restored = await restoreSessionFromServer(cachedPilot);
+                  if (restored.deleted) {
+                    accountExplicitlyDeleted = true;
+                  } else if (restored.user) {
+                    activeSessionUser = restored.user;
+                  }
+                }
+              }
+            } catch {
+              // Ignore parse error
+            }
+          }
+        }
+      }
+
+      if (activeSessionUser && !deletedSet.has(activeSessionUser.id)) {
         setCurrentUser(activeSessionUser);
         localStorage.setItem('ghost_protocol_user_id', activeSessionUser.id);
         localStorage.setItem('ghost_protocol_current_user_obj', JSON.stringify(activeSessionUser));
+        void processOfflineQueue();
+        scheduleServerReconciliation();
 
         // If authenticated as admin or owner, fetch full directory for AdminCentre
         if (
@@ -241,58 +334,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             headers: getSessionAuthHeaders()
           });
           if (adminUsersRes.ok) {
-            const { users } = await adminUsersRes.json();
-            if (Array.isArray(users) && users.length > 0) {
-              const normalizedAdminUsers = users.map(normalizeUserRecord);
+            const adminData = await adminUsersRes.json().catch(() => ({}));
+            if (Array.isArray(adminData.deletedIds) && adminData.deletedIds.length > 0) {
+              recordDeletedId(adminData.deletedIds);
+            }
+            const latestDeletedSet = new Set(getDeletedIds());
+            if (Array.isArray(adminData.users)) {
+              const normalizedAdminUsers = adminData.users
+                .filter((u: any) => u && u.id && !latestDeletedSet.has(u.id))
+                .map(normalizeUserRecord);
               setAvailableUsers(normalizedAdminUsers);
-              saveToCache(CACHE_KEYS.USERS, publicAccounts);
+              saveToCache(
+                CACHE_KEYS.USERS,
+                publicAccounts.filter(u => !latestDeletedSet.has(u.id))
+              );
               return;
             }
           }
         }
       } else {
-        const autostartMode =
-          typeof window !== 'undefined'
-            ? new URLSearchParams(window.location.search).get('autostart')
-            : null;
-        if (autostartMode === '1') {
-          const demoPilot = normalizeUserRecord({
-            ...PUBLIC_FALLBACK_ACCOUNTS[1],
-            mobile: '+91 98860 22345'
-          });
-          setCurrentUser(demoPilot);
-          localStorage.setItem('ghost_protocol_user_id', demoPilot.id);
-          localStorage.setItem('ghost_protocol_current_user_obj', JSON.stringify(demoPilot));
-        } else if (autostartMode === 'admin') {
-          const demoAdmin = normalizeUserRecord({
-            ...PUBLIC_FALLBACK_ACCOUNTS[0],
-            email: 'abinavthejas2001@gmail.com',
-            mobile: '+91 98450 11099'
-          });
-          setCurrentUser(demoAdmin);
-          localStorage.setItem('ghost_protocol_user_id', demoAdmin.id);
-          localStorage.setItem('ghost_protocol_current_user_obj', JSON.stringify(demoAdmin));
-        } else {
-          // Unauthenticated visitor (Decision 3A): never fall back to u_admin
-          setCurrentUser(null);
-          setStoredSessionToken(null);
-          localStorage.removeItem('ghost_protocol_user_id');
-          localStorage.removeItem('ghost_protocol_current_user_obj');
-        }
+        // Clear session if visitor is unauthenticated or if account was permanently removed
+        setCurrentUser(null);
+        setStoredSessionToken(null);
+        localStorage.removeItem('ghost_protocol_user_id');
+        localStorage.removeItem('ghost_protocol_current_user_obj');
       }
 
-      setAvailableUsers(publicAccounts);
-      saveToCache(CACHE_KEYS.USERS, publicAccounts);
+      const finalDeletedSet = new Set(getDeletedIds());
+      const filteredPublic = publicAccounts.filter(u => !finalDeletedSet.has(u.id));
+      setAvailableUsers(filteredPublic);
+      saveToCache(CACHE_KEYS.USERS, filteredPublic);
     } catch {
-      // Offline mode: restore only if a previously verified session user was cached
-      const cachedAccounts = (loadFromCache<User[]>(CACHE_KEYS.USERS)?.data || PUBLIC_FALLBACK_ACCOUNTS).map(
-        normalizeUserRecord
-      );
+      // Offline mode: restore only if a previously verified session user was cached and not deleted
+      const offlineDeletedSet = new Set(getDeletedIds());
+      const cachedAccounts = (loadFromCache<User[]>(CACHE_KEYS.USERS)?.data || PUBLIC_FALLBACK_ACCOUNTS)
+        .filter(u => !offlineDeletedSet.has(u.id))
+        .map(normalizeUserRecord);
       setAvailableUsers(cachedAccounts);
       try {
         const savedUserJson = localStorage.getItem('ghost_protocol_current_user_obj');
         if (savedUserJson) {
-          setCurrentUser(normalizeUserRecord(JSON.parse(savedUserJson)));
+          const parsed = normalizeUserRecord(JSON.parse(savedUserJson));
+          if (parsed && parsed.id && !offlineDeletedSet.has(parsed.id)) {
+            setCurrentUser(parsed);
+          } else {
+            setCurrentUser(null);
+            setStoredSessionToken(null);
+            localStorage.removeItem('ghost_protocol_user_id');
+            localStorage.removeItem('ghost_protocol_current_user_obj');
+          }
         } else {
           setCurrentUser(null);
         }
@@ -306,6 +396,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     void fetchAuthData();
+
+    const handleUsersSynced = () => {
+      const deletedSet = new Set(getDeletedIds());
+      setAvailableUsers(prev => prev.filter(u => !deletedSet.has(u.id)));
+      setCurrentUser(prev => {
+        if (prev && deletedSet.has(prev.id)) {
+          setStoredSessionToken(null);
+          localStorage.removeItem('ghost_protocol_user_id');
+          localStorage.removeItem('ghost_protocol_current_user_obj');
+          return null;
+        }
+        return prev;
+      });
+      void fetchAuthData();
+    };
+
+    const handleWindowFocus = () => {
+      void fetchAuthData();
+    };
+
+    window.addEventListener('ghost-users-synced', handleUsersSynced);
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      window.removeEventListener('ghost-users-synced', handleUsersSynced);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
   }, []);
 
   const openAuthModal = (targetUserId?: string, initialMode?: 'login' | 'setup') => {
@@ -775,7 +891,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      const res = await gpApiFetch(`/api/admin/users/${encodeURIComponent(targetUserId)}`, {
+      let res = await gpApiFetch(`/api/admin/users/${encodeURIComponent(targetUserId)}`, {
         method: 'DELETE',
         credentials: 'same-origin',
         headers: getSessionAuthHeaders({
@@ -783,9 +899,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }),
         body: JSON.stringify({ reason })
       });
+
+      // If server session token expired or rotated across container restart, auto-restore and retry
+      if (res.status === 401 && currentUser) {
+        const restored = await restoreSessionFromServer(currentUser);
+        if (restored.user) {
+          res = await gpApiFetch(`/api/admin/users/${encodeURIComponent(targetUserId)}`, {
+            method: 'DELETE',
+            credentials: 'same-origin',
+            headers: getSessionAuthHeaders({
+              'Content-Type': 'application/json'
+            }),
+            body: JSON.stringify({ reason })
+          });
+        }
+      }
+
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         return { success: false, error: data.error || 'Failed to permanently remove user from database' };
+      }
+      if (Array.isArray(data.deletedIds) && data.deletedIds.length > 0) {
+        recordDeletedId(data.deletedIds);
       }
       recordDeletedId(targetUserId);
       setAvailableUsers(prev => {
@@ -793,7 +928,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveToCache(CACHE_KEYS.USERS, next);
         return next;
       });
-      await fetchAuthData();
+      if (currentUser?.id === targetUserId) {
+        await logout();
+      } else {
+        await fetchAuthData();
+      }
       return {
         success: true,
         deletedId: data.deletedId || targetUserId,
@@ -871,6 +1010,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: Boolean(currentUser),
         availableUsers,
         loading,
+        authModalOpen,
         switchPersona,
         openAuthModal,
         closeAuthModal,

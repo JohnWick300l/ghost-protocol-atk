@@ -231,6 +231,54 @@ test('End-to-End API Security — All 20 Negative & Positive Security Phase 1 Re
   const sourceDbPath = path.join(PROJECT_ROOT, 'data', 'db.json');
   const tempDbPath = path.join(tempDataDir, 'db.json');
   const sandboxDb = JSON.parse(fs.readFileSync(sourceDbPath, 'utf-8'));
+  sandboxDb.deletedIds = (sandboxDb.deletedIds || []).filter(
+    (id: string) => id !== 'u_pilot07' && id !== 'u_phantom'
+  );
+  if (!Array.isArray(sandboxDb.users)) sandboxDb.users = [];
+  if (!sandboxDb.users.some((u: any) => u.id === 'u_pilot07')) {
+    sandboxDb.users.push({
+      id: 'u_pilot07',
+      fullName: 'Vikram Sengupta',
+      originalName: 'Vikram Sengupta',
+      pilotNickname: 'F77 PILOT',
+      secondaryTag: 'F77 PILOT',
+      email: 'vikram.sengupta@example.com',
+      mobile: '+91 98860 22345',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      motorcycleModel: 'F77',
+      variant: 'Shadow Grey (10.3 kWh)',
+      registrationNumber: 'KA 03 EV 4077',
+      purchaseDate: '2024-06-20',
+      bloodGroup: 'B+',
+      emergencyContact: { name: 'Ananya Sengupta', relationship: 'Spouse', phone: '+91 98860 77654' },
+      role: 'verified_member',
+      verificationStatus: 'verified',
+      joinedAt: '2024-06-20T11:00:00Z'
+    });
+  }
+  if (!sandboxDb.users.some((u: any) => u.id === 'u_phantom')) {
+    sandboxDb.users.push({
+      id: 'u_phantom',
+      fullName: 'Devika Nair',
+      originalName: 'Devika Nair',
+      pilotNickname: 'F77 PILOT',
+      secondaryTag: 'F77 PILOT',
+      email: 'devika.nair@example.com',
+      mobile: '+91 97410 88231',
+      city: 'Mysuru',
+      state: 'Karnataka',
+      motorcycleModel: 'F77',
+      variant: 'Airstrike White (7.1 kWh)',
+      registrationNumber: 'KA 09 MX 1290',
+      purchaseDate: '2023-11-10',
+      bloodGroup: 'A+',
+      emergencyContact: { name: 'Rohan Nair', relationship: 'Sibling', phone: '+91 97410 33412' },
+      role: 'verified_member',
+      verificationStatus: 'verified',
+      joinedAt: '2023-11-10T12:00:00Z'
+    });
+  }
   const testOwner = (sandboxDb.users || []).find((u: any) => u.id === 'u_admin');
   if (testOwner) {
     testOwner.passwordHash = null;
@@ -656,6 +704,121 @@ test('End-to-End API Security — All 20 Negative & Positive Security Phase 1 Re
       finalUsersList.data.users.some((u: any) => u.id === targetId1 || u.id === targetId2),
       false,
       'Permanently removed users must be completely erased from the database user list'
+    );
+
+    // 22. Session-Restore + Multi-User Sync of Charging Stations, Modifications, and Marketplace Items across Republishes
+    const restoreSessionRes = await apiReq('/api/auth/session-restore', {
+      method: 'POST',
+      body: {
+        user: {
+          id: 'u_pilot07',
+          fullName: 'Vikram Sengupta',
+          email: 'vikram.sengupta@example.com',
+          mobile: '+91 98860 22345',
+          motorcycleModel: 'F77',
+          registrationNumber: 'KA 03 EV 4077',
+          bloodGroup: 'B+',
+          emergencyContact: { name: 'Ananya Sengupta', relationship: 'Spouse', phone: '+91 98860 77654' }
+        }
+      }
+    });
+    assert.equal(restoreSessionRes.status, 200);
+    assert.equal(restoreSessionRes.data.authenticated, true);
+    assert.ok(restoreSessionRes.data.sessionToken, 'Session restore must issue a fresh sessionToken');
+    const restoredPilotHeaders = { Authorization: `Bearer ${restoreSessionRes.data.sessionToken}` };
+
+    // Regular member adds a Charging Station (even as 3rd Party Station / Type 2) -> must be published immediately for all users
+    const addChargerRes = await apiReq('/api/charging', {
+      method: 'POST',
+      headers: restoredPilotHeaders,
+      body: {
+        name: 'Hosur Highway Pilot Fast Plug',
+        location: 'NH 44 Hosur Toll Plaza, Tamil Nadu',
+        latitude: 12.7409,
+        longitude: 77.8253,
+        chargerType: 'Type 2',
+        uvChargingLink: 'https://www.ultraviolette.com/charging/uv-link',
+        chargerDetails: 'UV Type 2 AC adapter + portable charger required',
+        chargerSource: '3rd Party Station',
+        powerOutputKw: 7.2
+      }
+    });
+    assert.equal(addChargerRes.status, 201);
+    assert.equal(addChargerRes.data.station.published, true, 'User-submitted charger must be published immediately');
+    assert.equal(addChargerRes.data.station.approvalStatus, 'approved');
+    const createdStation = addChargerRes.data.station;
+
+    // Regular member adds a Modification -> visible to all users
+    const addModRes = await apiReq('/api/modifications', {
+      method: 'POST',
+      headers: restoredPilotHeaders,
+      body: {
+        motorcycleModel: 'F77 MACH 2',
+        title: 'Brembo Radial Master Cylinder Upgrade',
+        component: 'Brakes & Suspension',
+        description: 'Direct bolt-on radial master cylinder for sharper lever feel.',
+        costApprox: '₹18,500',
+        installationDifficulty: 'Moderate',
+        warrantyImpact: 'No impact on battery/drivetrain warranty'
+      }
+    });
+    assert.equal(addModRes.status, 201);
+    const createdMod = addModRes.data.modification;
+
+    // Regular member adds a Marketplace Selling Item -> visible to all users
+    const addMktRes = await apiReq('/api/marketplace', {
+      method: 'POST',
+      headers: restoredPilotHeaders,
+      body: {
+        listingType: 'sell',
+        title: 'UV Mach 2 Aero Tank Grips',
+        category: 'Accessories',
+        CompatibleModels: ['F77 MACH 2'],
+        condition: 'Like New',
+        price: 3200,
+        city: 'Bengaluru',
+        description: 'Barely used tank grips in pristine condition.'
+      }
+    });
+    assert.equal(addMktRes.status, 201);
+    const createdItem = addMktRes.data.item;
+
+    // Verify another user (or unauthenticated / hybrid-sync viewer) sees the charger, modification, and marketplace item
+    const hybridRes = await apiReq('/api/hybrid-sync');
+    assert.equal(hybridRes.status, 200);
+    assert.ok(
+      hybridRes.data.chargingStations.some((s: any) => s.id === createdStation.id),
+      'Other users must see user-submitted charging station in /api/hybrid-sync'
+    );
+    assert.ok(
+      hybridRes.data.modifications.some((m: any) => m.id === createdMod.id),
+      'Other users must see user-submitted modification in /api/hybrid-sync'
+    );
+    assert.ok(
+      hybridRes.data.marketplace.some((i: any) => i.id === createdItem.id),
+      'Other users must see user-submitted marketplace item in /api/hybrid-sync'
+    );
+
+    // Reconcile from client cache and verify the charging station stays published (never downgraded to pending)
+    const reconcileRes = await apiReq('/api/sync/reconcile', {
+      method: 'POST',
+      headers: restoredPilotHeaders,
+      body: {
+        deletedIds: [],
+        collections: {
+          chargingStations: [createdStation],
+          modifications: [createdMod],
+          marketplace: [createdItem]
+        }
+      }
+    });
+    assert.equal(reconcileRes.status, 200);
+
+    const publicChargersAfterReconcile = await apiReq('/api/charging');
+    assert.equal(publicChargersAfterReconcile.status, 200);
+    assert.ok(
+      publicChargersAfterReconcile.data.stations.some((s: any) => s.id === createdStation.id),
+      'Charging station must remain publicly published after client reconciliation'
     );
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));

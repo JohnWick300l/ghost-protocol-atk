@@ -11,7 +11,10 @@ import {
   MapPin,
   Crosshair,
   Loader2,
-  X
+  X,
+  Maximize2,
+  ArrowLeft,
+  ExternalLink
 } from 'lucide-react';
 import {
   type RouteCoordinate,
@@ -24,7 +27,8 @@ import {
   buildChargerNavigationUrl,
   formatManualCoordinatesFallback,
   describeMapPinLocation,
-  createTacticalOfflineTileDataUrl
+  createTacticalOfflineTileDataUrl,
+  openInGoogleMaps
 } from '../utils/rules';
 
 export interface MapPickedLocationCandidate {
@@ -230,6 +234,31 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
   const candidateMarkerRef = useRef<L.Marker | null>(null);
 
   const [candidatePin, setCandidatePin] = useState<MapPickedLocationCandidate | null>(null);
+  const [isFullNavigation, setIsFullNavigation] = useState(false);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const delays = [0, 50, 100, 200, 300, 500];
+    const timers = delays.map(d =>
+      setTimeout(() => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize({ pan: false });
+        }
+      }, d)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [isFullNavigation]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullNavigation) {
+        setIsFullNavigation(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullNavigation]);
 
   const mapPickModeRef = useRef(mapPickMode);
   const startLocationRef = useRef(startLocation);
@@ -353,11 +382,25 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
       }
     });
 
+    // Observe container resizes dynamically to prevent map canvas blackout during layout transitions
+    let resizeObserver: ResizeObserver | null = null;
+    if (mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize({ pan: false });
+        }
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     setTimeout(() => {
-      map.invalidateSize();
+      map.invalidateSize({ pan: false });
     }, 150);
 
     return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       map.remove();
       mapInstanceRef.current = null;
       layerGroupRef.current = null;
@@ -587,13 +630,34 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
   };
 
   return (
-    <div className="relative rounded-xl border border-slate-800 bg-[#070A10] overflow-hidden shadow-2xl">
+    <div
+      data-testid={isFullNavigation ? 'autopilot-fullscreen-overlay' : undefined}
+      className={`transition-all duration-200 ${
+        isFullNavigation
+          ? 'fixed inset-0 z-[9999] bg-[#070A10] flex flex-col w-screen h-screen overflow-hidden'
+          : 'relative rounded-xl border border-slate-800 bg-[#070A10] overflow-hidden shadow-2xl'
+      }`}
+      style={isFullNavigation ? { paddingTop: 'max(env(safe-area-inset-top), 12px)' } : undefined}
+    >
       {/* Top Tactical HUD Bar */}
-      <div className="px-4 py-3 bg-[#0B0F18]/95 border-b border-slate-800/90 flex flex-wrap items-center justify-between gap-3">
+      <div className="px-4 py-3 bg-[#0B0F18]/95 border-b border-slate-800/90 flex flex-wrap items-center justify-between gap-3 shrink-0 z-30">
         <div className="flex items-center gap-2.5">
+          {isFullNavigation && (
+            <button
+              type="button"
+              data-testid="exit-autopilot-full-navigation-btn"
+              onClick={() => setIsFullNavigation(false)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-[#FF5500] text-[#FF5500] hover:text-white font-mono font-bold text-xs uppercase cursor-pointer mr-1"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Exit Full Navigation</span>
+            </button>
+          )}
           <Compass className="w-4 h-4 text-[#FF5500]" />
           <span className="font-mono text-xs uppercase tracking-widest text-white font-bold">
-            AUTO PILOT CORRIDOR RADAR // OPENSTREETMAP
+            {isFullNavigation
+              ? 'AUTO PILOT // FULL SCREEN ROUTE EXPLORER'
+              : 'AUTO PILOT CORRIDOR RADAR // OPENSTREETMAP'}
           </span>
         </div>
 
@@ -755,13 +819,13 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
       <div
         ref={mapContainerRef}
         data-testid="autopilot-route-map"
-        className={`h-[420px] sm:h-[460px] w-full z-0 bg-[#06090F] [&_.leaflet-tile-pane]:invert [&_.leaflet-tile-pane]:hue-rotate-180 [&_.leaflet-tile-pane]:brightness-90 [&_.leaflet-tile-pane]:contrast-110 ${
+        className={`w-full z-0 bg-[#06090F] [&_.leaflet-tile-pane]:invert [&_.leaflet-tile-pane]:hue-rotate-180 [&_.leaflet-tile-pane]:brightness-90 [&_.leaflet-tile-pane]:contrast-110 ${
           mapPickMode ? 'cursor-crosshair' : ''
-        }`}
+        } ${isFullNavigation ? 'h-full flex-1' : 'h-[420px] sm:h-[460px]'}`}
       />
 
       {/* Legend Bar */}
-      <div className="px-4 py-2 bg-[#090D16] border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
+      <div className="px-4 py-2 bg-[#090D16] border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400 z-10 shrink-0">
         <div className="flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
@@ -787,8 +851,137 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
         <span>Click map or drag START / DEST markers to set custom coordinates</span>
       </div>
 
-      {/* Interactive Selected Stop Quick-Action Bar Beneath Map */}
-      {activeStopObj && (
+      {/* View Full Navigation Launch Bar (Positioned Right Below the Auto Pilot Map) */}
+      <div className="px-4 py-2.5 bg-[#0B0F18] border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 z-10">
+        <div className="flex items-center gap-2 text-xs font-mono text-slate-300">
+          <Compass className="w-4 h-4 text-[#FF5500] shrink-0 animate-spin" style={{ animationDuration: '16s' }} />
+          <div>
+            <span className="font-bold text-white uppercase">Auto Pilot Full Screen Navigation</span>
+            <span className="hidden sm:inline text-slate-400 ml-2">• Full-screen route corridor & charging telemetry</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          data-testid="autopilot-view-full-navigation-btn"
+          onClick={() => {
+            setIsFullNavigation(prev => !prev);
+          }}
+          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-slate-900 to-slate-800 hover:from-[#FF5500] hover:to-[#FF5500] text-[#FF5500] hover:text-slate-950 border border-[#FF5500] font-mono font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer group"
+        >
+          <Maximize2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+          <span>{isFullNavigation ? 'Exit Full Navigation' : 'View Full Navigation'}</span>
+        </button>
+      </div>
+
+      {/* Full Navigation Interactive Stop Details Drawer */}
+      {isFullNavigation && activeStopObj && (
+        <div
+          data-testid="autopilot-fullscreen-stop-details"
+          className="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-md max-h-[80vh] overflow-y-auto z-[1000] bg-[#090D16]/95 backdrop-blur-md border-2 border-[#FF5500] rounded-xl p-4 sm:p-5 shadow-2xl space-y-3 font-mono text-xs"
+        >
+          <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-slate-800">
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="px-2 py-0.5 rounded bg-[#FF5500]/20 border border-[#FF5500]/40 text-[#FF5500] text-[9px] font-bold uppercase">
+                  PLANNED STOP #{activeStopObj.order}
+                </span>
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] font-bold">
+                  KM {activeStopObj.distanceFromStartKm}
+                </span>
+              </div>
+              <h3 className="text-sm sm:text-base font-bold text-white leading-snug">
+                {activeStopObj.station.name}
+              </h3>
+            </div>
+            <button
+              type="button"
+              data-testid="close-autopilot-fullscreen-drawer-btn"
+              onClick={() => onSelectStop('')}
+              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+              title="Close details"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="text-[11px] text-slate-400 font-sans">
+            {activeStopObj.station.location}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-[10px] p-2.5 rounded bg-slate-900 border border-slate-800">
+            <div>
+              <span className="text-slate-500 block">CHARGER POWER</span>
+              <span className="font-bold text-emerald-400">
+                {activeStopObj.station.powerOutputKw} kW ({activeStopObj.station.chargerType || 'Supernova'})
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-500 block">DETOUR DISTANCE</span>
+              <span className="font-bold text-amber-400">+{activeStopObj.detourDistanceKm} km off-highway</span>
+            </div>
+            <div>
+              <span className="text-slate-500 block">LEG DISTANCE</span>
+              <span className="font-bold text-cyan-300">{activeStopObj.distanceFromPrevStopKm} km from prev</span>
+            </div>
+            <div>
+              <span className="text-slate-500 block">OPERATING STATUS</span>
+              <span className="font-bold text-white">{activeStopObj.station.operatingStatus}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 pt-1">
+            <a
+              href={buildChargerNavigationUrl(activeStopObj.station)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => {
+                e.preventDefault();
+                openInGoogleMaps(
+                  buildChargerNavigationUrl(activeStopObj.station),
+                  activeStopObj.station.latitude,
+                  activeStopObj.station.longitude,
+                  `${activeStopObj.station.name} ${activeStopObj.station.location}`
+                );
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#FF5500] hover:bg-[#e04b00] text-black font-mono font-bold text-xs uppercase tracking-wider shadow-lg transition-colors cursor-pointer"
+            >
+              <Navigation className="w-3.5 h-3.5" />
+              <span>Navigate in Google Maps</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onToggleReached(activeStopObj.station.id)}
+                className={`flex-1 py-1.5 rounded text-[10px] font-mono uppercase font-bold border flex items-center justify-center gap-1 ${
+                  activeStopObj.reached
+                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                    : 'bg-slate-900 border-slate-700 text-slate-300'
+                }`}
+              >
+                <CheckCircle2 className="w-3 h-3" />
+                {activeStopObj.reached ? 'Reached' : 'Mark Reached'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onToggleCharged(activeStopObj.station.id)}
+                className={`flex-1 py-1.5 rounded text-[10px] font-mono uppercase font-bold border flex items-center justify-center gap-1 ${
+                  activeStopObj.chargingConfirmed
+                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
+                    : 'bg-slate-900 border-slate-700 text-slate-300'
+                }`}
+              >
+                <Zap className="w-3 h-3" />
+                {activeStopObj.chargingConfirmed ? 'Charged' : 'Confirm Charge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Selected Stop Quick-Action Bar Beneath Map (when not in full navigation) */}
+      {!isFullNavigation && activeStopObj && (
         <div className="px-4 py-3 bg-[#0B0F18] border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">

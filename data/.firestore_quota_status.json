@@ -1,0 +1,11 @@
+{
+  "exhausted": true,
+  "exhaustedAt": "2026-10-31T15:25:48.561Z",
+  "resetAtMs": 1793577600000,
+  "resetAtIso": "2026-11-01T00:00:00.000Z",
+  "reason": "Quota exceeded for quota metric 'Free daily write units per project (free tier database)' and limit 'Free daily write units per project (free tier database) per day' of service 'firestore.googleapis.com' for consumer 'project_number:214972545002'.",
+  "projectId": "fleet-unfolding-p5v9p",
+  "databaseId": "ai-studio-ghostprotocol-7dd54263-89ea-448f-9e88-37be2d9f1eb3",
+  "upgradeUrl": "https://console.firebase.google.com/project/fleet-unfolding-p5v9p/firestore/databases/ai-studio-ghostprotocol-7dd54263-89ea-448f-9e88-37be2d9f1eb3/data?openUpgradeDialog=true",
+  "pricingUrl": "https://firebase.google.com/pricing#cloud-firestore"
+}

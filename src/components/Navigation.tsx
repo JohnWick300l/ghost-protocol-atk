@@ -96,7 +96,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       ];
 
   return (
-    <header className="sticky top-0 z-50 bg-[#020305]/95 backdrop-blur-xl border-b border-[#131C2B] select-none shadow-[0_8px_32px_rgba(0,0,0,0.85)]">
+    <header className="sticky top-0 z-50 bg-[#020305]/95 backdrop-blur-xl border-b border-[#131C2B] select-none shadow-[0_8px_32px_rgba(0,0,0,0.85)] pt-[max(1rem,env(safe-area-inset-top))] sm:pt-0">
       {/* Top Technical Status Bar (Clean & Real) */}
       <div className="hidden lg:flex items-center justify-between px-6 py-1 bg-[#04070D] border-b border-[#131C2B]/80 text-[11px] font-mono text-[#64748B]">
         <div className="flex items-center space-x-6">

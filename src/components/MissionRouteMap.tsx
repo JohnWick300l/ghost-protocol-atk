@@ -18,6 +18,7 @@ import {
   buildGoogleMapsUrl as rulesBuildGoogleMapsUrl,
   openInGoogleMaps as rulesOpenInGoogleMaps,
   buildMasterRouteGoogleMapsUrl as rulesBuildMasterRouteGoogleMapsUrl,
+  sanitizeGoogleMapsUrl,
   type PlaceSuggestion
 } from '../utils/rules';
 import {
@@ -510,7 +511,7 @@ export const MissionRouteMap: React.FC<MissionRouteMapProps> = ({
           ${wp.address ? `<div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">${wp.address}</div>` : ''}
           ${wp.notes ? `<div style="font-size: 11px; color: #FDE68A; margin-top: 4px; background: rgba(245,158,11,0.15); padding: 4px; border-radius: 4px;">${wp.notes}</div>` : ''}
           <div style="margin-top: 8px;">
-            <a href="${wp.googleMapsUrl || buildGoogleMapsUrl(wp.latitude, wp.longitude, wp.name)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background: #38BDF8; color: #08090B; font-size: 10px; font-weight: bold; text-decoration: none; padding: 4px 8px; border-radius: 4px; text-transform: uppercase;">
+            <a href="${sanitizeGoogleMapsUrl(wp.googleMapsUrl, wp.latitude, wp.longitude, wp.name)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background: #38BDF8; color: #08090B; font-size: 10px; font-weight: bold; text-decoration: none; padding: 4px 8px; border-radius: 4px; text-transform: uppercase;">
               Open in Google Maps ↗
             </a>
           </div>

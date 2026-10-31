@@ -381,6 +381,8 @@ export interface DailyQuotaUsage {
   savedWritesByDedup: number;
   lastSyncedByModule: Record<string, number>;
   lastChecksumByModule: Record<string, string>;
+  quotaExhaustedUntilMs?: number;
+  quotaExhaustedReason?: string;
 }
 
 export function getCurrentUtcDateKey(nowMs: number = Date.now()): string {
@@ -395,7 +397,9 @@ function getDefaultQuotaUsage(nowMs: number = Date.now()): DailyQuotaUsage {
     savedReadsByCache: 0,
     savedWritesByDedup: 0,
     lastSyncedByModule: {},
-    lastChecksumByModule: {}
+    lastChecksumByModule: {},
+    quotaExhaustedUntilMs: undefined,
+    quotaExhaustedReason: undefined
   };
 }
 
@@ -435,7 +439,15 @@ export function loadDailyQuotaUsage(storage?: StorageLike, nowMs: number = Date.
       lastChecksumByModule:
         parsed.lastChecksumByModule && typeof parsed.lastChecksumByModule === 'object'
           ? parsed.lastChecksumByModule
-          : {}
+          : {},
+      quotaExhaustedUntilMs:
+        typeof parsed.quotaExhaustedUntilMs === 'number' && parsed.quotaExhaustedUntilMs > nowMs
+          ? parsed.quotaExhaustedUntilMs
+          : undefined,
+      quotaExhaustedReason:
+        typeof parsed.quotaExhaustedReason === 'string'
+          ? parsed.quotaExhaustedReason
+          : undefined
     };
   } catch {
     return getDefaultQuotaUsage(nowMs);
@@ -454,6 +466,24 @@ export function saveDailyQuotaUsage(usage: DailyQuotaUsage, storage?: StorageLik
   }
 }
 
+export function isCloudQuotaExhausted(storage?: StorageLike, nowMs: number = Date.now()): boolean {
+  const usage = loadDailyQuotaUsage(storage, nowMs);
+  return Boolean(usage.quotaExhaustedUntilMs && nowMs < usage.quotaExhaustedUntilMs);
+}
+
+export function recordCloudQuotaExhausted(
+  reason: string = 'Firebase free-tier daily write/read quota reached',
+  backoffMs: number = 60 * 60 * 1000,
+  options?: { nowMs?: number; storage?: StorageLike }
+): DailyQuotaUsage {
+  const nowMs = options?.nowMs ?? Date.now();
+  const usage = loadDailyQuotaUsage(options?.storage, nowMs);
+  usage.quotaExhaustedUntilMs = nowMs + backoffMs;
+  usage.quotaExhaustedReason = reason;
+  saveDailyQuotaUsage(usage, options?.storage);
+  return usage;
+}
+
 export function canPerformCloudRead(
   moduleId: SharedCloudModuleId,
   options?: {
@@ -464,6 +494,16 @@ export function canPerformCloudRead(
 ): { allowed: boolean; reason: string; usage: DailyQuotaUsage } {
   const nowMs = options?.nowMs ?? Date.now();
   const usage = loadDailyQuotaUsage(options?.storage, nowMs);
+
+  if (usage.quotaExhaustedUntilMs && nowMs < usage.quotaExhaustedUntilMs) {
+    usage.savedReadsByCache += 1;
+    saveDailyQuotaUsage(usage, options?.storage);
+    return {
+      allowed: false,
+      reason: 'firestore_cloud_quota_exhausted_using_local_cache',
+      usage
+    };
+  }
 
   if (usage.reads >= FIREBASE_FREE_TIER_LIMITS.MAX_DAILY_READS_PER_DEVICE) {
     usage.savedReadsByCache += 1;
@@ -519,6 +559,16 @@ export function canPerformCloudWrite(
 ): { allowed: boolean; reason: string; usage: DailyQuotaUsage } {
   const nowMs = options?.nowMs ?? Date.now();
   const usage = loadDailyQuotaUsage(options?.storage, nowMs);
+
+  if (usage.quotaExhaustedUntilMs && nowMs < usage.quotaExhaustedUntilMs) {
+    usage.savedWritesByDedup += 1;
+    saveDailyQuotaUsage(usage, options?.storage);
+    return {
+      allowed: false,
+      reason: 'firestore_cloud_quota_exhausted_queued_locally',
+      usage
+    };
+  }
 
   if (usage.writes >= FIREBASE_FREE_TIER_LIMITS.MAX_DAILY_WRITES_PER_DEVICE) {
     usage.savedWritesByDedup += 1;

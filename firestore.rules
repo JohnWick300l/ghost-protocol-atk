@@ -169,6 +169,41 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidServerVaultSnapshot(data) {
+      return data.keys().hasAll([
+          'vaultId',
+          'serverKey',
+          'revision',
+          'deletedIds',
+          'users',
+          'collectionsJson',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'vaultId',
+          'serverKey',
+          'revision',
+          'deletedIds',
+          'users',
+          'collectionsJson',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.vaultId is string && data.vaultId.size() >= 10 && data.vaultId.size() <= 64 &&
+        data.vaultId == 'gp_master_vault_7dd54263_v1' &&
+        data.serverKey is string && data.serverKey.size() >= 32 && data.serverKey.size() <= 128 &&
+        data.serverKey == 'gp_srv_key_7dd54263_89ea_448f_9e88_37be2d9f1eb3' &&
+        data.revision is int && data.revision >= 1 && data.revision <= 1000000000 &&
+        data.deletedIds is list && data.deletedIds.size() <= 500 &&
+        (data.deletedIds.size() == 0 || (data.deletedIds[0] is string && data.deletedIds[0].size() <= 128)) &&
+        data.users is list && data.users.size() <= 200 &&
+        (data.users.size() == 0 || data.users[0] is map) &&
+        data.collectionsJson is string && data.collectionsJson.size() >= 2 && data.collectionsJson.size() <= 850000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // =========================================================================
     // Collection 1: /admins/{adminUid}
     // =========================================================================
@@ -318,6 +353,33 @@ service cloud.firestore {
             incoming().diff(existing()).affectedKeys().hasOnly(['upvotes', 'updatedAt']))
         );
       allow delete: if isSignedIn() && isValidId(recordId) && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // =========================================================================
+    // Collection 6: /server_vault/{vaultId} (Cross-Container Backend Sync Vault)
+    // =========================================================================
+    match /server_vault/{vaultId} {
+      allow get: if isValidId(vaultId) && vaultId == 'gp_master_vault_7dd54263_v1';
+      allow list: if false;
+      allow create: if isValidId(vaultId) &&
+        isValidServerVaultSnapshot(incoming()) &&
+        incoming().vaultId == vaultId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(vaultId) &&
+        isValidServerVaultSnapshot(incoming()) &&
+        incoming().vaultId == existing().vaultId &&
+        incoming().serverKey == existing().serverKey &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'revision',
+          'deletedIds',
+          'users',
+          'collectionsJson',
+          'updatedAt'
+        ]);
+      allow delete: if false;
     }
   }
 }

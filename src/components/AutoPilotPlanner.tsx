@@ -159,9 +159,7 @@ const QUICK_CORRIDOR_PRESETS: {
 ];
 
 const SQUADRON_ROSTER = [
-  { id: 'u_pilot07', name: 'Vikram Sengupta (Apex)' },
-  { id: 'u_phantom', name: 'Devika Nair (Phantom)' },
-  { id: 'u_admin', name: 'Abinav Thejas (Vanguard)' }
+  { id: 'u_admin', name: 'Abinav Thejas K' }
 ];
 
 function formatDuration(minutes: number | null): string {

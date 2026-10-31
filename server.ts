@@ -4,6 +4,18 @@ import os from 'os';
 import path from 'path';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
+import { initializeApp as initFirebaseServerApp, getApps as getFirebaseServerApps } from 'firebase/app';
+import {
+  getFirestore as getServerFirestore,
+  doc as fsDoc,
+  getDoc as fsGetDoc,
+  setDoc as fsSetDoc,
+  updateDoc as fsUpdateDoc,
+  serverTimestamp as fsServerTimestamp,
+  disableNetwork as fsDisableNetwork,
+  terminate as fsTerminate
+} from 'firebase/firestore';
+import firebaseServerConfig from './firebase-applet-config.json' with { type: 'json' };
 import { generateOfflineJetEngineerResponse } from './src/utils/telemetryCache.ts';
 import {
   validateChargingPlugSubmission,
@@ -2692,11 +2704,796 @@ function writeDb(data: any): boolean {
         // Non-fatal mirror write warning
       }
     }
+    if (isLiveVaultSyncEnabled()) {
+      scheduleThrottledVaultPush(data);
+    }
     return true;
   } catch (err) {
     console.error('Error writing db.json:', err);
     return false;
   }
+}
+
+const SERVER_VAULT_DOC_ID = 'gp_master_vault_7dd54263_v1';
+const SERVER_VAULT_SECRET_KEY = 'gp_srv_key_7dd54263_89ea_448f_9e88_37be2d9f1eb3';
+
+function getNextUtcMidnightMs(): number {
+  const now = new Date();
+  const tomorrowUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0)
+  );
+  return tomorrowUtc.getTime();
+}
+
+function getQuotaStatusFilePath(): string {
+  return path.join(getDataDir(), '.firestore_quota_status.json');
+}
+
+function readPersistentServerQuotaStatus(): { exhausted: boolean; resetAtMs: number; reason: string } {
+  try {
+    const qFile = getQuotaStatusFilePath();
+    if (fs.existsSync(qFile)) {
+      const content = JSON.parse(fs.readFileSync(qFile, 'utf-8'));
+      if (content && typeof content.resetAtMs === 'number' && content.resetAtMs > Date.now()) {
+        return {
+          exhausted: true,
+          resetAtMs: content.resetAtMs,
+          reason: content.reason || 'Firestore Spark quota limit exceeded'
+        };
+      }
+    }
+  } catch {
+    // Ignore read error
+  }
+  return { exhausted: false, resetAtMs: 0, reason: '' };
+}
+
+const initialServerQuotaStatus = readPersistentServerQuotaStatus();
+let firestoreQuotaExhaustedUntilMs = initialServerQuotaStatus.exhausted ? initialServerQuotaStatus.resetAtMs : 0;
+let throttledVaultPushTimer: NodeJS.Timeout | null = null;
+let lastVaultPushAtMs = 0;
+const VAULT_PUSH_MIN_INTERVAL_MS = 30000;
+
+function isLiveVaultSyncEnabled(): boolean {
+  if (process.env.GHOST_TEST_MODE === '1' || process.env.GHOST_DATA_DIR) return false;
+  if (firestoreQuotaExhaustedUntilMs > 0 && Date.now() < firestoreQuotaExhaustedUntilMs) {
+    return false;
+  }
+  return true;
+}
+
+function recordServerQuotaExhausted(reason: string): void {
+  const resetAtMs = getNextUtcMidnightMs();
+  firestoreQuotaExhaustedUntilMs = resetAtMs;
+  pendingVaultPushDb = null;
+  if (throttledVaultPushTimer) {
+    clearTimeout(throttledVaultPushTimer);
+    throttledVaultPushTimer = null;
+  }
+  try {
+    const qFile = getQuotaStatusFilePath();
+    const dataDir = path.dirname(qFile);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    fs.writeFileSync(
+      qFile,
+      JSON.stringify(
+        {
+          exhausted: true,
+          exhaustedAt: new Date().toISOString(),
+          resetAtMs,
+          resetAtIso: new Date(resetAtMs).toISOString(),
+          reason,
+          projectId: 'fleet-unfolding-p5v9p',
+          databaseId: 'ai-studio-ghostprotocol-7dd54263-89ea-448f-9e88-37be2d9f1eb3',
+          upgradeUrl:
+            'https://console.firebase.google.com/project/fleet-unfolding-p5v9p/firestore/databases/ai-studio-ghostprotocol-7dd54263-89ea-448f-9e88-37be2d9f1eb3/data?openUpgradeDialog=true',
+          pricingUrl: 'https://firebase.google.com/pricing#cloud-firestore'
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+  } catch (err) {
+    console.warn('[GHOST VAULT] Failed writing quota status file:', err);
+  }
+
+  if (serverFirestoreInstance) {
+    try {
+      void fsDisableNetwork(serverFirestoreInstance);
+      void fsTerminate(serverFirestoreInstance);
+    } catch {
+      // Ignore cleanup error
+    }
+    serverFirestoreInstance = null;
+  }
+}
+
+let serverFirestoreInstance: ReturnType<typeof getServerFirestore> | null = null;
+let lastVaultPullAtMs = 0;
+let vaultPullPromise: Promise<void> | null = null;
+let isApplyingVaultPull = false;
+let isPushingVault = false;
+let pendingVaultPushDb: any = null;
+let hasCompletedInitialVaultPull = false;
+
+function scheduleThrottledVaultPush(data: any): void {
+  if (!isLiveVaultSyncEnabled()) return;
+  pendingVaultPushDb = data;
+  const now = Date.now();
+  const elapsed = now - lastVaultPushAtMs;
+  if (elapsed >= VAULT_PUSH_MIN_INTERVAL_MS) {
+    void pushVaultToFirestore(data);
+  } else if (!throttledVaultPushTimer) {
+    throttledVaultPushTimer = setTimeout(() => {
+      throttledVaultPushTimer = null;
+      if (pendingVaultPushDb && isLiveVaultSyncEnabled()) {
+        void pushVaultToFirestore(pendingVaultPushDb);
+      }
+    }, VAULT_PUSH_MIN_INTERVAL_MS - elapsed);
+  }
+}
+
+const VAULT_ARRAY_COLLECTIONS = [
+  'chargingStations',
+  'chargerReports',
+  'modifications',
+  'marketplace',
+  'rides',
+  'visitedDestinations',
+  'emergencies',
+  'problems',
+  'discussions',
+  'polls',
+  'petitions',
+  'serviceReviews',
+  'jetSubmissions',
+  'jetQaHistory',
+  'autoPilotMissions',
+  'contributions'
+] as const;
+
+function getServerFirestoreDb() {
+  if (!isLiveVaultSyncEnabled()) return null;
+  if (serverFirestoreInstance) return serverFirestoreInstance;
+  try {
+    const existing = getFirebaseServerApps().find(a => a.name === 'ghost-server-vault');
+    const fbApp = existing || initFirebaseServerApp(firebaseServerConfig, 'ghost-server-vault');
+    serverFirestoreInstance = getServerFirestore(fbApp, firebaseServerConfig.firestoreDatabaseId);
+    return serverFirestoreInstance;
+  } catch (err) {
+    console.warn('[GHOST VAULT] Failed to initialize Firestore client:', err);
+    return null;
+  }
+}
+
+function sanitizeValueForVault(val: any, depth = 0, maxStringLen = 3500): any {
+  if (depth > 6 || val === undefined || typeof val === 'function' || typeof val === 'symbol') {
+    return null;
+  }
+  if (val === null || typeof val === 'boolean') return val;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  if (typeof val === 'string') {
+    return val.length > maxStringLen ? val.slice(0, maxStringLen) : val;
+  }
+  if (Array.isArray(val)) {
+    return val
+      .slice(0, 60)
+      .map(v => sanitizeValueForVault(v, depth + 1, maxStringLen))
+      .filter(v => v !== undefined);
+  }
+  if (typeof val === 'object') {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v === undefined) continue;
+      const cleanKey = k.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+      if (!cleanKey) continue;
+      out[cleanKey] = sanitizeValueForVault(v, depth + 1, maxStringLen);
+    }
+    return out;
+  }
+  return String(val).slice(0, 500);
+}
+
+function sanitizeUserForVault(u: any): Record<string, any> | null {
+  if (!u || typeof u !== 'object' || !u.id) return null;
+  const cleaned = sanitizeValueForVault(u, 0, 3500);
+  if (!cleaned || typeof cleaned !== 'object') return null;
+  return cleaned;
+}
+
+function getRecordTimestampMs(item: any): number {
+  if (!item || typeof item !== 'object') return 0;
+  const raw =
+    item.updatedAt ||
+    item.lastVerifiedDate ||
+    item.passwordUpdatedAt ||
+    item.createdAt ||
+    item.timestamp ||
+    item.submittedAt ||
+    item.reportedAt ||
+    item.joinedAt ||
+    item.date ||
+    '';
+  return Date.parse(String(raw)) || 0;
+}
+
+function mergeVaultNestedById(aArr?: any[], bArr?: any[], deletedSet?: Set<string>): { list: any[]; changed: boolean } {
+  const sList = Array.isArray(aArr) ? aArr : [];
+  const rList = Array.isArray(bArr) ? bArr : [];
+  let changed = false;
+  const seenIds = new Set<string>();
+  const seenReqIds = new Set<string>();
+  const merged: any[] = [];
+
+  for (const item of sList) {
+    if (!item) continue;
+    const id = String(item.id || item.userId || '');
+    if (id && deletedSet?.has(id)) {
+      changed = true;
+      continue;
+    }
+    if (id) seenIds.add(id);
+    if (item.clientRequestId) seenReqIds.add(String(item.clientRequestId));
+    merged.push(item);
+  }
+
+  for (const item of rList) {
+    if (!item) continue;
+    const id = String(item.id || item.userId || '');
+    if (id && deletedSet?.has(id)) continue;
+    if (id && seenIds.has(id)) continue;
+    if (item.clientRequestId && seenReqIds.has(String(item.clientRequestId))) continue;
+    merged.push(item);
+    if (id) seenIds.add(id);
+    if (item.clientRequestId) seenReqIds.add(String(item.clientRequestId));
+    changed = true;
+  }
+
+  return { list: merged, changed };
+}
+
+function mergeVaultRecordPair(localItem: any, remoteItem: any, deletedSet: Set<string>): { merged: any; localChanged: boolean; remoteOutdated: boolean } {
+  const lTime = getRecordTimestampMs(localItem);
+  const rTime = getRecordTimestampMs(remoteItem);
+  let localChanged = false;
+  let remoteOutdated = false;
+
+  const base = rTime > lTime ? { ...localItem, ...remoteItem } : { ...remoteItem, ...localItem };
+  if (rTime > lTime && JSON.stringify(base) !== JSON.stringify(localItem)) {
+    localChanged = true;
+  } else if (lTime > rTime && JSON.stringify(base) !== JSON.stringify(remoteItem)) {
+    remoteOutdated = true;
+  }
+
+  for (const subField of ['comments', 'updates', 'participants', 'responders', 'announcements', 'bids', 'rentalRequests', 'reservations'] as const) {
+    if (Array.isArray(localItem[subField]) || Array.isArray(remoteItem[subField])) {
+      const res = mergeVaultNestedById(localItem[subField], remoteItem[subField], deletedSet);
+      base[subField] = res.list;
+      if (res.changed) localChanged = true;
+      const rLen = Array.isArray(remoteItem[subField]) ? remoteItem[subField].length : 0;
+      if (res.list.length > rLen) remoteOutdated = true;
+    }
+  }
+
+  for (const strArrField of ['upvotedBy', 'verifiedBy', 'helpfulBy', 'votedUserIds'] as const) {
+    if (Array.isArray(localItem[strArrField]) || Array.isArray(remoteItem[strArrField])) {
+      const lArr = (Array.isArray(localItem[strArrField]) ? localItem[strArrField] : []).filter(
+        (id: any) => typeof id === 'string' && !deletedSet.has(id)
+      );
+      const rArr = (Array.isArray(remoteItem[strArrField]) ? remoteItem[strArrField] : []).filter(
+        (id: any) => typeof id === 'string' && !deletedSet.has(id)
+      );
+      const combined = Array.from(new Set([...lArr, ...rArr]));
+      base[strArrField] = combined;
+      if (combined.length !== (Array.isArray(localItem[strArrField]) ? localItem[strArrField].length : 0)) {
+        localChanged = true;
+      }
+      if (combined.length !== rArr.length) {
+        remoteOutdated = true;
+      }
+    }
+  }
+
+  if (localItem.reactions || remoteItem.reactions) {
+    const lReac = localItem.reactions || {};
+    const rReac = remoteItem.reactions || {};
+    base.reactions = {};
+    for (const rKey of ['helpful', 'salute', 'confirmed'] as const) {
+      const lR = (Array.isArray(lReac[rKey]) ? lReac[rKey] : []).filter((id: any) => !deletedSet.has(String(id)));
+      const rR = (Array.isArray(rReac[rKey]) ? rReac[rKey] : []).filter((id: any) => !deletedSet.has(String(id)));
+      const combined = Array.from(new Set([...lR, ...rR]));
+      base.reactions[rKey] = combined;
+      if (combined.length !== lR.length) localChanged = true;
+      if (combined.length !== rR.length) remoteOutdated = true;
+    }
+  }
+
+  if (typeof localItem.upvotes === 'number' || typeof remoteItem.upvotes === 'number') {
+    const maxUp = Math.max(Number(localItem.upvotes) || 0, Number(remoteItem.upvotes) || 0);
+    if (maxUp !== localItem.upvotes) localChanged = true;
+    if (maxUp !== remoteItem.upvotes) remoteOutdated = true;
+    base.upvotes = maxUp;
+  }
+
+  return { merged: base, localChanged, remoteOutdated };
+}
+
+function mergeCollectionListsForVault(
+  colKey: string,
+  localListRaw: any[],
+  remoteListRaw: any[],
+  deletedSet: Set<string>
+): { list: any[]; localMutated: boolean; remoteNeedsPush: boolean } {
+  const localList = Array.isArray(localListRaw) ? localListRaw : [];
+  const remoteList = Array.isArray(remoteListRaw) ? remoteListRaw : [];
+  let localMutated = false;
+  let remoteNeedsPush = false;
+
+  const filteredLocal: any[] = [];
+  for (const item of localList) {
+    if (!item || typeof item !== 'object' || !item.id) continue;
+    if (deletedSet.has(item.id) || (colKey === 'chargingStations' && item.approvalStatus === 'deleted')) {
+      localMutated = true;
+      continue;
+    }
+    filteredLocal.push(item);
+  }
+
+  const byId = new Map<string, number>();
+  const byReqId = new Map<string, number>();
+  filteredLocal.forEach((item, idx) => {
+    byId.set(String(item.id), idx);
+    if (item.clientRequestId) byReqId.set(String(item.clientRequestId), idx);
+  });
+
+  const seenRemoteIds = new Set<string>();
+  for (const rItem of remoteList) {
+    if (!rItem || typeof rItem !== 'object' || !rItem.id) continue;
+    if (deletedSet.has(rItem.id) || (colKey === 'chargingStations' && rItem.approvalStatus === 'deleted')) {
+      remoteNeedsPush = true;
+      continue;
+    }
+    seenRemoteIds.add(String(rItem.id));
+    const matchIdx =
+      byId.get(String(rItem.id)) ??
+      (rItem.clientRequestId ? byReqId.get(String(rItem.clientRequestId)) : undefined);
+
+    if (matchIdx === undefined) {
+      if (colKey === 'chargingStations') {
+        filteredLocal.push({ ...rItem });
+        byId.set(String(rItem.id), filteredLocal.length - 1);
+      } else {
+        filteredLocal.unshift({ ...rItem });
+        // Rebuild index map after unshift
+        byId.clear();
+        byReqId.clear();
+        filteredLocal.forEach((it, i) => {
+          byId.set(String(it.id), i);
+          if (it.clientRequestId) byReqId.set(String(it.clientRequestId), i);
+        });
+      }
+      localMutated = true;
+    } else {
+      const existingItem = filteredLocal[matchIdx];
+      const pairRes = mergeVaultRecordPair(existingItem, rItem, deletedSet);
+      if (pairRes.localChanged) {
+        filteredLocal[matchIdx] = pairRes.merged;
+        localMutated = true;
+      }
+      if (pairRes.remoteOutdated) {
+        remoteNeedsPush = true;
+      }
+    }
+  }
+
+  for (const lItem of filteredLocal) {
+    if (lItem && lItem.id && !seenRemoteIds.has(String(lItem.id))) {
+      remoteNeedsPush = true;
+    }
+  }
+
+  return { list: filteredLocal, localMutated, remoteNeedsPush };
+}
+
+function parseVaultCollectionsJson(rawJson: unknown): Record<string, any> {
+  if (typeof rawJson !== 'string' || rawJson.length < 2) return {};
+  try {
+    const parsed = JSON.parse(rawJson);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function serializeVaultCollectionsJson(
+  db: any,
+  remoteCollections: Record<string, any>,
+  deletedSet: Set<string>
+): string {
+  const buildWithStringCap = (maxStrLen: number, maxItemsPerCol: number): string => {
+    const out: Record<string, any> = {};
+    for (const colKey of VAULT_ARRAY_COLLECTIONS) {
+      const mergedList = mergeCollectionListsForVault(
+        colKey,
+        Array.isArray(db[colKey]) ? db[colKey] : [],
+        Array.isArray(remoteCollections[colKey]) ? remoteCollections[colKey] : [],
+        deletedSet
+      ).list;
+      out[colKey] = mergedList
+        .slice(0, maxItemsPerCol)
+        .map(item => sanitizeValueForVault(item, 0, maxStrLen));
+    }
+    out.longRidePlanningText =
+      typeof db.longRidePlanningText === 'string' && db.longRidePlanningText
+        ? db.longRidePlanningText.slice(0, 4000)
+        : typeof remoteCollections.longRidePlanningText === 'string'
+        ? remoteCollections.longRidePlanningText.slice(0, 4000)
+        : '';
+    if (db.contributionConfig || remoteCollections.contributionConfig) {
+      out.contributionConfig = sanitizeValueForVault(
+        db.contributionConfig || remoteCollections.contributionConfig,
+        0,
+        2000
+      );
+    }
+    if (db.telemetryConfig || remoteCollections.telemetryConfig) {
+      out.telemetryConfig = sanitizeValueForVault(
+        db.telemetryConfig || remoteCollections.telemetryConfig,
+        0,
+        2000
+      );
+    }
+    return JSON.stringify(out);
+  };
+
+  let json = buildWithStringCap(45000, 150);
+  if (json.length > 800000) {
+    json = buildWithStringCap(8000, 100);
+  }
+  if (json.length > 800000) {
+    json = buildWithStringCap(2000, 60);
+  }
+  return json.length >= 2 && json.length <= 840000 ? json : '{}';
+}
+
+async function pushVaultToFirestore(db: any): Promise<boolean> {
+  if (!isLiveVaultSyncEnabled() || isApplyingVaultPull) return false;
+  pendingVaultPushDb = db;
+  if (isPushingVault) return true;
+
+  isPushingVault = true;
+  try {
+    if (!hasCompletedInitialVaultPull) {
+      await pullVaultFromFirestore(true);
+    }
+
+    const fsDb = getServerFirestoreDb();
+    if (!fsDb) return false;
+
+    while (pendingVaultPushDb) {
+      const targetDb = pendingVaultPushDb;
+      pendingVaultPushDb = null;
+
+      const ref = fsDoc(fsDb, 'server_vault', SERVER_VAULT_DOC_ID);
+      const existingSnap = await fsGetDoc(ref);
+      const existingData = existingSnap.exists() ? existingSnap.data() : null;
+
+      const localDeleted: string[] = Array.isArray(targetDb.deletedIds)
+        ? targetDb.deletedIds.filter((x: any): x is string => typeof x === 'string' && x.length > 0 && x.length <= 128)
+        : [];
+      const remoteDeleted: string[] = Array.isArray(existingData?.deletedIds)
+        ? existingData.deletedIds.filter((x: any): x is string => typeof x === 'string' && x.length > 0 && x.length <= 128)
+        : [];
+
+      const deletedSet = new Set<string>([...localDeleted, ...remoteDeleted]);
+      deletedSet.delete(OWNER_ACCOUNT_ID);
+      const cleanDeletedIds = Array.from(deletedSet).slice(0, 500);
+
+      // Additive + timestamp-aware merge of local and remote users so no container ever overwrites users
+      const mergedUsersMap = new Map<string, any>();
+      const remoteUsersList: any[] = Array.isArray(existingData?.users) ? existingData.users : [];
+      for (const ru of remoteUsersList) {
+        if (!ru || typeof ru !== 'object' || !ru.id) continue;
+        if (!isOwnerAccount(ru) && deletedSet.has(ru.id)) continue;
+        mergedUsersMap.set(String(ru.id), { ...ru });
+      }
+      for (const lu of Array.isArray(targetDb.users) ? targetDb.users : []) {
+        if (!lu || typeof lu !== 'object' || !lu.id) continue;
+        if (!isOwnerAccount(lu) && deletedSet.has(lu.id)) continue;
+        const prev = mergedUsersMap.get(String(lu.id));
+        if (!prev) {
+          mergedUsersMap.set(String(lu.id), { ...lu });
+        } else {
+          const lTs = getRecordTimestampMs(lu);
+          const rTs = getRecordTimestampMs(prev);
+          mergedUsersMap.set(String(lu.id), lTs >= rTs ? { ...prev, ...lu } : { ...lu, ...prev });
+        }
+      }
+
+      const cleanUsers = Array.from(mergedUsersMap.values())
+        .slice(0, 200)
+        .map(sanitizeUserForVault)
+        .filter((u: any): u is Record<string, any> => Boolean(u));
+
+      const remoteCollections = parseVaultCollectionsJson(existingData?.collectionsJson);
+      const collectionsJson = serializeVaultCollectionsJson(targetDb, remoteCollections, deletedSet);
+
+      const revision = Math.max(1, Math.min(1000000000, typeof targetDb.revision === 'number' ? targetDb.revision : 1));
+
+      if (!existingSnap.exists()) {
+        await fsSetDoc(ref, {
+          vaultId: SERVER_VAULT_DOC_ID,
+          serverKey: SERVER_VAULT_SECRET_KEY,
+          revision,
+          deletedIds: cleanDeletedIds,
+          users: cleanUsers,
+          collectionsJson,
+          createdAt: fsServerTimestamp(),
+          updatedAt: fsServerTimestamp()
+        });
+      } else {
+        const nextRevision = Math.max(
+          revision,
+          (typeof existingData?.revision === 'number' ? existingData.revision : 1) + 1
+        );
+        await fsUpdateDoc(ref, {
+          revision: Math.min(1000000000, nextRevision),
+          deletedIds: cleanDeletedIds,
+          users: cleanUsers,
+          collectionsJson,
+          updatedAt: fsServerTimestamp()
+        });
+      }
+    }
+    lastVaultPushAtMs = Date.now();
+    return true;
+  } catch (err: any) {
+    const errMsg = String(err?.message || err);
+    const isQuotaExhausted =
+      err?.code === 8 ||
+      err?.code === 'resource-exhausted' ||
+      errMsg.includes('RESOURCE_EXHAUSTED') ||
+      errMsg.includes('Quota limit exceeded');
+
+    if (isQuotaExhausted) {
+      recordServerQuotaExhausted(errMsg);
+      console.warn(
+        '[GHOST VAULT] Firestore free-tier daily write limit reached (Spark quota). Terminated gRPC write stream and paused sync until UTC midnight. Local database and file mirror remain 100% functional and synchronized.'
+      );
+    } else {
+      console.warn('[GHOST VAULT] Push to Firestore warning:', errMsg);
+    }
+    return false;
+  } finally {
+    isPushingVault = false;
+  }
+}
+
+async function pullVaultFromFirestore(force = false): Promise<void> {
+  if (!isLiveVaultSyncEnabled()) return;
+  const now = Date.now();
+  if (!force && now - lastVaultPullAtMs < 2000) return;
+  if (vaultPullPromise) return vaultPullPromise;
+
+  vaultPullPromise = (async () => {
+    const fsDb = getServerFirestoreDb();
+    if (!fsDb) return;
+    try {
+      const ref = fsDoc(fsDb, 'server_vault', SERVER_VAULT_DOC_ID);
+      const snap = await Promise.race([
+        fsGetDoc(ref),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 2200))
+      ]);
+      lastVaultPullAtMs = Date.now();
+      if (!snap) return;
+
+      hasCompletedInitialVaultPull = true;
+      const db = readDb();
+      if (!snap.exists()) {
+        await pushVaultToFirestore(db);
+        return;
+      }
+
+      const remote = snap.data();
+      if (!remote) return;
+
+      const localDeletedIds: string[] = Array.isArray(db.deletedIds) ? db.deletedIds : [];
+      const remoteDeletedIds: string[] = Array.isArray(remote.deletedIds)
+        ? remote.deletedIds.filter((x: any): x is string => typeof x === 'string')
+        : [];
+
+      const mergedDeletedSet = new Set<string>([...localDeletedIds, ...remoteDeletedIds]);
+      mergedDeletedSet.delete(OWNER_ACCOUNT_ID);
+
+      let localMutated = false;
+      let remoteNeedsPush = false;
+      let chargingMutated = false;
+
+      if (mergedDeletedSet.size !== localDeletedIds.length) {
+        db.deletedIds = Array.from(mergedDeletedSet);
+        localMutated = true;
+      }
+      if (mergedDeletedSet.size !== remoteDeletedIds.length) {
+        remoteNeedsPush = true;
+      }
+
+      // Remove any deleted users from local db.users & revoke sessions
+      if (Array.isArray(db.users)) {
+        const beforeCount = db.users.length;
+        const removedUserIds: string[] = [];
+        db.users = db.users.filter((u: any) => {
+          if (!u || !u.id) return false;
+          if (isOwnerAccount(u)) return true;
+          if (mergedDeletedSet.has(u.id)) {
+            removedUserIds.push(u.id);
+            return false;
+          }
+          return true;
+        });
+        if (db.users.length !== beforeCount) {
+          localMutated = true;
+          for (const remId of removedUserIds) {
+            sessionManager.revokeAllUserSessions(remId);
+          }
+          if (Array.isArray(db.rides)) {
+            for (const r of db.rides) {
+              if (Array.isArray(r.participants)) {
+                r.participants = r.participants.filter(
+                  (p: any) => p && !mergedDeletedSet.has(p.userId || p.id)
+                );
+              }
+            }
+          }
+          if (Array.isArray(db.notifications)) {
+            db.notifications = db.notifications.filter((n: any) => !mergedDeletedSet.has(n.userId));
+          }
+        }
+      }
+
+      // Merge remote users into local db.users
+      const remoteUsers: any[] = Array.isArray(remote.users) ? remote.users : [];
+      const localUsersById = new Map<string, any>((db.users || []).map((u: any) => [u.id, u]));
+
+      for (const ru of remoteUsers) {
+        if (!ru || typeof ru !== 'object' || !ru.id) continue;
+        if (!isOwnerAccount(ru) && mergedDeletedSet.has(ru.id)) {
+          remoteNeedsPush = true;
+          continue;
+        }
+        const existingLocal = localUsersById.get(ru.id);
+        if (!existingLocal) {
+          db.users.push({ ...ru });
+          localUsersById.set(ru.id, ru);
+          localMutated = true;
+        } else {
+          const syncFields = [
+            'fullName',
+            'originalName',
+            'customPrimaryName',
+            'pilotNickname',
+            'customSecondaryTag',
+            'hideSecondaryTag',
+            'secondaryTag',
+            'motorcycleModel',
+            'variant',
+            'registrationNumber',
+            'bloodGroup',
+            'emergencyContact',
+            'mobile',
+            'city',
+            'state',
+            'role',
+            'verificationStatus',
+            'adminPermissions',
+            'passwordHash',
+            'passwordUpdatedAt'
+          ] as const;
+
+          const remoteTs = Date.parse(ru.updatedAt || ru.passwordUpdatedAt || '') || 0;
+          const localTs = Date.parse(existingLocal.updatedAt || existingLocal.passwordUpdatedAt || '') || 0;
+
+          if (remoteTs > localTs || (!existingLocal.passwordHash && ru.passwordHash)) {
+            for (const f of syncFields) {
+              if (ru[f] !== undefined && JSON.stringify(existingLocal[f]) !== JSON.stringify(ru[f])) {
+                existingLocal[f] = ru[f];
+                localMutated = true;
+              }
+            }
+            if (ru.updatedAt) existingLocal.updatedAt = ru.updatedAt;
+          }
+        }
+      }
+
+      const remoteUserIds = new Set(remoteUsers.filter(u => u && u.id).map(u => u.id));
+      for (const lu of db.users || []) {
+        if (lu && lu.id && !mergedDeletedSet.has(lu.id) && !remoteUserIds.has(lu.id)) {
+          remoteNeedsPush = true;
+        }
+      }
+
+      // Merge all synced collections from remote.collectionsJson
+      if (typeof remote.collectionsJson !== 'string' || remote.collectionsJson.length <= 2) {
+        remoteNeedsPush = true;
+      } else {
+        const remoteCols = parseVaultCollectionsJson(remote.collectionsJson);
+        for (const colKey of VAULT_ARRAY_COLLECTIONS) {
+          const mergeRes = mergeCollectionListsForVault(
+            colKey,
+            Array.isArray(db[colKey]) ? db[colKey] : [],
+            Array.isArray(remoteCols[colKey]) ? remoteCols[colKey] : [],
+            mergedDeletedSet
+          );
+          if (mergeRes.localMutated) {
+            db[colKey] = mergeRes.list;
+            localMutated = true;
+            if (colKey === 'chargingStations' || colKey === 'chargerReports') {
+              chargingMutated = true;
+            }
+          }
+          if (mergeRes.remoteNeedsPush) {
+            remoteNeedsPush = true;
+          }
+        }
+
+        if (
+          typeof remoteCols.longRidePlanningText === 'string' &&
+          remoteCols.longRidePlanningText &&
+          remoteCols.longRidePlanningText !== db.longRidePlanningText
+        ) {
+          db.longRidePlanningText = remoteCols.longRidePlanningText;
+          localMutated = true;
+          chargingMutated = true;
+        }
+        if (remoteCols.contributionConfig && typeof remoteCols.contributionConfig === 'object') {
+          const rTime = getRecordTimestampMs(remoteCols.contributionConfig);
+          const lTime = getRecordTimestampMs(db.contributionConfig);
+          if (rTime > lTime) {
+            db.contributionConfig = { ...db.contributionConfig, ...remoteCols.contributionConfig };
+            localMutated = true;
+          }
+        }
+      }
+
+      if (localMutated) {
+        isApplyingVaultPull = true;
+        try {
+          const normalized = ensureDbCollections(db).data;
+          writeDb(normalized);
+          if (chargingMutated) {
+            broadcastChargingUpdate(normalized);
+          }
+        } finally {
+          isApplyingVaultPull = false;
+        }
+      }
+
+      if (remoteNeedsPush) {
+        await pushVaultToFirestore(db);
+      }
+    } catch (err: any) {
+      const errMsg = String(err?.message || err);
+      const isQuotaExhausted =
+        err?.code === 8 ||
+        err?.code === 'resource-exhausted' ||
+        errMsg.includes('RESOURCE_EXHAUSTED') ||
+        errMsg.includes('Quota limit exceeded');
+      if (isQuotaExhausted) {
+        recordServerQuotaExhausted(errMsg);
+        console.warn(
+          '[GHOST VAULT] Firestore free-tier daily read/write limit reached during pull. Paused sync until UTC midnight.'
+        );
+      } else {
+        console.warn('[GHOST VAULT] Pull from Firestore warning:', errMsg);
+      }
+    } finally {
+      vaultPullPromise = null;
+    }
+  })();
+
+  return vaultPullPromise;
 }
 
 function ensureOwnerBootstrapCredentials(db: any): boolean {
@@ -2729,14 +3526,18 @@ function ensureSeededUsers(db: any): boolean {
     db.users = [];
     changed = true;
   }
-  const hasEmployee = db.users.some(
-    (u: any) => u.email === 'employee@ultraviolette.com' || u.id === 'u_uv_employee'
-  );
-  if (!hasEmployee) {
-    const seedEmp = getInitialData().users.find((u: any) => u.id === 'u_uv_employee');
-    if (seedEmp) {
-      db.users.push({ ...seedEmp });
-      changed = true;
+  const deletedSet = new Set(Array.isArray(db.deletedIds) ? db.deletedIds : []);
+  // Only seed default demo employee in isolated unit test mode and never if deleted
+  if (process.env.GHOST_TEST_MODE === '1' && !deletedSet.has('u_uv_employee')) {
+    const hasEmployee = db.users.some(
+      (u: any) => u.email === 'employee@ultraviolette.com' || u.id === 'u_uv_employee'
+    );
+    if (!hasEmployee) {
+      const seedEmp = getInitialData().users.find((u: any) => u.id === 'u_uv_employee');
+      if (seedEmp) {
+        db.users.push({ ...seedEmp });
+        changed = true;
+      }
     }
   }
   const pilot07 = db.users.find(
@@ -2749,7 +3550,7 @@ function ensureSeededUsers(db: any): boolean {
   return changed;
 }
 
-// Initialize owner bootstrap state and demo users on startup without resetting or overwriting existing data
+// Initialize owner bootstrap state and sync with Firestore Server Vault on startup
 try {
   const bootDb = readDb();
   let changed = false;
@@ -2760,7 +3561,24 @@ try {
     changed = true;
   }
   if (changed) {
-    writeDb(bootDb);
+    isApplyingVaultPull = true;
+    try {
+      writeDb(bootDb);
+    } finally {
+      isApplyingVaultPull = false;
+    }
+  }
+  if (isLiveVaultSyncEnabled()) {
+    void pullVaultFromFirestore(true);
+    setInterval(() => {
+      if (isLiveVaultSyncEnabled()) {
+        void pullVaultFromFirestore(false);
+      }
+    }, 15000);
+  } else if (firestoreQuotaExhaustedUntilMs > Date.now()) {
+    console.log(
+      `[GHOST VAULT] Firestore free-tier daily write limit reached (Spark quota). Sync paused until UTC midnight (${new Date(firestoreQuotaExhaustedUntilMs).toISOString()}). App is operating in 100% resilient local-first mode.`
+    );
   }
 } catch {
   // Ignore startup check error
@@ -2900,15 +3718,42 @@ function broadcastChargingUpdate(db: any) {
 // -------------------------------------------------------------
 // REST API ROUTES
 // -------------------------------------------------------------
-
-// 1. Auth, Credential Setup & Account Switching
-app.get('/api/auth/accounts', (_req: Request, res: Response) => {
-  const db = readDb();
-  const accounts = (db.users || []).map((u: any) => sanitizeUserForPublic(u));
-  res.json({ accounts });
+app.use('/api', async (_req: Request, _res: Response, next: express.NextFunction) => {
+  if (isLiveVaultSyncEnabled()) {
+    await pullVaultFromFirestore(false);
+  }
+  next();
 });
 
-app.post('/api/auth/login', (req: Request, res: Response) => {
+app.get('/api/admin/firestore-quota-status', (_req: Request, res: Response) => {
+  const current = readPersistentServerQuotaStatus();
+  const isExhausted = current.exhausted || (firestoreQuotaExhaustedUntilMs > Date.now());
+  const resetMs = firestoreQuotaExhaustedUntilMs || current.resetAtMs;
+  res.json({
+    exhausted: isExhausted,
+    resetAtMs: resetMs,
+    resetAtIso: resetMs > 0 ? new Date(resetMs).toISOString() : null,
+    reason: current.reason || (isExhausted ? 'Firestore daily write limit reached (Spark plan)' : ''),
+    projectId: 'fleet-unfolding-p5v9p',
+    databaseId: 'ai-studio-ghostprotocol-7dd54263-89ea-448f-9e88-37be2d9f1eb3',
+    upgradeUrl:
+      'https://console.firebase.google.com/project/fleet-unfolding-p5v9p/firestore/databases/ai-studio-ghostprotocol-7dd54263-89ea-448f-9e88-37be2d9f1eb3/data?openUpgradeDialog=true',
+    pricingUrl: 'https://firebase.google.com/pricing#cloud-firestore'
+  });
+});
+
+// 1. Auth, Credential Setup & Account Switching
+app.get('/api/auth/accounts', async (_req: Request, res: Response) => {
+  await pullVaultFromFirestore(false);
+  const db = readDb();
+  const deletedSet = new Set(Array.isArray(db.deletedIds) ? db.deletedIds : []);
+  const accounts = (db.users || [])
+    .filter((u: any) => u && u.id && (isOwnerAccount(u) || !deletedSet.has(u.id)))
+    .map((u: any) => sanitizeUserForPublic(u));
+  res.json({ accounts, deletedIds: Array.from(deletedSet) });
+});
+
+app.post('/api/auth/login', async (req: Request, res: Response) => {
   const { email, userId, password } = req.body || {};
   const identifier = String(email || userId || '').trim().toLowerCase();
   const rateKey = `${req.ip || 'local'}:${identifier || 'anonymous'}`;
@@ -2929,17 +3774,20 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
     });
   }
 
+  await pullVaultFromFirestore(false);
   const db = readDb();
+  const deletedSet = new Set(Array.isArray(db.deletedIds) ? db.deletedIds : []);
   const user = (db.users || []).find(
     (u: any) =>
-      (typeof email === 'string' && email.trim() && u.email.toLowerCase() === email.trim().toLowerCase()) ||
-      (typeof userId === 'string' && userId.trim() && u.id === userId.trim())
+      (isOwnerAccount(u) || !deletedSet.has(u.id)) &&
+      ((typeof email === 'string' && email.trim() && u.email.toLowerCase() === email.trim().toLowerCase()) ||
+        (typeof userId === 'string' && userId.trim() && u.id === userId.trim()))
   );
 
   if (!user) {
     verifyPassword(password, DUMMY_PASSWORD_HASH);
     loginRateLimiter.recordFailure(rateKey);
-    return res.status(401).json({ error: 'Invalid credentials.' });
+    return res.status(401).json({ error: 'Invalid credentials or account has been removed.' });
   }
 
   if (!user.passwordHash) {
@@ -3485,15 +4333,127 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
   });
 });
 
-app.get('/api/auth/me', (req: Request, res: Response) => {
+app.get('/api/auth/me', async (req: Request, res: Response) => {
+  await pullVaultFromFirestore(false);
   const db = readDb();
   const caller = resolveRequestUser(req, db);
   if (!caller.isAuthenticated || !caller.userObj) {
-    return res.json({ user: null, authenticated: false });
+    return res.json({ user: null, authenticated: false, deletedIds: db.deletedIds || [] });
+  }
+  const deletedSet = new Set(Array.isArray(db.deletedIds) ? db.deletedIds : []);
+  if (!isOwnerAccount(caller.userObj) && deletedSet.has(caller.userObj.id)) {
+    sessionManager.revokeAllUserSessions(caller.userObj.id);
+    return res.json({ user: null, authenticated: false, deleted: true, deletedIds: db.deletedIds || [] });
   }
   res.json({
     user: stripSensitiveCredentialFields(caller.userObj),
-    authenticated: true
+    authenticated: true,
+    deletedIds: db.deletedIds || []
+  });
+});
+
+// Persistent Session Auto-Restore across App Updates / Republishes / Cloud Run Container Scaling
+app.post('/api/auth/session-restore', async (req: Request, res: Response) => {
+  await pullVaultFromFirestore(true);
+  const db = readDb();
+  const incomingUser = req.body?.user;
+  if (!incomingUser || typeof incomingUser !== 'object' || !incomingUser.id) {
+    return res.status(400).json({ authenticated: false, error: 'Valid cached user object required.' });
+  }
+
+  const targetId = String(incomingUser.id).trim();
+  const targetEmail = typeof incomingUser.email === 'string' ? incomingUser.email.trim().toLowerCase() : '';
+  const deletedSet = new Set(Array.isArray(db.deletedIds) ? db.deletedIds : []);
+
+  if (targetId !== OWNER_ACCOUNT_ID && deletedSet.has(targetId)) {
+    sessionManager.revokeAllUserSessions(targetId);
+    return res.status(403).json({
+      authenticated: false,
+      deleted: true,
+      deletedIds: Array.from(deletedSet),
+      error: 'Account has been permanently removed by administrator.'
+    });
+  }
+
+  let dbUser = (db.users || []).find(
+    (u: any) => u.id === targetId || (targetEmail && u.email && u.email.toLowerCase() === targetEmail)
+  );
+
+  // If a legitimate non-deleted registered user from the Play Store app is restoring their session
+  // after a container update/republish and wasn't in db.users yet, persist them automatically
+  if (!dbUser && targetId.startsWith('u_') && targetId !== OWNER_ACCOUNT_ID && incomingUser.fullName) {
+    const nowIso = new Date().toISOString();
+    const cleanName = stripLegacyCallsignSuffix(String(incomingUser.fullName).trim()) || 'Squadron Pilot';
+    const bikeModel = incomingUser.motorcycleModel === 'X47' ? 'X47' : 'F77';
+    const nick: PilotNickname = inferDefaultPilotNickname(bikeModel);
+    dbUser = {
+      id: targetId,
+      originalName: cleanName,
+      fullName: cleanName,
+      customPrimaryName: null,
+      pilotNickname: nick,
+      customSecondaryTag: null,
+      hideSecondaryTag: false,
+      secondaryTag: nick,
+      email: targetEmail || `${targetId}@ultraviolette.pilot`,
+      mobile: String(incomingUser.mobile || '').trim(),
+      city: String(incomingUser.city || 'Bengaluru').trim(),
+      state: String(incomingUser.state || 'Karnataka').trim(),
+      accountType: incomingUser.accountType === 'employee' ? 'employee' : 'customer',
+      motorcycleModel: bikeModel,
+      variant: String(incomingUser.variant || 'Standard Edition').trim(),
+      registrationNumber: String(incomingUser.registrationNumber || '').trim(),
+      purchaseDate: String(incomingUser.purchaseDate || nowIso.split('T')[0]),
+      bloodGroup: String(incomingUser.bloodGroup || 'Prefer not to disclose'),
+      emergencyContact:
+        incomingUser.emergencyContact && typeof incomingUser.emergencyContact === 'object'
+          ? {
+              name: String(incomingUser.emergencyContact.name || 'Emergency Contact'),
+              relationship: String(incomingUser.emergencyContact.relationship || 'Family'),
+              phone: String(incomingUser.emergencyContact.phone || incomingUser.mobile || '')
+            }
+          : { name: 'Emergency Contact', relationship: 'Family', phone: String(incomingUser.mobile || '') },
+      role: incomingUser.accountType === 'employee' ? 'uv_employee' : 'regular',
+      isOwner: false,
+      verificationStatus: 'verified',
+      joinedAt: String(incomingUser.joinedAt || nowIso),
+      updatedAt: nowIso,
+      optInSquadronAssist: Boolean(incomingUser.optInSquadronAssist),
+      privacySettings: {
+        showStartingPoint: false,
+        showCity: true,
+        showMotorcycleDetails: true
+      }
+    };
+    db.users.push(dbUser);
+    writeDb(db);
+  }
+
+  if (!dbUser) {
+    return res.status(404).json({ authenticated: false, error: 'Account not found.' });
+  }
+
+  if (!isOwnerAccount(dbUser) && deletedSet.has(dbUser.id)) {
+    return res.status(403).json({
+      authenticated: false,
+      deleted: true,
+      deletedIds: Array.from(deletedSet),
+      error: 'Account has been permanently removed.'
+    });
+  }
+
+  const { signedToken, setCookieHeader } = sessionManager.createSession(dbUser.id, {
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+    isSecure: isRequestHttps(req)
+  });
+
+  res.setHeader('Set-Cookie', setCookieHeader);
+  res.json({
+    user: stripSensitiveCredentialFields(dbUser),
+    authenticated: true,
+    sessionToken: signedToken,
+    deletedIds: Array.from(deletedSet)
   });
 });
 
@@ -3573,6 +4533,7 @@ app.put('/api/auth/profile', (req: Request, res: Response) => {
   const resolved = resolveUserDisplayIdentity(targetUser);
   targetUser.fullName = resolved.primaryName;
   targetUser.secondaryTag = resolved.secondaryTag;
+  targetUser.updatedAt = new Date().toISOString();
 
   writeDb(db);
   res.json({ user: stripSensitiveCredentialFields(targetUser) });
@@ -3774,7 +4735,8 @@ app.put('/api/admin/users/:id/nickname', (req: Request, res: Response) => {
 });
 
 // 2. Admin Controls & Owner Appointment Endpoints (Parts 2, 3, 4)
-app.get('/api/admin/users', (req: Request, res: Response) => {
+app.get('/api/admin/users', async (req: Request, res: Response) => {
+  await pullVaultFromFirestore(false);
   const db = readDb();
   const caller = resolveRequestUser(req, db);
   if (!caller.isAuthenticated || !caller.userObj) {
@@ -3787,29 +4749,32 @@ app.get('/api/admin/users', (req: Request, res: Response) => {
   }
 
   const canViewDocuments = caller.isOwner || caller.hasPermission('manage_registrations');
+  const deletedSet = new Set(Array.isArray(db.deletedIds) ? db.deletedIds : []);
 
-  const users = db.users.map((u: any) => {
-    const clean = stripSensitiveCredentialFields(u);
-    if (canViewDocuments || u.id === caller.userId) {
-      return clean;
-    }
-    const {
-      rcDocumentUrl,
-      insuranceDocumentUrl,
-      proofDocumentUrl,
-      emergencyContact,
-      bloodGroup,
-      ...adminSummaryUser
-    } = clean;
-    return {
-      ...adminSummaryUser,
-      hasRcDocument: Boolean(rcDocumentUrl),
-      hasInsuranceDocument: Boolean(insuranceDocumentUrl),
-      hasProofDocument: Boolean(proofDocumentUrl)
-    };
-  });
+  const users = (db.users || [])
+    .filter((u: any) => u && u.id && (isOwnerAccount(u) || !deletedSet.has(u.id)))
+    .map((u: any) => {
+      const clean = stripSensitiveCredentialFields(u);
+      if (canViewDocuments || u.id === caller.userId) {
+        return clean;
+      }
+      const {
+        rcDocumentUrl,
+        insuranceDocumentUrl,
+        proofDocumentUrl,
+        emergencyContact,
+        bloodGroup,
+        ...adminSummaryUser
+      } = clean;
+      return {
+        ...adminSummaryUser,
+        hasRcDocument: Boolean(rcDocumentUrl),
+        hasInsuranceDocument: Boolean(insuranceDocumentUrl),
+        hasProofDocument: Boolean(proofDocumentUrl)
+      };
+    });
 
-  res.json({ users });
+  res.json({ users, deletedIds: Array.from(deletedSet) });
 });
 
 // Issue a single-use expiring password setup token for a member account (Owner-only, Decision 1A)
@@ -4066,9 +5031,10 @@ app.post('/api/admin/users/:id/status', (req: Request, res: Response) => {
   res.json({ user: stripSensitiveCredentialFields(user) });
 });
 
-app.delete('/api/admin/users/:id', (req: Request, res: Response) => {
+app.delete('/api/admin/users/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   const { reason } = req.body || {};
+  await pullVaultFromFirestore(true);
   const db = readDb();
   const caller = resolveRequestUser(req, db);
 
@@ -4081,8 +5047,36 @@ app.delete('/api/admin/users/:id', (req: Request, res: Response) => {
     });
   }
 
+  if (id === OWNER_ACCOUNT_ID) {
+    return res.status(403).json({
+      error: 'The Website Owner account is protected and cannot be permanently removed.'
+    });
+  }
+
   const targetUser = (db.users || []).find((u: any) => u.id === id);
   if (!targetUser) {
+    if (isLiveVaultSyncEnabled()) {
+      markServerRecordDeleted(db, id);
+      sessionManager.revokeAllUserSessions(id);
+      if (Array.isArray(db.rides)) {
+        for (const r of db.rides) {
+          if (Array.isArray(r.participants)) {
+            r.participants = r.participants.filter((p: any) => p && (p.userId || p.id) !== id);
+          }
+        }
+      }
+      if (Array.isArray(db.notifications)) {
+        db.notifications = db.notifications.filter((n: any) => n.userId !== id);
+      }
+      writeDb(db);
+      await pushVaultToFirestore(db);
+      return res.json({
+        success: true,
+        deletedId: id,
+        removedUserName: id,
+        deletedIds: db.deletedIds || []
+      });
+    }
     return res.status(404).json({ error: 'User not found in database.' });
   }
 
@@ -4109,6 +5103,14 @@ app.delete('/api/admin/users/:id', (req: Request, res: Response) => {
   markServerRecordDeleted(db, id);
   sessionManager.revokeAllUserSessions(id);
 
+  if (Array.isArray(db.rides)) {
+    for (const r of db.rides) {
+      if (Array.isArray(r.participants)) {
+        r.participants = r.participants.filter((p: any) => p && (p.userId || p.id) !== id);
+      }
+    }
+  }
+
   if (Array.isArray(db.notifications)) {
     db.notifications = db.notifications.filter((n: any) => n.userId !== id);
   }
@@ -4129,10 +5131,14 @@ app.delete('/api/admin/users/:id', (req: Request, res: Response) => {
   });
 
   writeDb(db);
+  if (isLiveVaultSyncEnabled()) {
+    await pushVaultToFirestore(db);
+  }
   res.json({
     success: true,
     deletedId: id,
-    removedUserName: removedName
+    removedUserName: removedName,
+    deletedIds: db.deletedIds || []
   });
 });
 
@@ -5851,7 +6857,8 @@ app.post('/api/modifications', (req: Request, res: Response) => {
     clientRequestId
   } = req.body || {};
 
-  if (!title || !motorcycleModel || !component || !description) {
+  const resolvedComponent = component || req.body?.category;
+  if (!title || !motorcycleModel || !resolvedComponent || !description) {
     return res.status(400).json({ error: 'Title, model, component, and description are required.' });
   }
 
@@ -5882,7 +6889,7 @@ app.post('/api/modifications', (req: Request, res: Response) => {
     title: String(title).trim(),
     motorcycleModel,
     variant: variant || '',
-    component,
+    component: resolvedComponent,
     difficulty: difficulty || 'Intermediate',
     costRange: costRange || '₹5,000 - ₹15,000',
     compatibilityStatus: compatibilityStatus || 'Verified Compatible',
@@ -6533,10 +7540,8 @@ app.post('/api/charging', (req: Request, res: Response) => {
       ? chargerSource
       : 'Community Provided Charger';
 
-  const canPublishDirectly =
-    caller.isOwner ||
-    caller.hasPermission('moderate_chargers') ||
-    normalizedSource === 'Community Provided Charger';
+  // Any authenticated user's charging station submission is published immediately and synced to all users
+  const canPublishDirectly = true;
 
   const resolvedConnectorTypes =
     Array.isArray(connectorTypes) && connectorTypes.length > 0
@@ -6625,6 +7630,7 @@ app.post('/api/charging', (req: Request, res: Response) => {
         : Boolean(rawRequiresReservation),
     reservations: [] as ChargerReservation[],
     pricing: resolvedPricingString,
+    createdAt: new Date().toISOString(),
     lastVerifiedDate: new Date().toISOString().split('T')[0],
     userNotes: typeof userNotes === 'string' ? userNotes.trim() : '',
     reportedBy: reporterDisplayName
@@ -8884,8 +9890,12 @@ app.post('/api/sync/reconcile', (req: Request, res: Response) => {
     'jetSubmissions',
     'jetQaHistory',
     'rides',
+    'visitedDestinations',
     'autoPilotMissions',
-    'emergencies'
+    'emergencies',
+    'polls',
+    'petitions',
+    'contributions'
   ] as const;
 
   // Validate requested deletions: a caller can only delete records they are authorized to modify
@@ -9024,12 +10034,19 @@ app.post('/api/sync/reconcile', (req: Request, res: Response) => {
             continue;
           }
 
-          if (colKey === 'chargingStations' && !caller.isOwner && !caller.hasPermission('moderate_chargers')) {
-            cleanIncoming.submittedByUserId = caller.userId;
-            cleanIncoming.submittedByRole = 'user';
-            cleanIncoming.approvalStatus = 'pending';
-            cleanIncoming.published = false;
-            cleanIncoming.verifiedByAdmin = false;
+          if (colKey === 'chargingStations') {
+            if (!cleanIncoming.submittedByUserId) {
+              cleanIncoming.submittedByUserId = caller.userId;
+            }
+            if (!cleanIncoming.submittedByRole) {
+              cleanIncoming.submittedByRole =
+                caller.isOwner || caller.hasPermission('moderate_chargers') ? 'admin' : 'user';
+            }
+            if (cleanIncoming.approvalStatus !== 'deleted') {
+              cleanIncoming.approvalStatus = 'approved';
+              cleanIncoming.published = true;
+              cleanIncoming.verifiedByAdmin = true;
+            }
           }
 
           if (colKey === 'chargingStations') {
@@ -9096,9 +10113,11 @@ app.post('/api/sync/reconcile', (req: Request, res: Response) => {
   });
 });
 
-app.get('/api/hybrid-sync', (req: Request, res: Response) => {
+app.get('/api/hybrid-sync', async (req: Request, res: Response) => {
+  await pullVaultFromFirestore(false);
   const db = readDb();
   const caller = resolveRequestUser(req, db);
+  const deletedSet = new Set(Array.isArray(db.deletedIds) ? db.deletedIds : []);
 
   const emergencies = (db.emergencies || []).map((em: any) =>
     sanitizeEmergencyForViewer(em, caller.userObj)
@@ -9109,11 +10128,27 @@ app.get('/api/hybrid-sync', (req: Request, res: Response) => {
   const marketplace = (db.marketplace || []).map((item: any) =>
     sanitizeMarketplaceItemForViewer(item, caller.userObj)
   );
+  const accounts = (db.users || [])
+    .filter((u: any) => u && u.id && (isOwnerAccount(u) || !deletedSet.has(u.id)))
+    .map((u: any) => sanitizeUserForPublic(u));
+
+  const usersById = new Map<string, any>((db.users || []).map((u: any) => [u.id, u]));
+  const chargingStations = (db.chargingStations || [])
+    .filter((s: any) => s && !deletedSet.has(s.id) && s.approvalStatus !== 'deleted')
+    .map((s: any) => enrichStationWithSubmitter(s, usersById))
+    .filter((s: any) => isPubliclyPublishedCharger(s));
 
   res.json({
     syncedAt: new Date().toISOString(),
     revision: db.revision || 1,
     deletedIds: db.deletedIds || [],
+    accounts,
+    chargingStations,
+    chargerReports: db.chargerReports || [],
+    modifications: db.modifications || [],
+    visitedDestinations: db.visitedDestinations || [],
+    serviceReviews: db.serviceReviews || [],
+    jetSubmissions: db.jetSubmissions || [],
     emergencies,
     rides,
     marketplace,

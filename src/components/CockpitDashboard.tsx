@@ -1406,6 +1406,9 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
             <button
               type="button"
               data-testid="cockpit-central-hub"
+              onPointerDown={() => setHubPressed(true)}
+              onPointerUp={() => setHubPressed(false)}
+              onPointerLeave={() => setHubPressed(false)}
               onClick={e => {
                 e.stopPropagation();
                 if (selectedDestination) {
@@ -1418,52 +1421,203 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
                 top: '50%',
                 width: '35.4%',
                 height: '35.4%',
-                transform: `translate(-50%, -50%) scale(${hubPressed ? 0.97 : 1})`
+                transform: `translate(-50%, -50%) scale(${hubPressed ? 0.96 : 1})`
               }}
-              className={`absolute z-30 rounded-full flex flex-col items-center justify-center gap-1.5 text-center px-2.5 transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 ${
+              className={`absolute z-30 rounded-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 text-center p-2 transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 overflow-hidden ${
                 selectedDestination?.routeId === 'emergency'
                   ? 'focus-visible:ring-[#EF4444]'
                   : 'focus-visible:ring-[#38BDF8]'
               } group ${
                 selectedDestination?.routeId === 'emergency'
-                  ? 'hover:shadow-[0_0_32px_rgba(239,68,68,0.6)] shadow-[0_0_20px_rgba(239,68,68,0.35)]'
+                  ? 'hover:shadow-[0_0_36px_rgba(239,68,68,0.7)] shadow-[0_0_22px_rgba(239,68,68,0.4)]'
                   : hubPressed
-                  ? 'shadow-[0_0_32px_rgba(56,189,248,0.65)]'
-                  : 'hover:shadow-[0_0_24px_rgba(56,189,248,0.35)]'
+                  ? 'shadow-[0_0_36px_rgba(56,189,248,0.7)]'
+                  : 'hover:shadow-[0_0_28px_rgba(56,189,248,0.45)]'
               }`}
             >
-              {/* GHOST PROTOCOL Central Hub Emblem */}
-              <div className="flex flex-col items-center leading-none">
-                <div className="flex items-center justify-center gap-1">
-                  <span className="font-sans font-black italic text-sm sm:text-lg tracking-wider text-white">
-                    GHOST
-                  </span>
-                  <span className="flex flex-col gap-[2px]">
-                    <span className="w-3 h-[2px] bg-[#00D8FF] -skew-x-12 block" />
-                    <span className="w-2 h-[2px] bg-[#00D8FF] -skew-x-12 block" />
-                    <span className="w-1 h-[2px] bg-[#00D8FF] -skew-x-12 block" />
-                  </span>
-                </div>
-                <div className="font-mono text-[6.5px] sm:text-[7.5px] tracking-[0.34em] text-[#CBD5E1] mt-0.5">
-                  PROTOCOL
-                </div>
-              </div>
-
-              {/* Essential Navigation Instruction */}
-              <div className="font-mono text-[7px] sm:text-[8px] tracking-[0.12em] text-[#38BDF8] uppercase">
-                ROTATE TO NAVIGATE
-              </div>
-
-              {/* Compact Interactive Activation Button */}
+              {/* Tactical Deep Avionics Obsidian Core */}
               <div
-                data-testid="central-hub-action-label"
-                className={`px-2.5 py-1 rounded font-mono font-semibold text-[7.5px] sm:text-[8.5px] tracking-[0.1em] uppercase transition-colors whitespace-nowrap ${
+                className={`absolute inset-0 rounded-full pointer-events-none transition-colors duration-300 ${
                   selectedDestination?.routeId === 'emergency'
-                    ? 'bg-[#1F0707] border border-[#EF4444]/70 group-hover:border-[#EF4444] text-[#FCA5A5] group-hover:text-white shadow-[0_0_12px_rgba(239,68,68,0.3)]'
-                    : 'bg-[#071120] border border-[#38BDF8]/55 group-hover:border-[#38BDF8] group-hover:bg-[#38BDF8]/20 text-[#F8FAFC] group-hover:text-[#7DD3FC] shadow-[0_0_10px_rgba(56,189,248,0.18)]'
+                    ? 'bg-[#120404]'
+                    : 'bg-[#030813]'
                 }`}
+              />
+
+              {/* Holographic Radar Sweep Beam (Continuous 360-degree radar scan across the entire dial) */}
+              <div
+                className={`absolute inset-[-20%] pointer-events-none rounded-full animate-[spin_4.5s_linear_infinite] transition-opacity duration-300 opacity-60 group-hover:opacity-90 ${
+                  selectedDestination?.routeId === 'emergency'
+                    ? 'bg-[conic-gradient(from_0deg,transparent_0_300deg,rgba(239,68,68,0.06)_330deg,rgba(239,68,68,0.32)_360deg)]'
+                    : 'bg-[conic-gradient(from_0deg,transparent_0_300deg,rgba(56,189,248,0.06)_330deg,rgba(56,189,248,0.3)_360deg)]'
+                }`}
+              />
+
+              {/* Soft Center Radial Plasma Core Glow */}
+              <div
+                className={`absolute inset-0 rounded-full pointer-events-none transition-opacity duration-300 ${
+                  selectedDestination?.routeId === 'emergency'
+                    ? 'bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.28)_0%,rgba(239,68,68,0.08)_50%,transparent_75%)]'
+                    : 'bg-[radial-gradient(circle_at_center,rgba(56,189,248,0.24)_0%,rgba(56,189,248,0.06)_50%,transparent_75%)]'
+                }`}
+              />
+
+              {/* Animated HUD Reticle Rings & Crosshair Elements */}
+              <svg
+                className="absolute inset-0 w-full h-full pointer-events-none animate-[spin_24s_linear_infinite]"
+                viewBox="0 0 100 100"
               >
-                OPEN MODULE
+                {/* Outer Dashed Orbit Ring */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="46"
+                  fill="none"
+                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
+                  strokeWidth="0.8"
+                  strokeDasharray="3 6"
+                  strokeOpacity="0.45"
+                />
+                {/* 4 Cardinal Reticle Calibrations */}
+                <line
+                  x1="50"
+                  y1="2"
+                  x2="50"
+                  y2="7"
+                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
+                  strokeWidth="1.5"
+                  strokeOpacity="0.85"
+                />
+                <line
+                  x1="50"
+                  y1="93"
+                  x2="50"
+                  y2="98"
+                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
+                  strokeWidth="1.5"
+                  strokeOpacity="0.85"
+                />
+                <line
+                  x1="2"
+                  y1="50"
+                  x2="7"
+                  y2="50"
+                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
+                  strokeWidth="1.5"
+                  strokeOpacity="0.85"
+                />
+                <line
+                  x1="93"
+                  y1="50"
+                  x2="98"
+                  y2="50"
+                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
+                  strokeWidth="1.5"
+                  strokeOpacity="0.85"
+                />
+              </svg>
+
+              {/* Counter-Rotating Precision Orbit with Fine Hash Pips */}
+              <svg
+                className="absolute inset-1.5 w-[calc(100%-12px)] h-[calc(100%-12px)] pointer-events-none animate-[spin_36s_linear_infinite_reverse]"
+                viewBox="0 0 100 100"
+              >
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="41"
+                  fill="none"
+                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
+                  strokeWidth="0.6"
+                  strokeDasharray="1.2 5"
+                  strokeOpacity="0.32"
+                />
+                {/* Orbital Tracking Satellite Dots */}
+                <circle
+                  cx="50"
+                  cy="9"
+                  r="1.2"
+                  fill={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
+                  opacity="0.9"
+                />
+                <circle
+                  cx="50"
+                  cy="91"
+                  r="1.2"
+                  fill={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
+                  opacity="0.9"
+                />
+              </svg>
+
+              {/* Blended Central HUD Content (Organic Typography seamlessly integrated into the HUD animations without any text box) */}
+              <div className="relative z-10 flex flex-col items-center justify-center gap-1.5 sm:gap-2 select-none pointer-events-none">
+                {/* Organic Flanked OPEN MODULE Action */}
+                <div
+                  data-testid="central-hub-action-label"
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 transition-transform duration-200 group-hover:scale-105"
+                >
+                  {/* Left Horizon Reticle Wing */}
+                  <span
+                    className={`w-2.5 sm:w-3.5 h-[1.5px] transition-all duration-200 origin-right group-hover:w-4 ${
+                      selectedDestination?.routeId === 'emergency'
+                        ? 'bg-gradient-to-r from-transparent to-[#EF4444]'
+                        : 'bg-gradient-to-r from-transparent to-[#38BDF8]'
+                    }`}
+                  />
+
+                  {/* Main Blended "OPEN MODULE" Typography */}
+                  <span
+                    className={`font-mono font-black text-[9.5px] sm:text-[11.5px] tracking-[0.2em] uppercase whitespace-nowrap transition-all duration-200 ${
+                      selectedDestination?.routeId === 'emergency'
+                        ? 'text-white drop-shadow-[0_0_10px_rgba(239,68,68,0.9)] group-hover:drop-shadow-[0_0_18px_rgba(239,68,68,1)]'
+                        : 'text-white drop-shadow-[0_0_10px_rgba(56,189,248,0.85)] group-hover:text-[#F0F9FF] group-hover:drop-shadow-[0_0_18px_rgba(56,189,248,1)] group-hover:tracking-[0.24em]'
+                    }`}
+                  >
+                    OPEN MODULE
+                  </span>
+
+                  {/* Right Horizon Reticle Wing */}
+                  <span
+                    className={`w-2.5 sm:w-3.5 h-[1.5px] transition-all duration-200 origin-left group-hover:w-4 ${
+                      selectedDestination?.routeId === 'emergency'
+                        ? 'bg-gradient-to-l from-transparent to-[#EF4444]'
+                        : 'bg-gradient-to-l from-transparent to-[#38BDF8]'
+                    }`}
+                  />
+                </div>
+
+                {/* Organic Blended "ROTATE TO NAVIGATE" Telemetry Guidance */}
+                <div className="flex items-center justify-center gap-1.5 transition-opacity duration-200 group-hover:opacity-100 opacity-80">
+                  {/* Micro Rotating Compass Gyro Arrow */}
+                  <svg
+                    className={`w-2.5 h-2.5 sm:w-3 sm:h-3 animate-[spin_6s_linear_infinite] shrink-0 ${
+                      selectedDestination?.routeId === 'emergency'
+                        ? 'text-[#EF4444] drop-shadow-[0_0_6px_rgba(239,68,68,0.7)]'
+                        : 'text-[#38BDF8] drop-shadow-[0_0_6px_rgba(56,189,248,0.6)]'
+                    }`}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                    <path d="M21 3v5h-5" />
+                  </svg>
+
+                  {/* Organic Monospace Telemetry Subtext */}
+                  <span
+                    className={`font-mono text-[6.5px] sm:text-[7.5px] font-bold tracking-[0.22em] uppercase whitespace-nowrap transition-colors duration-150 ${
+                      selectedDestination?.routeId === 'emergency'
+                        ? 'text-[#FCA5A5]'
+                        : 'text-[#7DD3FC]/85 group-hover:text-[#BAE6FD]'
+                    }`}
+                  >
+                    ROTATE TO NAVIGATE
+                  </span>
+                </div>
               </div>
             </button>
           </div>

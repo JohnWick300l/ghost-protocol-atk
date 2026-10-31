@@ -27,7 +27,9 @@ import {
   CreditCard,
   Upload,
   Save,
-  Trash2
+  Trash2,
+  AlertCircle,
+  ExternalLink
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
@@ -300,12 +302,21 @@ export const AdminCentre: React.FC = () => {
         setHybridSyncState(getHybridSyncStateSnapshot());
       }
     };
+    const handleUsersSynced = () => {
+      void refreshUsers();
+      void fetchMetrics();
+    };
     window.addEventListener(HYBRID_SYNC_STATUS_EVENT, handleSyncStatus);
-    return () => window.removeEventListener(HYBRID_SYNC_STATUS_EVENT, handleSyncStatus);
+    window.addEventListener('ghost-users-synced', handleUsersSynced);
+    return () => {
+      window.removeEventListener(HYBRID_SYNC_STATUS_EVENT, handleSyncStatus);
+      window.removeEventListener('ghost-users-synced', handleUsersSynced);
+    };
   }, []);
 
   useEffect(() => {
     if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'superadmin' || currentUser.isOwner)) {
+      void refreshUsers();
       fetchMetrics();
       fetchSubmissions();
       fetchTelemetryConfig();
@@ -1531,6 +1542,49 @@ export const AdminCentre: React.FC = () => {
                 )}
               </div>
             </div>
+
+            {/* Quota Exhaustion Notice & Upgrade Link (Firebase Spark free tier) */}
+            {hybridSyncState.quotaUsage.quotaExhaustedUntilMs && (
+              <div
+                data-testid="firestore-quota-alert-banner"
+                className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/40 text-xs font-mono space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2 text-amber-400 font-bold">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>FIREBASE SPARK FREE-TIER WRITE QUOTA LIMIT REACHED</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/50 text-amber-300">
+                    CIRCUIT BREAKER ACTIVE
+                  </span>
+                </div>
+                <div className="text-[11px] text-[#D4D8DE] font-sans">
+                  The Google Cloud/Firebase Firestore daily write limit for this free-tier database has been reached.
+                  The application has seamlessly switched to phone storage and Express server sync. No data was lost.
+                  Free-tier quotas reset daily at UTC midnight. To remove daily quota caps, upgrade to the Blaze pay-as-you-go plan.
+                </div>
+                <div className="pt-1 flex flex-wrap items-center gap-3 text-[11px]">
+                  <a
+                    href="https://console.firebase.google.com/project/fleet-unfolding-p5v9p/firestore/databases/ai-studio-ghostprotocol-7dd54263-89ea-448f-9e88-37be2d9f1eb3/data?openUpgradeDialog=true"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-amber-300 hover:text-amber-200 underline font-bold"
+                  >
+                    <span>Open Firebase Console Database Upgrade Dialog</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <span className="text-[#707883]">•</span>
+                  <a
+                    href="https://firebase.google.com/pricing#cloud-firestore"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#A0A7B0] hover:text-[#F1F3F5] underline"
+                  >
+                    Firestore Pricing & Spark Limits
+                  </a>
+                </div>
+              </div>
+            )}
 
             {/* Free-Tier Quota Guard Metrics */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

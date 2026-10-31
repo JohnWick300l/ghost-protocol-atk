@@ -23,6 +23,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { ModificationItem } from '../types';
+import { sanitizeGoogleMapsUrl } from '../utils/rules';
 import { BackButton } from './BackButton';
 import {
   CACHE_KEYS,
@@ -890,7 +891,12 @@ export const ModificationsLab: React.FC = () => {
                       <div>
                         <div className="text-xs text-zinc-500">Shop Location</div>
                         <a
-                          href={selectedMod.shopMapLink}
+                          href={sanitizeGoogleMapsUrl(
+                            selectedMod.shopMapLink,
+                            undefined,
+                            undefined,
+                            selectedMod.shopName || selectedMod.title
+                          )}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="font-semibold text-amber-400 hover:underline mt-0.5 inline-flex items-center gap-1.5"

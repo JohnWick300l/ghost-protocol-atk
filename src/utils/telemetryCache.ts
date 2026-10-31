@@ -1300,8 +1300,12 @@ export async function reconcileAllCachesWithServer(): Promise<boolean> {
         jetSubmissions: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.JET_SUBMISSIONS, [])),
         jetQaHistory: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.JET_QA_HISTORY, [])),
         rides: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.RIDES, [])),
+        visitedDestinations: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.VISITED_DESTINATIONS, [])),
         autoPilotMissions: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.AUTOPILOT_MISSIONS, [])),
-        emergencies: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.EMERGENCY, []))
+        emergencies: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.EMERGENCY, [])),
+        polls: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.POLLS, [])),
+        petitions: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.PETITIONS, [])),
+        contributions: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.CONTRIBUTIONS, []))
       }
     };
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Zap,
   Plus,
@@ -28,7 +28,9 @@ import {
   Calendar,
   Clock,
   IndianRupee,
-  Bell
+  Bell,
+  BarChart3,
+  Layers
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
@@ -41,6 +43,9 @@ import {
   CHARGER_PLUG_TYPE_SPECS,
   validateChargingPlugSubmission,
   matchesChargingStationFilter,
+  isChargerAddedInLast24Hours,
+  calculateChargingNetworkComposition,
+  type NetworkCompositionResult,
   isPubliclyPublishedCharger,
   canModifyChargerRecord,
   isAdminOrOwnerAccount,
@@ -88,9 +93,11 @@ import { AvionicsToggleTransition, AnimatePresence, motion } from './AvionicsTra
 
 const FILTER_OPTIONS = [
   { id: 'ALL', label: 'ALL' },
+  { id: 'LAST_24H', label: 'NEW (LAST 24H)' },
   { id: 'SUPERNOVA', label: 'SUPERNOVA' },
-  { id: '3rd Party Station', label: '3rd Party Station' },
-  { id: 'Community Provided Chargers', label: 'Community Provided Chargers' }
+  { id: 'BOLT_TYPE_6', label: 'BOLT TYPE 6' },
+  { id: 'Community Provided Chargers', label: 'Community Chargers' },
+  { id: '3rd Party Station', label: '3rd Party Station' }
 ];
 
 interface ChargingNetworkProps {
@@ -117,13 +124,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
       OFFLINE_FALLBACK_CHARGER_REPORTS
     )
   );
-  const [selectedStation, setSelectedStation] = useState<ChargingStation | null>(() => {
-    const cached = loadFromCache<ChargingStation[]>(
-      CACHE_KEYS.CHARGING,
-      OFFLINE_FALLBACK_CHARGING_STATIONS
-    ).filter(s => isPubliclyPublishedCharger(s));
-    return cached[0] || null;
-  });
+  const [selectedStation, setSelectedStation] = useState<ChargingStation | null>(null);
   const [chargingPageMode, setChargingPageMode] = useState<'map' | 'autopilot'>(() => {
     if (initialMode) return initialMode;
     if (typeof window !== 'undefined') {
@@ -162,6 +163,11 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
   const [filterType, setFilterType] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [submissionNotice, setSubmissionNotice] = useState<string | null>(null);
+
+  const composition: NetworkCompositionResult = useMemo(
+    () => calculateChargingNetworkComposition(stations),
+    [stations]
+  );
 
   // Long-Ride Planning Info State (persistent, admin-configurable, never fabricated)
   const [longRidePlanningText, setLongRidePlanningText] = useState<string>(() =>
@@ -279,7 +285,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
           const updatedMatch = mergedAll.find(s => s.id === prev.id);
           if (updatedMatch) return updatedMatch;
         }
-        return pub.length > 0 ? pub[0] : null;
+        return null;
       });
 
       if (typeof planningText === 'string') {
@@ -1107,11 +1113,11 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
   });
 
   useEffect(() => {
-    if (
-      filteredStations.length > 0 &&
-      (!selectedStation || !filteredStations.some(s => s.id === selectedStation.id))
-    ) {
-      setSelectedStation(filteredStations[0]);
+    if (selectedStation) {
+      const existsInFilter = filteredStations.some(s => s.id === selectedStation.id);
+      if (!existsInFilter) {
+        setSelectedStation(null);
+      }
     }
   }, [filterType, searchQuery, filteredStations, selectedStation]);
 
@@ -1525,6 +1531,287 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
         />
       ) : (
         <div className="space-y-6">
+          {/* ========================================================= */}
+          {/* CHARGING INFRASTRUCTURE COMPOSITION GRAPH */}
+          {/* UV Supernova vs Owners Chargers vs Bolt Type 6 */}
+          {/* ========================================================= */}
+          <section
+            data-testid="charging-network-composition-graph"
+            aria-label="Charging Network Infrastructure Composition"
+            className="bg-[#0D1015] border border-[#282D34] rounded-lg p-4 sm:p-5 space-y-4 font-mono"
+          >
+            {/* Header with Title and Telemetry Totals */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#282D34]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded bg-[#13171F] border border-[#42B883]/40 flex items-center justify-center text-[#42B883]">
+                  <BarChart3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-[#F1F3F5] tracking-wider flex items-center gap-2">
+                    <span>CHARGING INFRASTRUCTURE COMPOSITION</span>
+                    <span className="text-[10px] text-[#A0A7B0] font-normal hidden md:inline">
+                      • Real-Time Fleet Telemetry
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-[#707883] font-sans">
+                    Total verified chargers breakdown: UV Supernova vs Pilot Owners vs Bolt Type 6
+                  </div>
+                </div>
+              </div>
+
+              {/* Dedicated Option for New Chargers in Last 24hr */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="filter-last-24h-btn"
+                  onClick={() => {
+                    playTacticalClick();
+                    setFilterType(prev => (prev === 'LAST_24H' ? 'ALL' : 'LAST_24H'));
+                  }}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+                    filterType === 'LAST_24H'
+                      ? 'bg-[#42B883] text-[#08090B] border-[#42B883] shadow-md shadow-[#42B883]/20'
+                      : 'bg-[#13161A] hover:bg-[#1E232B] text-[#42B883] border-[#42B883]/40'
+                  }`}
+                >
+                  <Clock className={`w-3.5 h-3.5 ${filterType === 'LAST_24H' ? 'animate-spin' : ''}`} />
+                  <span>NEW IN LAST 24HR</span>
+                  <span
+                    data-testid="composition-last-24h-count"
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      filterType === 'LAST_24H'
+                        ? 'bg-[#08090B] text-[#42B883]'
+                        : 'bg-[#42B883]/20 text-[#42B883]'
+                    }`}
+                  >
+                    {composition.last24HoursCount}
+                  </span>
+                </button>
+
+                {filterType !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTacticalClick();
+                      setFilterType('ALL');
+                    }}
+                    className="px-2.5 py-1.5 rounded bg-[#191D22] hover:bg-[#252A30] text-[11px] text-[#A0A7B0] hover:text-[#F1F3F5] border border-[#282D34] cursor-pointer"
+                  >
+                    Reset Filter
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Proportional Segmented Stacked Graph Bar */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[11px] text-[#A0A7B0]">
+                <span className="font-bold text-[#D4D8DE] flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-[#38BDF8]" />
+                  <span>
+                    FLEET SHARE GRAPH ({composition.totalCount} STATIONS • {composition.totalCapacityKw} kW TOTAL CAPACITY)
+                  </span>
+                </span>
+                <span className="text-[10px] text-[#707883]">CLICK ANY METRIC TO FILTER</span>
+              </div>
+
+              {/* The Stacked Bar Graph */}
+              <div
+                role="progressbar"
+                aria-label="Charging infrastructure distribution graph"
+                className="w-full h-4 rounded-full bg-[#13171F] border border-[#282D34] overflow-hidden flex p-0.5 gap-0.5"
+              >
+                <div
+                  style={{ width: `${Math.max(8, composition.segments.uvSupernova.percentage)}%` }}
+                  className="h-full rounded-l-full bg-[#42B883] hover:opacity-90 transition-all duration-500 relative cursor-pointer"
+                  title={`UV Supernova: ${composition.segments.uvSupernova.count} stations (${composition.segments.uvSupernova.percentage}%)`}
+                  onClick={() => {
+                    playTacticalClick();
+                    setFilterType(prev => (prev === 'SUPERNOVA' ? 'ALL' : 'SUPERNOVA'));
+                  }}
+                />
+                <div
+                  style={{ width: `${Math.max(8, composition.segments.ownersChargers.percentage)}%` }}
+                  className="h-full bg-[#E8AA45] hover:opacity-90 transition-all duration-500 relative cursor-pointer"
+                  title={`Owners Chargers: ${composition.segments.ownersChargers.count} stations (${composition.segments.ownersChargers.percentage}%)`}
+                  onClick={() => {
+                    playTacticalClick();
+                    setFilterType(prev =>
+                      prev === 'Community Provided Chargers' ? 'ALL' : 'Community Provided Chargers'
+                    );
+                  }}
+                />
+                <div
+                  style={{ width: `${Math.max(8, composition.segments.boltType6.percentage)}%` }}
+                  className="h-full rounded-r-full bg-[#729BCB] hover:opacity-90 transition-all duration-500 relative cursor-pointer"
+                  title={`Bolt Type 6: ${composition.segments.boltType6.count} stations (${composition.segments.boltType6.percentage}%)`}
+                  onClick={() => {
+                    playTacticalClick();
+                    setFilterType(prev => (prev === 'BOLT_TYPE_6' ? 'ALL' : 'BOLT_TYPE_6'));
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* 3 Interactive Comparison Metric Cards: UV Supernova vs Owners Chargers vs Bolt Type 6 */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Card 1: UV Supernova */}
+              <div
+                data-testid="composition-card-uv-supernova"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType(prev => (prev === 'SUPERNOVA' ? 'ALL' : 'SUPERNOVA'));
+                }}
+                className={`p-3.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
+                  filterType === 'SUPERNOVA'
+                    ? 'bg-[#42B883]/15 border-[#42B883] shadow-lg shadow-[#42B883]/10 ring-1 ring-[#42B883]'
+                    : 'bg-[#11151C] border-[#282D34] hover:border-[#42B883]/60'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between text-[10px] mb-2">
+                    <span className="px-2 py-0.5 rounded bg-[#42B883]/20 text-[#42B883] border border-[#42B883]/40 font-bold inline-flex items-center gap-1.5">
+                      <Zap className="w-3 h-3 text-[#42B883]" />
+                      <span>UV SUPERNOVA</span>
+                    </span>
+                    <span className="font-bold text-[#42B883]">
+                      {composition.segments.uvSupernova.percentage}%
+                    </span>
+                  </div>
+                  <div className="text-2xl font-bold text-[#F1F3F5] tracking-tight">
+                    {composition.segments.uvSupernova.count}{' '}
+                    <span className="text-xs text-[#A0A7B0] font-normal">STATIONS</span>
+                  </div>
+                  <div className="text-[11px] text-[#A0A7B0] font-sans mt-1">
+                    {composition.segments.uvSupernova.description}
+                  </div>
+                </div>
+                <div className="pt-2.5 mt-2.5 border-t border-[#282D34] flex items-center justify-between text-[11px]">
+                  <span className="text-[#707883]">Total Capacity:</span>
+                  <span className="font-bold text-[#42B883]">
+                    {composition.segments.uvSupernova.totalKw} kW
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 2: Owners Chargers */}
+              <div
+                data-testid="composition-card-owners-chargers"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType(prev =>
+                    prev === 'Community Provided Chargers' ? 'ALL' : 'Community Provided Chargers'
+                  );
+                }}
+                className={`p-3.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
+                  filterType === 'Community Provided Chargers'
+                    ? 'bg-[#E8AA45]/15 border-[#E8AA45] shadow-lg shadow-[#E8AA45]/10 ring-1 ring-[#E8AA45]'
+                    : 'bg-[#11151C] border-[#282D34] hover:border-[#E8AA45]/60'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between text-[10px] mb-2">
+                    <span className="px-2 py-0.5 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40 font-bold inline-flex items-center gap-1.5">
+                      <img
+                        src="/assets/aistudio/batman_icon.svg"
+                        alt="Batman"
+                        className="w-3 h-3 object-contain shrink-0"
+                      />
+                      <span>OWNERS CHARGERS</span>
+                    </span>
+                    <span className="font-bold text-[#E8AA45]">
+                      {composition.segments.ownersChargers.percentage}%
+                    </span>
+                  </div>
+                  <div className="text-2xl font-bold text-[#F1F3F5] tracking-tight">
+                    {composition.segments.ownersChargers.count}{' '}
+                    <span className="text-xs text-[#A0A7B0] font-normal">STATIONS</span>
+                  </div>
+                  <div className="text-[11px] text-[#A0A7B0] font-sans mt-1">
+                    {composition.segments.ownersChargers.description}
+                  </div>
+                </div>
+                <div className="pt-2.5 mt-2.5 border-t border-[#282D34] flex items-center justify-between text-[11px]">
+                  <span className="text-[#707883]">Total Capacity:</span>
+                  <span className="font-bold text-[#E8AA45]">
+                    {composition.segments.ownersChargers.totalKw} kW
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 3: Bolt Type 6 Chargers */}
+              <div
+                data-testid="composition-card-bolt-type6"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType(prev => (prev === 'BOLT_TYPE_6' ? 'ALL' : 'BOLT_TYPE_6'));
+                }}
+                className={`p-3.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
+                  filterType === 'BOLT_TYPE_6'
+                    ? 'bg-[#729BCB]/15 border-[#729BCB] shadow-lg shadow-[#729BCB]/10 ring-1 ring-[#729BCB]'
+                    : 'bg-[#11151C] border-[#282D34] hover:border-[#729BCB]/60'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between text-[10px] mb-2">
+                    <span className="px-2 py-0.5 rounded bg-[#729BCB]/20 text-[#729BCB] border border-[#729BCB]/40 font-bold inline-flex items-center gap-1.5">
+                      <Zap className="w-3 h-3 text-[#729BCB]" />
+                      <span>BOLT TYPE 6</span>
+                    </span>
+                    <span className="font-bold text-[#729BCB]">
+                      {composition.segments.boltType6.percentage}%
+                    </span>
+                  </div>
+                  <div className="text-2xl font-bold text-[#F1F3F5] tracking-tight">
+                    {composition.segments.boltType6.count}{' '}
+                    <span className="text-xs text-[#A0A7B0] font-normal">STATIONS</span>
+                  </div>
+                  <div className="text-[11px] text-[#A0A7B0] font-sans mt-1">
+                    {composition.segments.boltType6.description}
+                  </div>
+                </div>
+                <div className="pt-2.5 mt-2.5 border-t border-[#282D34] flex items-center justify-between text-[11px]">
+                  <span className="text-[#707883]">Total Capacity:</span>
+                  <span className="font-bold text-[#729BCB]">
+                    {composition.segments.boltType6.totalKw} kW
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Active 24hr Filter Notification Banner */}
+          {filterType === 'LAST_24H' && (
+            <div
+              data-testid="last-24h-active-banner"
+              className="bg-[#0F1B15] border border-[#42B883]/50 rounded-lg p-3 text-xs font-mono text-[#F1F3F5] flex flex-wrap items-center justify-between gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-[#42B883] animate-pulse" />
+                <span>
+                  FILTER ACTIVE: Showing chargers added to the network in the last 24 hours (
+                  <strong className="text-[#42B883]">{filteredStations.length} station(s)</strong> found).
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType('ALL');
+                }}
+                className="text-[11px] underline text-[#42B883] hover:text-[#5ce0a7] font-bold cursor-pointer"
+              >
+                Show All Chargers ({stations.length})
+              </button>
+            </div>
+          )}
+
           {/* Filter and Search Bar */}
           <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between text-xs font-mono">
             <div className="flex flex-wrap items-center gap-2">
@@ -1532,6 +1819,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 <button
                   key={option.id}
                   type="button"
+                  data-testid={`charging-filter-tab-${option.id.toLowerCase().replace(/\s+/g, '-')}`}
                   onClick={() => {
                     playTacticalClick();
                     setFilterType(option.id);
@@ -1550,13 +1838,24 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                     />
                   )}
                   <span className="relative z-10 flex items-center gap-1.5">
+                    {option.id === 'LAST_24H' && (
+                      <Clock className="w-3.5 h-3.5 text-[#42B883]" />
+                    )}
                     {option.id === 'SUPERNOVA' && (
                       <img src="/assets/aistudio/supernova_black.png" alt="Supernova" className="w-4 h-4 object-contain shrink-0" />
+                    )}
+                    {option.id === 'BOLT_TYPE_6' && (
+                      <Zap className="w-3.5 h-3.5 text-[#729BCB]" />
                     )}
                     {(option.id === 'COMMUNITY' || option.id === 'Community Provided Chargers') && (
                       <img src="/assets/aistudio/batman_icon.svg" alt="Batman" className="w-4 h-4 object-contain shrink-0" />
                     )}
                     <span>{option.label}</span>
+                    {option.id === 'LAST_24H' && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-[#42B883]/20 text-[#42B883] font-bold">
+                        {composition.last24HoursCount}
+                      </span>
+                    )}
                   </span>
                 </button>
               ))}
@@ -2245,11 +2544,20 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                           >
                             <div>
                               <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   {getStationSourceBadge(cs)}
                                   <span className="px-2 py-0.5 rounded bg-[#13161A] border border-[#414851] text-[#E8AA45] font-bold">
                                     {plugType}
                                   </span>
+                                  {isChargerAddedInLast24Hours(cs) && (
+                                    <span
+                                      data-testid={`charger-new-24h-badge-${cs.id}`}
+                                      className="px-1.5 py-0.5 rounded bg-[#42B883]/20 border border-[#42B883]/50 text-[#42B883] text-[9px] font-bold tracking-wider inline-flex items-center gap-1"
+                                    >
+                                      <Clock className="w-2.5 h-2.5" />
+                                      <span>NEW (24H)</span>
+                                    </span>
+                                  )}
                                 </div>
                                 <span className="text-[#F1F3F5] font-bold">{cs.powerOutputKw} kW</span>
                               </div>

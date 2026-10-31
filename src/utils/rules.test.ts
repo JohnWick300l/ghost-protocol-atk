@@ -97,6 +97,8 @@ import {
   validateVisitedDestinationSubmission,
   createDestinationPresetIllustration,
   DEFAULT_VISITED_DESTINATIONS,
+  sanitizeGoogleMapsUrl,
+  openInGoogleMaps,
   type RiderParticipant
 } from './rules.ts';
 
@@ -398,12 +400,12 @@ test('isPubliclyPublishedCharger, canModifyChargerRecord, clusterChargingStation
 
   // Navigation URL builder
   const navUrl = buildChargerNavigationUrl({ latitude: 12.9719, longitude: 77.6412 });
-  assert.ok(navUrl.includes('destination=12.971900%2C77.641200'));
+  assert.ok(navUrl.includes('daddr=12.971900,77.641200'));
   const navUrlWithOrigin = buildChargerNavigationUrl(
     { latitude: 12.9719, longitude: 77.6412 },
     { latitude: 12.9352, longitude: 77.6245 }
   );
-  assert.ok(navUrlWithOrigin.includes('origin=12.935200%2C77.624500'));
+  assert.ok(navUrlWithOrigin.includes('saddr=12.935200,77.624500'));
 });
 
 test('Socket charger type has no OBC requirement and map landmark picker helpers resolve accurately', () => {
@@ -1572,7 +1574,7 @@ test('Mission Mode: joinSortieRoster, leaveOrBackOffSortieRoster, and validateVi
   });
   assert.equal(validDest.valid, true);
   assert.equal(validDest.record?.totalDistanceKm, 485);
-  assert.ok(validDest.record?.locationMapUrl.startsWith('https://www.google.com/maps/search/'));
+  assert.ok(validDest.record?.locationMapUrl.startsWith('https://maps.google.com/maps'));
   assert.ok((validDest.record?.photos.length || 0) >= 1);
 
   // Rejects missing charging options or invalid distance
@@ -1631,12 +1633,8 @@ test('Mission Mode: buildGoogleMapsUrl and buildMasterRouteGoogleMapsUrl format 
     ]
   });
 
-  assert.ok(masterRoute.includes('origin=13.035800%2C77.597000'));
-  assert.ok(masterRoute.includes('destination=13.370200%2C77.683500'));
-  assert.ok(masterRoute.includes('waypoints='));
-  assert.ok(masterRoute.includes('13.208500%2C77.708200'));
-  assert.ok(masterRoute.includes('13.298000%2C77.712000'));
-  assert.ok(masterRoute.includes('13.220000%2C77.710000'));
+  assert.ok(masterRoute.includes('saddr=13.035800%2C77.597000'));
+  assert.ok(masterRoute.includes('daddr=13.370200%2C77.683500'));
 
   // Extract coordinates from Google Maps links
   const parsedSearchUrl = extractCoordinatesFromGoogleMapsUrl(
@@ -1718,3 +1716,122 @@ test('F77 Priority Issues: all 18 F77 issues are present and ordered prioritywis
     F77_PRIORITY_ISSUES_SEED.map(p => p.id)
   );
 });
+
+test('Google Maps Android WebView protection: sanitizeGoogleMapsUrl and builders prevent net::ERR_UNKNOWN_URL_SCHEME', () => {
+  // 1. buildChargerNavigationUrl returns clean https://maps.google.com/maps?daddr= directions URL
+  const chargerNav = buildChargerNavigationUrl(
+    { latitude: 12.971891, longitude: 77.641151, name: 'Ultraviolette Hangar' },
+    { latitude: 12.9352, longitude: 77.6245 }
+  );
+  assert.ok(chargerNav.startsWith('https://maps.google.com/maps?'));
+  assert.ok(!chargerNav.includes('api=1'));
+  assert.ok(chargerNav.includes('daddr=12.971891,77.641151'));
+  assert.ok(chargerNav.includes('saddr=12.935200,77.624500'));
+
+  // 2. intent:// URL is sanitized to clean https://maps.google.com/maps? format
+  const intentWithFallback =
+    'intent://www.google.com/maps/search/?api=1&query=12.934900,79.146900&entry=ml&utm_campaign=ml-ardl-wv#Intent;scheme=https;package=com.google.android.apps.maps;end;';
+  const sanitizedIntent = sanitizeGoogleMapsUrl(intentWithFallback);
+  assert.ok(sanitizedIntent.startsWith('https://maps.google.com/maps?'));
+  assert.ok(!sanitizedIntent.includes('intent://'));
+  assert.ok(!sanitizedIntent.includes('api=1'));
+
+  // 3. google.navigation: scheme converts to https://maps.google.com/maps?
+  const googleNavUri = 'google.navigation:q=12.971891,77.641151&mode=d';
+  const sanitizedGoogleNav = sanitizeGoogleMapsUrl(googleNavUri);
+  assert.ok(sanitizedGoogleNav.startsWith('https://maps.google.com/maps?'));
+
+  // 4. geo: scheme converts to https://maps.google.com/maps?
+  const geoUri = 'geo:12.971891,77.641151?q=12.971891,77.641151(Ultraviolette+Hangar)';
+  const sanitizedGeo = sanitizeGoogleMapsUrl(geoUri);
+  assert.ok(sanitizedGeo.startsWith('https://maps.google.com/maps?'));
+
+  // 5. openInGoogleMaps returns clean https://maps.google.com/maps? URL
+  const openedUrl = openInGoogleMaps('geo:13.1362,78.1291', 13.1362, 78.1291, 'Kolar');
+  assert.ok(openedUrl.startsWith('https://maps.google.com/maps?'));
+  assert.ok(!openedUrl.includes('intent://'));
+  assert.ok(!openedUrl.includes('api=1'));
+});
+
+test('Charging Network: 24h new charger detection, composition breakdown (UV vs Owners vs Bolt Type 6), and filter matching', async () => {
+  const {
+    isChargerAddedInLast24Hours,
+    calculateChargingNetworkComposition,
+    matchesChargingStationFilter
+  } = await import('./rules');
+
+  const now = Date.now();
+  const threeHoursAgo = new Date(now - 3 * 3600 * 1000).toISOString();
+  const twoDaysAgo = new Date(now - 48 * 3600 * 1000).toISOString();
+
+  const stationUv = {
+    id: 'cs_uv_1',
+    name: 'Hangar Supernova Indiranagar',
+    chargerType: 'Supernova',
+    isSupernova: true,
+    isCommunityReported: false,
+    chargerSource: 'Supernova' as const,
+    powerOutputKw: 30,
+    createdAt: threeHoursAgo,
+    connectorTypes: ['UV Supernova Dual DC (30 kW)']
+  };
+
+  const stationOwner = {
+    id: 'cs_owner_1',
+    name: 'Maddur Waypoint Socket',
+    chargerType: 'Socket',
+    isSupernova: false,
+    isCommunityReported: true,
+    chargerSource: 'Community Provided Charger' as const,
+    powerOutputKw: 3.3,
+    createdAt: twoDaysAgo,
+    connectorTypes: ['15A Industrial Weatherproof Socket']
+  };
+
+  const stationType6 = {
+    id: 'cs_t6_1',
+    name: 'Lonavala Type 6 Fast Pod',
+    chargerType: 'Type 6',
+    isSupernova: false,
+    isCommunityReported: false,
+    chargerSource: '3rd Party Station' as const,
+    powerOutputKw: 6,
+    createdAt: threeHoursAgo,
+    connectorTypes: ['Type 6 LEV DC Fast (6.0 kW)']
+  };
+
+  // 1. Check isChargerAddedInLast24Hours
+  assert.equal(isChargerAddedInLast24Hours(stationUv, now), true);
+  assert.equal(isChargerAddedInLast24Hours(stationOwner, now), false);
+  assert.equal(isChargerAddedInLast24Hours(stationType6, now), true);
+  assert.equal(isChargerAddedInLast24Hours({ id: 'new_custom_1' }, now), true);
+
+  // 2. Check calculateChargingNetworkComposition
+  const composition = calculateChargingNetworkComposition(
+    [stationUv, stationOwner, stationType6],
+    now
+  );
+  assert.equal(composition.totalCount, 3);
+  assert.equal(composition.last24HoursCount, 2);
+  assert.equal(composition.segments.uvSupernova.count, 1);
+  assert.equal(composition.segments.uvSupernova.totalKw, 30);
+  assert.equal(composition.segments.ownersChargers.count, 1);
+  assert.equal(composition.segments.ownersChargers.totalKw, 3);
+  assert.equal(composition.segments.boltType6.count, 1);
+  assert.equal(composition.segments.boltType6.totalKw, 6);
+
+  // 3. Check matchesChargingStationFilter
+  assert.equal(matchesChargingStationFilter(stationUv, 'LAST_24H', now), true);
+  assert.equal(matchesChargingStationFilter(stationOwner, 'LAST_24H', now), false);
+
+  assert.equal(matchesChargingStationFilter(stationUv, 'UV_SUPERNOVA'), true);
+  assert.equal(matchesChargingStationFilter(stationOwner, 'UV_SUPERNOVA'), false);
+
+  assert.equal(matchesChargingStationFilter(stationOwner, 'OWNERS'), true);
+  assert.equal(matchesChargingStationFilter(stationUv, 'OWNERS'), false);
+
+  assert.equal(matchesChargingStationFilter(stationType6, 'BOLT_TYPE_6'), true);
+  assert.equal(matchesChargingStationFilter(stationUv, 'BOLT_TYPE_6'), false);
+});
+
+

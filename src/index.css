@@ -254,10 +254,24 @@
 
 /* GHOST PROTOCOL Geographical Map (Leaflet + OpenStreetMap Cool Black Obsidian Theme) */
 .leaflet-container {
-  background-color: #020305 !important;
+  background-color: #070B12 !important;
   font-family: 'JetBrains Mono', monospace !important;
   isolation: isolate;
   z-index: 1 !important;
+}
+
+/* CRITICAL: Tailwind CSS reset sets `img { max-width: 100%; height: auto; }`.
+   Leaflet tiles are placed in absolute containers with zero intrinsic width,
+   which forces `max-width: 100%` to evaluate to 0px, causing all map tiles to render with 0 width (pitch-black screen).
+   These rules MUST be enforced to guarantee Leaflet tiles always render. */
+.leaflet-container img,
+.leaflet-pane img,
+.leaflet-tile-pane img,
+.leaflet-tile-container img,
+.leaflet-tile,
+img.leaflet-tile {
+  max-width: none !important;
+  max-height: none !important;
 }
 
 .leaflet-tile-pane {

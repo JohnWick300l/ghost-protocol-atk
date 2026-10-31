@@ -13,18 +13,14 @@ import {
   MapPin,
   Search,
   Building2,
-  Radio,
   Eye,
   EyeOff,
-  ArrowRight,
-  Sparkles,
-  KeyRound,
   Loader2,
   X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
-import { PlaceSuggestion } from '../utils/rules';
+import { PlaceSuggestion, VALID_BLOOD_GROUPS, BloodGroup } from '../utils/rules';
 import { searchAllIndiaLocations, fetchLiveIndiaPlaces } from '../utils/indiaLocations';
 
 interface PilotWelcomeScreenProps {
@@ -40,7 +36,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   onTakeOffComplete,
   reducedMotion = false
 }) => {
-  const { currentUser, login, loginWithGoogle, loginWithGoogleEmail, register, availableUsers } = useAuth();
+  const { currentUser, login, register, availableUsers } = useAuth();
   const { soundEnabled, toggleSound, playTacticalClick, playChime } = useAudio();
 
   // Active portal mode
@@ -52,8 +48,6 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   const [custLoginError, setCustLoginError] = useState<string | null>(null);
   const [custLoading, setCustLoading] = useState(false);
   const [showCustPassword, setShowCustPassword] = useState(false);
-  const [showGoogleEmailPrompt, setShowGoogleEmailPrompt] = useState(false);
-  const [manualGoogleEmail, setManualGoogleEmail] = useState('');
 
   // Employee Login Form state
   const [empIdentifier, setEmpIdentifier] = useState('');
@@ -73,10 +67,12 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
 
-  // Customer specific registration fields
+  // Compulsory Garage Fields for Registration (Directly syncs to My Garage)
   const [regBikeNumber, setRegBikeNumber] = useState('');
   const [regBikeModel, setRegBikeModel] = useState<'F77' | 'X47'>('F77');
-
+  const [regBloodGroup, setRegBloodGroup] = useState<BloodGroup>('O+');
+  const [regEmergencyName, setRegEmergencyName] = useState('');
+  const [regEmergencyPhone, setRegEmergencyPhone] = useState('');
 
   // Home City / Registered Area Google Maps-style autocomplete state
   const [homeCitySuggestions, setHomeCitySuggestions] = useState<PlaceSuggestion[]>(() =>
@@ -299,66 +295,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
     }
   };
 
-  // 3. Firebase Google Authentication Handler
-  const handleGoogleAuth = async () => {
-    setCustLoginError(null);
-    setEmpLoginError(null);
-    setRegError(null);
-    setCustLoading(true);
-    playTacticalClick();
-
-    try {
-      const res = await loginWithGoogle();
-      if (res.success) {
-        executeTakeOffSequence();
-      } else {
-        const errorMsg = res.error || 'Google Sign-In failed.';
-        setCustLoginError(errorMsg);
-        setEmpLoginError(errorMsg);
-        setRegError(errorMsg);
-        setShowGoogleEmailPrompt(true);
-      }
-    } catch (err: any) {
-      const errorMsg = err?.message || 'Failed to authenticate with Google.';
-      setCustLoginError(errorMsg);
-      setEmpLoginError(errorMsg);
-      setRegError(errorMsg);
-      setShowGoogleEmailPrompt(true);
-    } finally {
-      setCustLoading(false);
-    }
-  };
-
-  const handleGoogleEmailFallback = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualGoogleEmail.trim()) return;
-    setCustLoginError(null);
-    setEmpLoginError(null);
-    setRegError(null);
-    setCustLoading(true);
-    playTacticalClick();
-
-    try {
-      const res = await loginWithGoogleEmail(manualGoogleEmail);
-      if (res.success) {
-        executeTakeOffSequence();
-      } else {
-        const errorMsg = res.error || 'Direct Google email sign-in failed.';
-        setCustLoginError(errorMsg);
-        setEmpLoginError(errorMsg);
-        setRegError(errorMsg);
-      }
-    } catch (err: any) {
-      const errorMsg = err?.message || 'Failed to authenticate Google email.';
-      setCustLoginError(errorMsg);
-      setEmpLoginError(errorMsg);
-      setRegError(errorMsg);
-    } finally {
-      setCustLoading(false);
-    }
-  };
-
-  // 4. Complete Registration Handler
+  // 3. Complete Registration Handler
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError(null);
@@ -389,16 +326,26 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
       return;
     }
 
+    // Mandatory Garage Sync Fields validation
+    if (!regBikeModel) {
+      setRegError('Bike Model (F77 or X47) is compulsory.');
+      return;
+    }
+    if (!regBikeNumber.trim()) {
+      setRegError('Bike Registration Number is compulsory.');
+      return;
+    }
+    if (!regBloodGroup) {
+      setRegError('Blood Group selection is compulsory.');
+      return;
+    }
+    if (!regEmergencyName.trim() || !regEmergencyPhone.trim()) {
+      setRegError('Emergency Contact Name and Phone Number are compulsory.');
+      return;
+    }
+
     // Role-specific validation
     if (regAccountType === 'customer') {
-      if (!regBikeNumber.trim()) {
-        setRegError('Bike registration number is compulsory for customers.');
-        return;
-      }
-      if (!regBikeModel) {
-        setRegError('Bike model selection (F77 or X47) is compulsory.');
-        return;
-      }
       if (chargingStationOptIn === null) {
         setRegError('Please answer the compulsory question: "Use your location as charging station?" (YES or NO).');
         return;
@@ -439,12 +386,18 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
       city: townName,
       state: resolvedState,
       password: regPassword.trim(),
-      accountType: regAccountType
+      accountType: regAccountType,
+      motorcycleModel: regBikeModel,
+      registrationNumber: regBikeNumber.trim().toUpperCase(),
+      bloodGroup: regBloodGroup,
+      emergencyContact: {
+        name: regEmergencyName.trim(),
+        phone: regEmergencyPhone.trim(),
+        relationship: 'Family'
+      }
     };
 
     if (regAccountType === 'customer') {
-      payload.motorcycleModel = regBikeModel;
-      payload.registrationNumber = regBikeNumber.trim().toUpperCase();
       if (chargingStationOptIn === 'yes') {
         payload.communityCharger = {
           town: townName,
@@ -570,7 +523,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
       </div>
 
       {/* Top Tactical Header Strip */}
-      <div className="relative z-20 flex items-center justify-between px-4 sm:px-8 py-4 border-b border-[#1E2D42]/60 bg-[#08090B]/85 backdrop-blur-md">
+      <div className="relative z-20 flex items-center justify-between px-4 sm:px-8 pt-[max(1rem,env(safe-area-inset-top))] pb-4 sm:py-4 border-b border-[#1E2D42]/60 bg-[#08090B]/85 backdrop-blur-md">
         <div className="flex items-center space-x-3">
           <div className="w-9 h-9 rounded bg-[#0D0F12] border border-[#E8AA45]/50 flex items-center justify-center text-[#E8AA45] shadow-[0_0_15px_rgba(232,170,69,0.25)]">
             <Shield className="w-5 h-5 text-[#E8AA45]" />
@@ -609,7 +562,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
         </div>
       </div>
 
-      {/* Hero Announcement Banner: FREE APP EXCLUSIVELY FOR ULTRAVIOLETTE CUSTOMERS */}
+      {/* Hero Announcement Banner */}
       <div className="relative z-20 mx-auto max-w-4xl px-4 pt-6">
         <div className="rounded-xl border border-[#E8AA45]/60 bg-gradient-to-r from-[#191D24]/90 via-[#0E131C]/95 to-[#191D24]/90 backdrop-blur-xl p-4 sm:p-5 shadow-[0_12px_36px_rgba(0,0,0,0.8)] text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#E8AA45]/15 border border-[#E8AA45]/40 text-[#E8AA45] text-[11px] font-mono font-bold tracking-wider mb-2">
@@ -621,7 +574,6 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
           </h2>
           <p className="mt-1 text-xs sm:text-sm text-[#94A3B8] max-w-2xl mx-auto leading-relaxed">
             Only registered Ultraviolette pilots and authorized personnel can access Ghost Protocol avionics.
-            Visitor bypass is disabled to preserve telemetry confidentiality and flight squadron safety.
           </p>
         </div>
       </div>
@@ -694,100 +646,15 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                       Ultraviolette Customer (Pilot) Portal
                     </h3>
                     <p className="text-xs text-[#94A3B8]">
-                      Full avionics access: Cockpit, Squadron Assist, Jet Engineer, Charging, and Missions.
+                      Sign in with your pilot email and password to access Ghost Protocol avionics.
                     </p>
                   </div>
                 </div>
 
-                {/* FIREBASE GOOGLE AUTHENTICATION BUTTON */}
-                <button
-                  type="button"
-                  onClick={handleGoogleAuth}
-                  disabled={custLoading}
-                  className="w-full py-3 px-4 rounded-lg bg-[#182232] hover:bg-[#202E44] border border-[#38BDF8]/40 text-[#F8FAFC] font-mono font-bold text-xs sm:text-sm tracking-wide transition-all flex items-center justify-center gap-3 cursor-pointer hover:border-[#38BDF8] shadow-md my-1"
-                >
-                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                  </svg>
-                  <span>SIGN IN WITH GOOGLE</span>
-                </button>
-
-                {showGoogleEmailPrompt && (
-                  <div className="p-3.5 rounded-lg bg-[#38BDF8]/10 border border-[#38BDF8]/40 space-y-2.5 my-2 animate-in fade-in">
-                    <div className="text-xs font-mono font-bold text-[#38BDF8] flex items-center justify-between">
-                      <span>DIRECT GOOGLE PILOT AUTHENTICATION</span>
-                      <button type="button" onClick={() => setShowGoogleEmailPrompt(false)} className="text-[#94A3B8] hover:text-[#F1F3F5]">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="text-[11px] font-mono text-[#94A3B8] leading-relaxed">
-                      If popup authentication is restricted on your browser or Play Store app, enter your Google email below to sign in directly:
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="email"
-                        value={manualGoogleEmail}
-                        onChange={e => setManualGoogleEmail(e.target.value)}
-                        placeholder="e.g. pilot@gmail.com"
-                        className="flex-1 px-3 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-xs text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleGoogleEmailFallback}
-                        disabled={custLoading || !manualGoogleEmail.trim()}
-                        className="px-3.5 py-2 rounded-lg bg-[#38BDF8] hover:bg-[#0EA5E9] disabled:opacity-50 text-[#08090B] font-mono font-bold text-xs tracking-wide cursor-pointer shrink-0"
-                      >
-                        AUTHENTICATE
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center my-2">
-                  <div className="flex-grow border-t border-[#1E2D42]"></div>
-                  <span className="px-3 text-[10px] font-mono text-[#64748B] uppercase">OR USE PILOT EMAIL / PASSWORD</span>
-                  <div className="flex-grow border-t border-[#1E2D42]"></div>
-                </div>
-
                 {custLoginError && (
-                  <div className="p-3.5 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#FCA5A5] text-xs font-mono space-y-2.5">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
-                      <div className="leading-relaxed">{custLoginError}</div>
-                    </div>
-                    {(custLoginError.includes('missing initial state') ||
-                      custLoginError.includes('sessionStorage') ||
-                      custLoginError.includes('Play Store') ||
-                      custLoginError.includes('WebView') ||
-                      custLoginError.includes('browser')) && (
-                      <div className="pt-2 border-t border-[#EF4444]/30 flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            playTacticalClick();
-                            window.open(window.location.href, '_blank');
-                          }}
-                          className="px-3 py-1.5 rounded bg-[#38BDF8] hover:bg-[#0EA5E9] text-[#08090B] font-bold text-[11px] flex items-center gap-1.5 cursor-pointer shadow-sm"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>OPEN IN EXTERNAL BROWSER</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCustIdentifier('vikram.sengupta@example.com');
-                            setCustPassword('GhostProtocol_F77_Pilot!');
-                            playTacticalClick();
-                          }}
-                          className="px-3 py-1.5 rounded bg-[#191D22] hover:bg-[#232930] text-[#E8AA45] font-bold text-[11px] border border-[#E8AA45]/50 cursor-pointer"
-                        >
-                          FILL PILOT DEMO CREDENTIALS
-                        </button>
-                      </div>
-                    )}
+                  <div className="p-3.5 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#FCA5A5] text-xs font-mono flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
+                    <div className="leading-relaxed">{custLoginError}</div>
                   </div>
                 )}
 
@@ -802,7 +669,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                         value={custIdentifier}
                         onChange={e => setCustIdentifier(e.target.value)}
                         placeholder="e.g. vikram.sengupta@example.com"
-                        className="w-full px-3.5 py-2.5 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none"
+                        className="w-full px-3.5 py-2.5 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none font-mono"
                         required
                       />
                     </div>
@@ -818,7 +685,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                         value={custPassword}
                         onChange={e => setCustPassword(e.target.value)}
                         placeholder="Enter password"
-                        className="w-full px-3.5 py-2.5 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none pr-10"
+                        className="w-full px-3.5 py-2.5 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none pr-10 font-mono"
                         required
                       />
                       <button
@@ -832,23 +699,25 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                   </div>
                 </div>
 
-                {/* Fast Fill Demo Credentials for User Testing */}
-                <div className="pt-2">
-                  <div className="text-[11px] font-mono text-[#64748B] mb-1.5">Quick Demo Credentials:</div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCustIdentifier('vikram.sengupta@example.com');
-                        setCustPassword('GhostProtocol_F77_Pilot!');
-                        playTacticalClick();
-                      }}
-                      className="px-2.5 py-1 rounded bg-[#131C2A] hover:bg-[#1A2638] text-[11px] font-mono text-[#E8AA45] border border-[#232F42]"
-                    >
-                      Pilot 07 (F77 Recon)
-                    </button>
+                {/* Fast Fill Demo Credentials (only shown if demo account has not been removed) */}
+                {availableUsers.some(u => u.id === 'u_pilot07' || u.email === 'vikram.sengupta@example.com') && (
+                  <div className="pt-2">
+                    <div className="text-[11px] font-mono text-[#64748B] mb-1.5">Quick Demo Credentials:</div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustIdentifier('vikram.sengupta@example.com');
+                          setCustPassword('GhostProtocol_F77_Pilot!');
+                          playTacticalClick();
+                        }}
+                        className="px-2.5 py-1 rounded bg-[#131C2A] hover:bg-[#1A2638] text-[11px] font-mono text-[#E8AA45] border border-[#232F42]"
+                      >
+                        Pilot 07 (F77 Recon)
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="pt-3">
                   <button
@@ -874,73 +743,19 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                       Ultraviolette Employee Portal
                     </h3>
                     <p className="text-xs text-[#94A3B8]">
-                      Authorized personnel portal. Strictly gated to <strong className="text-[#10B981]">Priority Issues</strong> and <strong className="text-[#10B981]">Service Intel</strong>.
+                      Authorized personnel portal. Gated to Priority Issues and Service Intel.
                     </p>
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-[#10B981]/10 border border-[#10B981]/30 text-[#A7F3D0] text-xs font-mono">
-                  <strong>Access Policy Notice:</strong> Per Ultraviolette security guidelines, company employees are authorized to view and triage customer priority issues and manage service intelligence telemetry only. All other consumer pages are restricted.
-                </div>
-
-                {/* FIREBASE GOOGLE AUTHENTICATION BUTTON */}
-                <button
-                  type="button"
-                  onClick={handleGoogleAuth}
-                  disabled={empLoading}
-                  className="w-full py-3 px-4 rounded-lg bg-[#182232] hover:bg-[#202E44] border border-[#10B981]/40 text-[#F8FAFC] font-mono font-bold text-xs sm:text-sm tracking-wide transition-all flex items-center justify-center gap-3 cursor-pointer hover:border-[#10B981] shadow-md my-1"
-                >
-                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                  </svg>
-                  <span>AUTHENTICATE EMPLOYEE WITH GOOGLE</span>
-                </button>
-
-                <div className="flex items-center my-2">
-                  <div className="flex-grow border-t border-[#1E2D42]"></div>
-                  <span className="px-3 text-[10px] font-mono text-[#64748B] uppercase">OR USE WORK CREDENTIALS</span>
-                  <div className="flex-grow border-t border-[#1E2D42]"></div>
+                  <strong>Access Policy Notice:</strong> Per Ultraviolette security guidelines, company employees are authorized to view and triage customer priority issues and manage service intelligence telemetry only.
                 </div>
 
                 {empLoginError && (
-                  <div className="p-3.5 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#FCA5A5] text-xs font-mono space-y-2.5">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
-                      <div className="leading-relaxed">{empLoginError}</div>
-                    </div>
-                    {(empLoginError.includes('missing initial state') ||
-                      empLoginError.includes('sessionStorage') ||
-                      empLoginError.includes('Play Store') ||
-                      empLoginError.includes('WebView') ||
-                      empLoginError.includes('browser')) && (
-                      <div className="pt-2 border-t border-[#EF4444]/30 flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            playTacticalClick();
-                            window.open(window.location.href, '_blank');
-                          }}
-                          className="px-3 py-1.5 rounded bg-[#38BDF8] hover:bg-[#0EA5E9] text-[#08090B] font-bold text-[11px] flex items-center gap-1.5 cursor-pointer shadow-sm"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>OPEN IN EXTERNAL BROWSER</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEmpIdentifier('arjun.engineer@ultraviolette.com');
-                            setEmpPassword('JetEngineer_2026_Secure!');
-                            playTacticalClick();
-                          }}
-                          className="px-3 py-1.5 rounded bg-[#191D22] hover:bg-[#232930] text-[#38BDF8] font-bold text-[11px] border border-[#38BDF8]/50 cursor-pointer"
-                        >
-                          FILL EMPLOYEE DEMO CREDENTIALS
-                        </button>
-                      </div>
-                    )}
+                  <div className="p-3.5 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#FCA5A5] text-xs font-mono flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
+                    <div className="leading-relaxed">{empLoginError}</div>
                   </div>
                 )}
 
@@ -955,7 +770,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                         value={empIdentifier}
                         onChange={e => setEmpIdentifier(e.target.value)}
                         placeholder="e.g. employee@ultraviolette.com"
-                        className="w-full px-3.5 py-2.5 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#10B981] focus:outline-none"
+                        className="w-full px-3.5 py-2.5 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#10B981] focus:outline-none font-mono"
                         required
                       />
                     </div>
@@ -971,7 +786,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                         value={empPassword}
                         onChange={e => setEmpPassword(e.target.value)}
                         placeholder="Enter employee password"
-                        className="w-full px-3.5 py-2.5 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#10B981] focus:outline-none pr-10"
+                        className="w-full px-3.5 py-2.5 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#10B981] focus:outline-none pr-10 font-mono"
                         required
                       />
                       <button
@@ -985,21 +800,23 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                   </div>
                 </div>
 
-                {/* Fast Fill Demo Credentials */}
-                <div className="pt-2">
-                  <div className="text-[11px] font-mono text-[#64748B] mb-1.5">Quick Demo Employee Credentials:</div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmpIdentifier('employee@ultraviolette.com');
-                      setEmpPassword('UV_Employee_2026!');
-                      playTacticalClick();
-                    }}
-                    className="px-2.5 py-1 rounded bg-[#131C2A] hover:bg-[#1A2638] text-[11px] font-mono text-[#10B981] border border-[#232F42]"
-                  >
-                    UV Service Engineer (employee@ultraviolette.com)
-                  </button>
-                </div>
+                {/* Fast Fill Demo Credentials (only shown if demo employee has not been removed) */}
+                {availableUsers.some(u => u.id === 'u_uv_employee' || u.email === 'employee@ultraviolette.com') && (
+                  <div className="pt-2">
+                    <div className="text-[11px] font-mono text-[#64748B] mb-1.5">Quick Demo Employee Credentials:</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmpIdentifier('employee@ultraviolette.com');
+                        setEmpPassword('UV_Employee_2026!');
+                        playTacticalClick();
+                      }}
+                      className="px-2.5 py-1 rounded bg-[#131C2A] hover:bg-[#1A2638] text-[11px] font-mono text-[#10B981] border border-[#232F42]"
+                    >
+                      UV Service Engineer (employee@ultraviolette.com)
+                    </button>
+                  </div>
+                )}
 
                 <div className="pt-3">
                   <button
@@ -1025,31 +842,9 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                       New Pilot & Personnel Registration
                     </h3>
                     <p className="text-xs text-[#94A3B8]">
-                      Free membership exclusively for verified Ultraviolette customers and employees.
+                      Free account registration for Ultraviolette pilots and personnel.
                     </p>
                   </div>
-                </div>
-
-                {/* FIREBASE GOOGLE AUTHENTICATION BUTTON */}
-                <button
-                  type="button"
-                  onClick={handleGoogleAuth}
-                  disabled={regLoading}
-                  className="w-full py-3 px-4 rounded-lg bg-[#182232] hover:bg-[#202E44] border border-[#38BDF8]/40 text-[#F8FAFC] font-mono font-bold text-xs sm:text-sm tracking-wide transition-all flex items-center justify-center gap-3 cursor-pointer hover:border-[#38BDF8] shadow-md my-1"
-                >
-                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                  </svg>
-                  <span>REGISTER / SIGN IN WITH GOOGLE</span>
-                </button>
-
-                <div className="flex items-center my-2">
-                  <div className="flex-grow border-t border-[#1E2D42]"></div>
-                  <span className="px-3 text-[10px] font-mono text-[#64748B] uppercase">OR COMPLETE FORM BELOW</span>
-                  <div className="flex-grow border-t border-[#1E2D42]"></div>
                 </div>
 
                 {regError && (
@@ -1099,7 +894,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                   </div>
                 </div>
 
-                {/* Common Compulsory Fields */}
+                {/* Common Credentials */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
@@ -1110,7 +905,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                       value={regFullName}
                       onChange={e => setRegFullName(e.target.value)}
                       placeholder="e.g. Rahul Sharma"
-                      className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none"
+                      className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none font-mono"
                       required
                     />
                   </div>
@@ -1124,13 +919,13 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                       value={regEmail}
                       onChange={e => setRegEmail(e.target.value)}
                       placeholder={regAccountType === 'customer' ? 'e.g. rahul@example.com' : 'e.g. rahul.s@ultraviolette.com'}
-                      className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none"
+                      className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none font-mono"
                       required
                     />
                   </div>
                 </div>
 
-                {/* Phone Number Field (Compulsory) */}
+                {/* Phone Number */}
                 <div>
                   <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-[#38BDF8]" />
@@ -1142,7 +937,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                     onChange={e => setRegMobile(e.target.value)}
                     placeholder="+91 98765 43210"
                     required
-                    className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none"
+                    className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none font-mono"
                   />
                 </div>
 
@@ -1164,7 +959,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                         placeholder="Create your login password"
                         required
                         minLength={8}
-                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none pr-10"
+                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none pr-10 font-mono"
                       />
                       <button
                         type="button"
@@ -1189,7 +984,7 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                         placeholder="Re-enter your password"
                         required
                         minLength={8}
-                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none pr-10"
+                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#38BDF8] focus:outline-none pr-10 font-mono"
                       />
                       <button
                         type="button"
@@ -1202,388 +997,369 @@ export const PilotWelcomeScreen: React.FC<PilotWelcomeScreenProps> = ({
                   </div>
                 </div>
 
-                {/* ----------------- CUSTOMER COMPULSORY FIELDS ----------------- */}
+                {/* ----------------- COMPULSORY MY GARAGE SYNC FIELDS ----------------- */}
+                <div className="space-y-4 pt-3 border-t border-[#1E2D42]">
+                  <div className="text-xs font-mono font-bold text-[#E8AA45] uppercase tracking-wider flex items-center gap-1.5">
+                    <Zap className="w-4 h-4 text-[#E8AA45]" />
+                    Compulsory My Garage Information
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* 1. Bike Model */}
+                    <div>
+                      <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
+                        Bike Model <span className="text-[#EF4444]">*</span>
+                      </label>
+                      <select
+                        id="select-bike-model"
+                        value={regBikeModel}
+                        onChange={e => setRegBikeModel(e.target.value as 'F77' | 'X47')}
+                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none cursor-pointer"
+                        required
+                      >
+                        <option value="F77">F77</option>
+                        <option value="X47">X47</option>
+                      </select>
+                    </div>
+
+                    {/* 2. Bike Registration Number */}
+                    <div>
+                      <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
+                        Registration Number <span className="text-[#EF4444]">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={regBikeNumber}
+                        onChange={e => setRegBikeNumber(e.target.value.toUpperCase())}
+                        placeholder="e.g. KA 01 EV 1234"
+                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm font-mono text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {/* 3. Blood Group */}
+                    <div>
+                      <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
+                        Blood Group <span className="text-[#EF4444]">*</span>
+                      </label>
+                      <select
+                        value={regBloodGroup}
+                        onChange={e => setRegBloodGroup(e.target.value as BloodGroup)}
+                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none cursor-pointer"
+                        required
+                      >
+                        {VALID_BLOOD_GROUPS.map(bg => (
+                          <option key={bg} value={bg}>
+                            {bg}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 4. Emergency Contact Name */}
+                    <div>
+                      <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
+                        Emergency Contact Name <span className="text-[#EF4444]">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={regEmergencyName}
+                        onChange={e => setRegEmergencyName(e.target.value)}
+                        placeholder="Primary contact name"
+                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm font-mono text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none"
+                        required
+                      />
+                    </div>
+
+                    {/* 5. Emergency Contact Phone */}
+                    <div>
+                      <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
+                        Emergency Phone <span className="text-[#EF4444]">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={regEmergencyPhone}
+                        onChange={e => setRegEmergencyPhone(e.target.value)}
+                        placeholder="+91 98765 43210"
+                        className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm font-mono text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* COMPULSORY COMMUNITY CHARGING LOCATION QUESTION FOR CUSTOMERS */}
                 {regAccountType === 'customer' && (
-                  <div className="space-y-4 pt-2 border-t border-[#1E2D42]">
-                    <div className="text-xs font-mono font-bold text-[#E8AA45] uppercase tracking-wider flex items-center gap-1.5">
-                      <Zap className="w-4 h-4 text-[#E8AA45]" />
-                      Ultraviolette Motorcycle Ownership Credentials
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Bike Number */}
-                      <div>
-                        <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
-                          Bike Registration Number <span className="text-[#EF4444]">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={regBikeNumber}
-                          onChange={e => setRegBikeNumber(e.target.value.toUpperCase())}
-                          placeholder="e.g. KA 01 EV 1234"
-                          className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm font-mono text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none"
-                          required
-                        />
+                  <div className="p-4 rounded-xl border border-[#E8AA45]/50 bg-[#121722]/90 space-y-3 shadow-[0_4px_16px_rgba(0,0,0,0.5)]">
+                    <div className="space-y-1">
+                      <div className="text-xs sm:text-sm font-mono font-bold text-[#F8FAFC] flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-[#E8AA45]" />
+                        Use your location as charging station? <span className="text-[#EF4444]">*</span>
                       </div>
-
-                      {/* Bike Model: Strictly F77, X47, X47 Venom */}
-                      <div>
-                        <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
-                          Bike Model <span className="text-[#EF4444]">*</span>
-                        </label>
-                        <select
-                          id="select-bike-model"
-                          value={regBikeModel}
-                          onChange={e => setRegBikeModel(e.target.value as any)}
-                          className="w-full px-3.5 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-sm font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none cursor-pointer"
-                          required
-                        >
-                          <option value="F77">F77</option>
-                          <option value="X47">X47</option>
-                        </select>
+                      <div className="text-[11px] sm:text-xs text-[#E8AA45] font-sans font-medium leading-relaxed">
+                        Note: Help squadron fly more without charging anxiety (provide city or town name).
                       </div>
                     </div>
 
-                    {/* COMPULSORY COMMUNITY CHARGING LOCATION QUESTION */}
-                    <div className="p-4 rounded-xl border border-[#E8AA45]/50 bg-[#121722]/90 space-y-3 shadow-[0_4px_16px_rgba(0,0,0,0.5)]">
-                      <div className="space-y-1">
-                        <div className="text-xs sm:text-sm font-mono font-bold text-[#F8FAFC] flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-[#E8AA45]" />
-                          Use your location as charging station? <span className="text-[#EF4444]">*</span>
+                    {/* YES or NO Buttons */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <button
+                        type="button"
+                        id="btn-opt-in-yes"
+                        onClick={() => {
+                          setChargingStationOptIn('yes');
+                          playTacticalClick();
+                        }}
+                        className={`py-2.5 px-4 rounded-lg border font-mono text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          chargingStationOptIn === 'yes'
+                            ? 'bg-[#10B981] border-[#10B981] text-[#0A0D14] shadow-[0_0_15px_rgba(16,185,129,0.35)]'
+                            : 'bg-[#070B12] border-[#232F42] text-[#94A3B8] hover:text-[#F8FAFC]'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>YES</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        id="btn-opt-in-no"
+                        onClick={() => {
+                          setChargingStationOptIn('no');
+                          playTacticalClick();
+                        }}
+                        className={`py-2.5 px-4 rounded-lg border font-mono text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          chargingStationOptIn === 'no'
+                            ? 'bg-[#E8AA45]/20 border-[#E8AA45] text-[#F8FAFC]'
+                            : 'bg-[#070B12] border-[#232F42] text-[#94A3B8] hover:text-[#F8FAFC]'
+                        }`}
+                      >
+                        <span>NO (Skip Charging Share)</span>
+                      </button>
+                    </div>
+
+                    {/* IF YES: Compulsory Charger Details & Town Search */}
+                    {chargingStationOptIn === 'yes' && (
+                      <div className="pt-3 border-t border-[#232F42] space-y-3.5 animate-fadeIn">
+                        <div className="p-2.5 rounded-lg bg-[#38BDF8]/10 border border-[#38BDF8]/30 text-[#BAE6FD] text-xs font-mono">
+                          <strong>Confidentiality Guarantee:</strong> Please provide only your city or town name.
                         </div>
-                        <div className="text-[11px] sm:text-xs text-[#E8AA45] font-sans font-medium leading-relaxed">
-                          Note: Help squadron and yourself to fly more without any charging anxiety (only provide your city or town name).
-                        </div>
-                      </div>
 
-                      {/* YES or NO Buttons */}
-                      <div className="grid grid-cols-2 gap-3 pt-1">
-                        <button
-                          type="button"
-                          id="btn-opt-in-yes"
-                          onClick={() => {
-                            setChargingStationOptIn('yes');
-                            playTacticalClick();
-                          }}
-                          className={`py-2.5 px-4 rounded-lg border font-mono text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                            chargingStationOptIn === 'yes'
-                              ? 'bg-[#10B981] border-[#10B981] text-[#0A0D14] shadow-[0_0_15px_rgba(16,185,129,0.35)]'
-                              : 'bg-[#070B12] border-[#232F42] text-[#94A3B8] hover:text-[#F8FAFC]'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>YES</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          id="btn-opt-in-no"
-                          onClick={() => {
-                            setChargingStationOptIn('no');
-                            playTacticalClick();
-                          }}
-                          className={`py-2.5 px-4 rounded-lg border font-mono text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                            chargingStationOptIn === 'no'
-                              ? 'bg-[#E8AA45]/20 border-[#E8AA45] text-[#F8FAFC]'
-                              : 'bg-[#070B12] border-[#232F42] text-[#94A3B8] hover:text-[#F8FAFC]'
-                          }`}
-                        >
-                          <span>NO (Skip Charging Share)</span>
-                        </button>
-                      </div>
-
-                      {/* IF YES: Compulsory Charger Details & Town Search */}
-                      {chargingStationOptIn === 'yes' && (
-                        <div className="pt-3 border-t border-[#232F42] space-y-3.5 animate-fadeIn">
-                          {/* Confidentiality Notice */}
-                          <div className="p-2.5 rounded-lg bg-[#38BDF8]/10 border border-[#38BDF8]/30 text-[#BAE6FD] text-xs font-mono">
-                            <strong>Confidentiality Guarantee:</strong> Please provide only your city or town name to maintain confidentiality. Your precise home address will never be shared publicly.
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Free or Charged */}
+                          <div>
+                            <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
+                              Charging Mode (Free or Charged) <span className="text-[#EF4444]">*</span>
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                id="btn-pricing-free"
+                                onClick={() => setChargerPricing('Free')}
+                                className={`py-2 px-3 rounded-lg border font-mono text-xs font-bold transition-colors cursor-pointer ${
+                                  chargerPricing === 'Free'
+                                    ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981]'
+                                    : 'bg-[#070B12] border-[#232F42] text-[#94A3B8]'
+                                }`}
+                              >
+                                Free
+                              </button>
+                              <button
+                                type="button"
+                                id="btn-pricing-charged"
+                                onClick={() => setChargerPricing('Charged')}
+                                className={`py-2 px-3 rounded-lg border font-mono text-xs font-bold transition-colors cursor-pointer ${
+                                  chargerPricing === 'Charged'
+                                    ? 'bg-[#E8AA45]/20 border-[#E8AA45] text-[#E8AA45]'
+                                    : 'bg-[#070B12] border-[#232F42] text-[#94A3B8]'
+                                }`}
+                              >
+                                Charged (Paid)
+                              </button>
+                            </div>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {/* Free or Charged */}
-                            <div>
-                              <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
-                                Charging Mode (Free or Charged) <span className="text-[#EF4444]">*</span>
-                              </label>
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  id="btn-pricing-free"
-                                  onClick={() => setChargerPricing('Free')}
-                                  className={`py-2 px-3 rounded-lg border font-mono text-xs font-bold transition-colors cursor-pointer ${
-                                    chargerPricing === 'Free'
-                                      ? 'bg-[#10B981]/20 border-[#10B981] text-[#10B981]'
-                                      : 'bg-[#070B12] border-[#232F42] text-[#94A3B8]'
-                                  }`}
-                                >
-                                  Free
-                                </button>
-                                <button
-                                  type="button"
-                                  id="btn-pricing-charged"
-                                  onClick={() => setChargerPricing('Charged')}
-                                  className={`py-2 px-3 rounded-lg border font-mono text-xs font-bold transition-colors cursor-pointer ${
-                                    chargerPricing === 'Charged'
-                                      ? 'bg-[#E8AA45]/20 border-[#E8AA45] text-[#E8AA45]'
-                                      : 'bg-[#070B12] border-[#232F42] text-[#94A3B8]'
-                                  }`}
-                                >
-                                  Charged (Paid)
-                                </button>
-                              </div>
-                            </div>
+                          {/* Charger Type */}
+                          <div>
+                            <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
+                              Charger Type <span className="text-[#EF4444]">*</span>
+                            </label>
+                            <select
+                              id="select-charger-type"
+                              value={chargerType}
+                              onChange={e => setChargerType(e.target.value as any)}
+                              className="w-full px-3 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-xs font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none cursor-pointer"
+                            >
+                              <option value="Only socket">Only socket</option>
+                              <option value="Standard charger">Standard charger</option>
+                              <option value="Boost charger">Boost charger</option>
+                            </select>
+                          </div>
+                        </div>
 
-                            {/* Charger Type: Only socket, Standard charger, Boost charger */}
+                        {/* Cost of Charging (shown when Charged is selected) */}
+                        {chargerPricing === 'Charged' && (
+                          <div className="p-3 rounded-lg bg-[#E8AA45]/10 border border-[#E8AA45]/35 grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fadeIn">
                             <div>
-                              <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
-                                Charger Type <span className="text-[#EF4444]">*</span>
+                              <label
+                                htmlFor="input-charger-cost-amount"
+                                className="block text-xs font-mono text-[#FDE68A] mb-1 font-semibold"
+                              >
+                                Cost of Charging (₹) <span className="text-[#EF4444]">*</span>
+                              </label>
+                              <input
+                                id="input-charger-cost-amount"
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={chargerCostAmount}
+                                onChange={e => setChargerCostAmount(e.target.value)}
+                                placeholder="e.g. 15"
+                                className="w-full px-3 py-2 bg-[#070B12] border border-[#E8AA45]/50 rounded-lg text-xs font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label
+                                htmlFor="select-charger-cost-unit"
+                                className="block text-xs font-mono text-[#FDE68A] mb-1 font-semibold"
+                              >
+                                Billing Rate Unit <span className="text-[#EF4444]">*</span>
                               </label>
                               <select
-                                id="select-charger-type"
-                                value={chargerType}
-                                onChange={e => setChargerType(e.target.value as any)}
-                                className="w-full px-3 py-2 bg-[#070B12] border border-[#232F42] rounded-lg text-xs font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none cursor-pointer"
+                                id="select-charger-cost-unit"
+                                value={chargerCostUnit}
+                                onChange={e => setChargerCostUnit(e.target.value as any)}
+                                className="w-full px-3 py-2 bg-[#070B12] border border-[#E8AA45]/50 rounded-lg text-xs font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none cursor-pointer"
                               >
-                                <option value="Only socket">Only socket</option>
-                                <option value="Standard charger">Standard charger</option>
-                                <option value="Boost charger">Boost charger</option>
+                                <option value="per kWh">₹ per kWh</option>
+                                <option value="per hour">₹ per hour</option>
+                                <option value="per session">₹ per session (Flat)</option>
                               </select>
                             </div>
                           </div>
+                        )}
 
-                          {/* Cost of Charging (shown when Charged is selected) */}
-                          {chargerPricing === 'Charged' && (
-                            <div className="p-3 rounded-lg bg-[#E8AA45]/10 border border-[#E8AA45]/35 grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fadeIn">
-                              <div>
-                                <label
-                                  htmlFor="input-charger-cost-amount"
-                                  className="block text-xs font-mono text-[#FDE68A] mb-1 font-semibold"
-                                >
-                                  Cost of Charging (₹) <span className="text-[#EF4444]">*</span>
-                                </label>
-                                <input
-                                  id="input-charger-cost-amount"
-                                  type="number"
-                                  min="1"
-                                  step="1"
-                                  value={chargerCostAmount}
-                                  onChange={e => setChargerCostAmount(e.target.value)}
-                                  placeholder="e.g. 15"
-                                  className="w-full px-3 py-2 bg-[#070B12] border border-[#E8AA45]/50 rounded-lg text-xs font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none"
-                                />
-                              </div>
-                              <div>
-                                <label
-                                  htmlFor="select-charger-cost-unit"
-                                  className="block text-xs font-mono text-[#FDE68A] mb-1 font-semibold"
-                                >
-                                  Billing Rate Unit <span className="text-[#EF4444]">*</span>
-                                </label>
-                                <select
-                                  id="select-charger-cost-unit"
-                                  value={chargerCostUnit}
-                                  onChange={e => setChargerCostUnit(e.target.value as any)}
-                                  className="w-full px-3 py-2 bg-[#070B12] border border-[#E8AA45]/50 rounded-lg text-xs font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none cursor-pointer"
-                                >
-                                  <option value="per kWh">₹ per kWh</option>
-                                  <option value="per hour">₹ per hour</option>
-                                  <option value="per session">₹ per session (Flat)</option>
-                                </select>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Availability Time & Schedule */}
-                          <div className="p-3 rounded-lg bg-[#070B12] border border-[#232F42] space-y-2.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-mono text-[#E2E8F0] font-semibold">
-                                Charger Availability Time &amp; Schedule <span className="text-[#EF4444]">*</span>
-                              </span>
-                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#10B981]/15 border border-[#10B981]/40 text-[#34D399]">
-                                RESERVATION REQUIRED
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                              <div>
-                                <label
-                                  htmlFor="input-charger-avail-start"
-                                  className="block text-[11px] font-mono text-[#94A3B8] mb-1"
-                                >
-                                  Start Time
-                                </label>
-                                <input
-                                  id="input-charger-avail-start"
-                                  type="time"
-                                  value={chargerAvailStart}
-                                  disabled={chargerAvailDays === '24/7 Anytime'}
-                                  onChange={e => setChargerAvailStart(e.target.value)}
-                                  className="w-full px-2.5 py-2 bg-[#0B101B] border border-[#232F42] rounded-lg text-xs font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none disabled:opacity-50"
-                                />
-                              </div>
-                              <div>
-                                <label
-                                  htmlFor="input-charger-avail-end"
-                                  className="block text-[11px] font-mono text-[#94A3B8] mb-1"
-                                >
-                                  End Time
-                                </label>
-                                <input
-                                  id="input-charger-avail-end"
-                                  type="time"
-                                  value={chargerAvailEnd}
-                                  disabled={chargerAvailDays === '24/7 Anytime'}
-                                  onChange={e => setChargerAvailEnd(e.target.value)}
-                                  className="w-full px-2.5 py-2 bg-[#0B101B] border border-[#232F42] rounded-lg text-xs font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none disabled:opacity-50"
-                                />
-                              </div>
-                              <div>
-                                <label
-                                  htmlFor="select-charger-avail-days"
-                                  className="block text-[11px] font-mono text-[#94A3B8] mb-1"
-                                >
-                                  Available Days
-                                </label>
-                                <select
-                                  id="select-charger-avail-days"
-                                  value={chargerAvailDays}
-                                  onChange={e => setChargerAvailDays(e.target.value)}
-                                  className="w-full px-2.5 py-2 bg-[#0B101B] border border-[#232F42] rounded-lg text-xs font-mono text-[#F8FAFC] focus:border-[#E8AA45] focus:outline-none cursor-pointer"
-                                >
-                                  <option value="Daily">Daily</option>
-                                  <option value="24/7 Anytime">24/7 Anytime</option>
-                                  <option value="Weekdays Only">Weekdays Only</option>
-                                  <option value="Weekends Only">Weekends Only</option>
-                                </select>
-                              </div>
-                            </div>
-                            <p className="text-[11px] font-mono text-[#94A3B8]">
-                              Any rider who wants to charge at your Community Provided Charger must request a time-slot reservation with you first.
-                            </p>
-                          </div>
-
-                          {/* Town Search Bar with Live All-India Google Maps-style Autocomplete */}
-                          <div ref={townSearchContainerRef} className="relative">
-                            <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
-                              select your locality ( please choose your locality not major city or town , ex: whitefield , shivajinagar , thrissur etc ) <span className="text-[#EF4444]">*</span>
-                            </label>
-                            <div className="relative">
-                              <input
-                                type="text"
-                                id="input-search-town"
-                                value={chargerTownQuery}
-                                onChange={e => {
-                                  const val = e.target.value;
+                        {/* Town Search Bar */}
+                        <div ref={townSearchContainerRef} className="relative">
+                          <label className="block text-xs font-mono text-[#CBD5E1] mb-1 font-semibold">
+                            Select your locality (e.g. Whitefield, Shivajinagar, Thrissur, etc.) <span className="text-[#EF4444]">*</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              id="input-search-town"
+                              value={chargerTownQuery}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setSelectedTown(null);
+                                setChargerTownQuery(val);
+                                setShowTownSuggestions(true);
+                              }}
+                              onFocus={() => setShowTownSuggestions(true)}
+                              placeholder="Type any city, town, or location across India..."
+                              className="w-full pl-9 pr-8 py-2.5 bg-[#070B12] border border-[#E8AA45]/60 rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none font-mono"
+                            />
+                            <Search className="w-4 h-4 text-[#E8AA45] absolute left-3 top-3 pointer-events-none" />
+                            {loadingTownSearch ? (
+                              <Loader2 className="w-4 h-4 text-[#E8AA45] animate-spin absolute right-3 top-3" />
+                            ) : chargerTownQuery ? (
+                              <button
+                                type="button"
+                                onClick={() => {
                                   setSelectedTown(null);
-                                  setChargerTownQuery(val);
+                                  setChargerTownQuery('');
                                   setShowTownSuggestions(true);
                                 }}
-                                onFocus={() => setShowTownSuggestions(true)}
-                                placeholder="Type any city, town, or location across India..."
-                                className="w-full pl-9 pr-8 py-2.5 bg-[#070B12] border border-[#E8AA45]/60 rounded-lg text-sm text-[#F8FAFC] placeholder-[#64748B] focus:border-[#E8AA45] focus:outline-none"
-                              />
-                              <Search className="w-4 h-4 text-[#E8AA45] absolute left-3 top-3 pointer-events-none" />
-                              {loadingTownSearch ? (
-                                <Loader2 className="w-4 h-4 text-[#E8AA45] animate-spin absolute right-3 top-3" />
-                              ) : chargerTownQuery ? (
+                                className="absolute right-3 top-3 text-[#64748B] hover:text-[#CBD5E1]"
+                                title="Clear location search"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            ) : null}
+                          </div>
+
+                          {/* Autocomplete Dropdown List */}
+                          {showTownSuggestions && (
+                            <div className="absolute left-0 right-0 top-full mt-1 max-h-60 overflow-y-auto rounded-lg bg-[#070B12] border border-[#232F42] shadow-2xl z-30 divide-y divide-[#1A2638]">
+                              {townSuggestions.map(p => (
                                 <button
+                                  key={p.id}
                                   type="button"
                                   onClick={() => {
-                                    setSelectedTown(null);
-                                    setChargerTownQuery('');
-                                    setShowTownSuggestions(true);
+                                    setSelectedTown(p);
+                                    setChargerTownQuery(p.name);
+                                    setRegCity(p.name);
+                                    setShowTownSuggestions(false);
+                                    playTacticalClick();
                                   }}
-                                  className="absolute right-3 top-3 text-[#64748B] hover:text-[#CBD5E1]"
-                                  title="Clear location search"
+                                  className="w-full px-3 py-2 text-left hover:bg-[#131C2A] transition-colors flex items-center justify-between text-xs cursor-pointer"
                                 >
-                                  <X className="w-4 h-4" />
+                                  <div className="min-w-0 pr-2">
+                                    <div className="font-bold text-[#F8FAFC] flex items-center gap-1.5 truncate">
+                                      <MapPin className="w-3.5 h-3.5 text-[#E8AA45] shrink-0" />
+                                      <span className="truncate">{p.name}</span>
+                                    </div>
+                                    <div className="text-[10px] text-[#94A3B8] pl-5 truncate">
+                                      {p.locality || p.address}
+                                    </div>
+                                  </div>
+                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1A2638] text-[#38BDF8] shrink-0">
+                                    Select
+                                  </span>
                                 </button>
-                              ) : null}
-                            </div>
+                              ))}
 
-                            {/* Autocomplete Dropdown List */}
-                            {showTownSuggestions && (
-                              <div className="absolute left-0 right-0 top-full mt-1 max-h-60 overflow-y-auto rounded-lg bg-[#070B12] border border-[#232F42] shadow-2xl z-30 divide-y divide-[#1A2638]">
-                                {townSuggestions.map(p => (
+                              {chargerTownQuery.trim().length > 0 &&
+                                !townSuggestions.some(
+                                  s => s.name.toLowerCase() === chargerTownQuery.trim().toLowerCase()
+                                ) && (
                                   <button
-                                    key={p.id}
                                     type="button"
                                     onClick={() => {
-                                      setSelectedTown(p);
-                                      setChargerTownQuery(p.name);
-                                      setRegCity(p.name);
+                                      const customTownName = chargerTownQuery.trim();
+                                      const fallbackMatch = townSuggestions[0];
+                                      const customSuggestion: PlaceSuggestion = {
+                                        id: `custom_town_${Date.now()}`,
+                                        name: customTownName,
+                                        locality: fallbackMatch?.locality || 'India',
+                                        address: `${customTownName}, India`,
+                                        category: 'City / Town',
+                                        latitude: fallbackMatch?.latitude || 12.9716,
+                                        longitude: fallbackMatch?.longitude || 77.5946
+                                      };
+                                      setSelectedTown(customSuggestion);
+                                      setChargerTownQuery(customTownName);
+                                      setRegCity(customTownName);
                                       setShowTownSuggestions(false);
                                       playTacticalClick();
                                     }}
-                                    className="w-full px-3 py-2 text-left hover:bg-[#131C2A] transition-colors flex items-center justify-between text-xs cursor-pointer"
+                                    className="w-full px-3 py-2.5 text-left bg-[#0D1524] hover:bg-[#131C2A] transition-colors flex items-center justify-between text-xs cursor-pointer"
                                   >
-                                    <div className="min-w-0 pr-2">
-                                      <div className="font-bold text-[#F8FAFC] flex items-center gap-1.5 truncate">
-                                        <MapPin className="w-3.5 h-3.5 text-[#E8AA45] shrink-0" />
-                                        <span className="truncate">{p.name}</span>
-                                      </div>
-                                      <div className="text-[10px] text-[#94A3B8] pl-5 truncate">
-                                        {p.locality || p.address}
-                                      </div>
+                                    <div className="flex items-center gap-1.5 text-[#E8AA45] font-mono">
+                                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                                      <span>Use &ldquo;{chargerTownQuery.trim()}&rdquo; as Location</span>
                                     </div>
-                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1A2638] text-[#38BDF8] shrink-0">
-                                      Select
-                                    </span>
+                                    <span className="text-[10px] font-mono text-[#38BDF8]">Select Location</span>
                                   </button>
-                                ))}
+                                )}
+                            </div>
+                          )}
 
-                                {chargerTownQuery.trim().length > 0 &&
-                                  !townSuggestions.some(
-                                    s => s.name.toLowerCase() === chargerTownQuery.trim().toLowerCase()
-                                  ) && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const customTownName = chargerTownQuery.trim();
-                                        const fallbackMatch = townSuggestions[0];
-                                        const customSuggestion: PlaceSuggestion = {
-                                          id: `custom_town_${Date.now()}`,
-                                          name: customTownName,
-                                          locality: fallbackMatch?.locality || 'India',
-                                          address: `${customTownName}, India`,
-                                          category: 'City / Town',
-                                          latitude: fallbackMatch?.latitude || 12.9716,
-                                          longitude: fallbackMatch?.longitude || 77.5946
-                                        };
-                                        setSelectedTown(customSuggestion);
-                                        setChargerTownQuery(customTownName);
-                                        setRegCity(customTownName);
-                                        setShowTownSuggestions(false);
-                                        playTacticalClick();
-                                      }}
-                                      className="w-full px-3 py-2.5 text-left bg-[#0D1524] hover:bg-[#131C2A] transition-colors flex items-center justify-between text-xs cursor-pointer"
-                                    >
-                                      <div className="flex items-center gap-1.5 text-[#E8AA45] font-mono">
-                                        <MapPin className="w-3.5 h-3.5 shrink-0" />
-                                        <span>Use &ldquo;{chargerTownQuery.trim()}&rdquo; as Location</span>
-                                      </div>
-                                      <span className="text-[10px] font-mono text-[#38BDF8]">Select Location</span>
-                                    </button>
-                                  )}
-                              </div>
-                            )}
-
-                            {(selectedTown || chargerTownQuery.trim()) && (
-                              <div className="mt-2 text-[11px] font-mono text-[#10B981] flex items-center gap-1.5">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
-                                <span>
-                                  Selected: {selectedTown ? selectedTown.name : chargerTownQuery.trim()}
-                                  {selectedTown?.locality ? `, ${selectedTown.locality}` : ''}
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                          {(selectedTown || chargerTownQuery.trim()) && (
+                            <div className="mt-2 text-[11px] font-mono text-[#10B981] flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                              <span>
+                                Selected: {selectedTown ? selectedTown.name : chargerTownQuery.trim()}
+                                {selectedTown?.locality ? `, ${selectedTown.locality}` : ''}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )}
-
 
                 {/* Submit Registration Button */}
                 <div className="pt-3">

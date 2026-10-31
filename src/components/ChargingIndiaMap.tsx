@@ -20,7 +20,10 @@ import {
   Phone,
   User as UserIcon,
   Calendar,
-  Clock
+  Clock,
+  Maximize2,
+  Minimize2,
+  ArrowLeft
 } from 'lucide-react';
 import { ChargingStation, ChargerPlugType, User } from '../types';
 import {
@@ -28,6 +31,8 @@ import {
   CHARGER_PLUG_TYPE_SPECS,
   canModifyChargerRecord,
   buildChargerNavigationUrl,
+  buildGoogleMapsUrl,
+  openInGoogleMaps,
   calculateDistanceKm,
   ChargerCluster,
   PlaceSuggestion,
@@ -123,6 +128,34 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
   const [currentZoom, setCurrentZoom] = useState<number>(DEFAULT_INDIA_ZOOM);
   const [activeRegionPreset, setActiveRegionPreset] = useState<string>('india');
   const [typeFilter, setTypeFilter] = useState<'ALL' | ChargerPlugType>('ALL');
+  const [isFullNavigation, setIsFullNavigation] = useState(false);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const delays = [0, 50, 100, 200, 300, 500];
+    const timers = delays.map(d =>
+      setTimeout(() => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize({ pan: false });
+          if (isFullNavigation && selectedStation) {
+            mapInstanceRef.current.panTo([selectedStation.latitude, selectedStation.longitude], { animate: true });
+          }
+        }
+      }, d)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [isFullNavigation, selectedStation]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullNavigation) {
+        setIsFullNavigation(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullNavigation]);
 
   // Google Maps-style place & charger search on the map
   const [mapSearchQuery, setMapSearchQuery] = useState('');
@@ -189,12 +222,26 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
       setCurrentZoom(map.getZoom());
     });
 
+    // Observe container resizes dynamically to prevent map canvas blackout during layout transitions
+    let resizeObserver: ResizeObserver | null = null;
+    if (mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize({ pan: false });
+        }
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     // Ensure proper sizing after mount
     setTimeout(() => {
-      map.invalidateSize();
+      map.invalidateSize({ pan: false });
     }, 150);
 
     return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       map.remove();
       mapInstanceRef.current = null;
       markersLayerRef.current = null;
@@ -805,16 +852,68 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
 
       {/* Full-Width Geographical Map Canvas followed immediately below by ALL Selected Charger Details */}
       <div className="space-y-4">
-        {/* 1. Full-Width Map Canvas */}
-        <div className="relative rounded-lg overflow-hidden border border-[#282D34] bg-[#08090B]">
+        {/* 1. Full-Width Map Canvas (Switches to Fixed Full-Screen in View Full Navigation mode) */}
+        <div
+          data-testid={isFullNavigation ? 'charging-map-fullscreen-overlay' : undefined}
+          className={`transition-all duration-200 ${
+            isFullNavigation
+              ? 'fixed inset-0 z-[9999] bg-[#08090B] flex flex-col w-screen h-screen'
+              : 'relative rounded-lg overflow-hidden border border-[#282D34] bg-[#08090B]'
+          }`}
+          style={isFullNavigation ? { paddingTop: 'max(env(safe-area-inset-top), 12px)' } : undefined}
+        >
+          {/* Full Navigation HUD Header Bar (Only visible in Full Navigation mode) */}
+          {isFullNavigation && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#0D1015] border-b border-[#282D34] shrink-0 z-30">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  data-testid="exit-full-navigation-btn"
+                  onClick={() => {
+                    playTacticalClick();
+                    setIsFullNavigation(false);
+                  }}
+                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-[#191D22] hover:bg-[#252A30] border border-[#E8AA45] text-[#E8AA45] hover:text-[#F1F3F5] font-mono font-bold text-xs uppercase transition-all cursor-pointer shadow-md"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Exit Full Navigation</span>
+                </button>
+                <div className="hidden sm:flex flex-col">
+                  <span className="font-mono font-bold text-xs text-[#F1F3F5] tracking-wide">
+                    FULL MAP NAVIGATION & CHARGER EXPLORER
+                  </span>
+                  <span className="font-mono text-[10px] text-[#A0A7B0]">
+                    {visibleStations.length} STATIONS LOADED • TAP ANY CHARGER TO INSPECT
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Regional Jumps */}
+              <div className="flex items-center gap-1.5 text-xs font-mono overflow-x-auto">
+                {REGION_PRESETS.map(preset => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleFlyToPreset(preset)}
+                    className="px-2.5 py-1 rounded bg-[#13161A] hover:bg-[#252A30] border border-[#414851] text-[#D4D8DE] hover:text-[#F1F3F5] text-[10px] font-bold uppercase whitespace-nowrap transition-colors"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div
             ref={mapContainerRef}
             data-testid="leaflet-charging-map"
-            className="w-full h-[380px] sm:h-[480px] z-10"
+            className={`w-full z-10 transition-all ${
+              isFullNavigation ? 'h-full flex-1' : 'h-[380px] sm:h-[480px]'
+            }`}
           />
 
           {/* Legend Overlay */}
-          <div className="bg-[#13161A]/95 border-t border-[#282D34] px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[10px]">
+          <div className="bg-[#13161A]/95 border-t border-[#282D34] px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[10px] z-20">
             <div className="flex flex-wrap items-center gap-3">
               <span className="flex items-center gap-1 text-[#42B883]">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#42B883] inline-block" />
@@ -841,6 +940,143 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
             </div>
             <span className="text-[#707883]">ZOOM: {currentZoom}x</span>
           </div>
+
+          {/* Full Navigation Interactive Slide-Up Charger Details Drawer */}
+          {isFullNavigation && selectedStation && (
+            <div
+              data-testid="fullscreen-charger-details-drawer"
+              className="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-md max-h-[80vh] overflow-y-auto z-[1000] bg-[#0D1117]/95 backdrop-blur-md border-2 border-[#E8AA45] rounded-xl p-4 sm:p-5 shadow-2xl space-y-3 font-mono text-xs"
+            >
+              {/* Header with Badges & Close Button */}
+              <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-[#282D34]">
+                <div>
+                  <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                    <span className="px-2 py-0.5 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40 text-[9px] font-bold uppercase">
+                      STATION DETAILS
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-[#42B883]/20 text-[#42B883] border border-[#42B883]/40 text-[9px] font-bold uppercase flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      {selectedStation.operatingStatus.toUpperCase()}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded border text-[9px] font-bold uppercase ${selectedBadgeStyle.bg} ${selectedBadgeStyle.text} ${selectedBadgeStyle.border}`}>
+                      {effectiveSelectedType}
+                    </span>
+                  </div>
+                  <h3 className="text-sm sm:text-base font-bold text-[#F1F3F5] leading-snug">
+                    {selectedStation.name}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  data-testid="close-fullscreen-drawer-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    playTacticalClick();
+                    onSelectStation(null as any);
+                  }}
+                  className="p-1 rounded bg-[#191D22] hover:bg-[#252A30] text-[#A0A7B0] hover:text-white cursor-pointer"
+                  title="Close station details"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Full Address */}
+              <div className="text-[11px] text-[#A0A7B0] flex items-start gap-1.5 font-sans">
+                <MapPin className="w-3.5 h-3.5 text-[#E8AA45] shrink-0 mt-0.5" />
+                <span>{selectedStation.location}</span>
+              </div>
+
+              {/* Specifications Grid */}
+              <div className="grid grid-cols-2 gap-2 text-[10px] p-2.5 rounded bg-[#13171F] border border-[#282D34]">
+                <div>
+                  <span className="text-[#707883] block">CHARGER SOURCE</span>
+                  <span className="font-bold text-[#F1F3F5]">{selectedStation.chargerSource || (selectedStation.isSupernova ? 'Supernova' : 'Community')}</span>
+                </div>
+                <div>
+                  <span className="text-[#707883] block">POWER OUTPUT</span>
+                  <span className="font-bold text-[#42B883]">{selectedStation.powerOutputKw} kW</span>
+                </div>
+                <div>
+                  <span className="text-[#707883] block">ACCESS CONDITIONS</span>
+                  <span className="font-bold text-[#D4D8DE]">{selectedStation.accessConditions}</span>
+                </div>
+                <div>
+                  <span className="text-[#707883] block">PRICING</span>
+                  <span className="font-bold text-[#E8AA45]">{selectedStation.pricing || 'Free / Commercial'}</span>
+                </div>
+              </div>
+
+              {/* Submitter & Host Contact */}
+              {selectedStation.submittedByPhone && (
+                <div className="flex items-center justify-between p-2 rounded bg-[#1A1811] border border-[#E8AA45]/30 text-[11px]">
+                  <span className="text-[#E8AA45] font-bold flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>{selectedStation.reportedBy || 'Pilot Host'}: {selectedStation.submittedByPhone}</span>
+                  </span>
+                  <a
+                    href={`tel:${selectedStation.submittedByPhone}`}
+                    className="px-2.5 py-1 rounded bg-[#E8AA45] text-[#08090B] font-bold text-[10px] uppercase hover:bg-white"
+                  >
+                    Call Host
+                  </a>
+                </div>
+              )}
+
+              {/* Vehicle Compatibility & User Notes */}
+              {selectedStation.userNotes && (
+                <div className="p-2 rounded bg-[#13171F] border border-[#282D34] text-[10px] text-[#A0A7B0]">
+                  <span className="text-[#D4D8DE] font-bold block mb-0.5">PILOT NOTES:</span>
+                  {selectedStation.userNotes}
+                </div>
+              )}
+
+              {/* Primary Action Button: Open in Google Maps */}
+              <a
+                href={buildChargerNavigationUrl(selectedStation, userOrigin)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => {
+                  e.preventDefault();
+                  playTacticalClick();
+                  openInGoogleMaps(
+                    buildChargerNavigationUrl(selectedStation, userOrigin),
+                    selectedStation.latitude,
+                    selectedStation.longitude,
+                    `${selectedStation.name} ${selectedStation.location}`
+                  );
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#42B883] hover:bg-[#349e6f] text-[#08090B] font-mono font-bold text-xs uppercase tracking-wider shadow-lg transition-colors cursor-pointer"
+              >
+                <NavIcon className="w-3.5 h-3.5" />
+                <span>Navigate in Google Maps</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* View Full Navigation Launch Bar (Positioned Right Below the Map) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-lg bg-[#0D1015] border border-[#282D34]">
+          <div className="flex items-center gap-2 text-xs font-mono text-[#D4D8DE]">
+            <Compass className="w-4 h-4 text-[#E8AA45] shrink-0 animate-spin" style={{ animationDuration: '16s' }} />
+            <div>
+              <span className="font-bold text-[#F1F3F5] uppercase">Immersive Full Screen Navigation</span>
+              <span className="hidden sm:inline text-[#707883] ml-2">• Explore all charging stations with full details</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="charging-map-view-full-navigation-btn"
+            onClick={() => {
+              playTacticalClick();
+              setIsFullNavigation(true);
+            }}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#191D22] to-[#252A30] hover:from-[#E8AA45] hover:to-[#E8AA45] text-[#E8AA45] hover:text-[#08090B] border border-[#E8AA45] font-mono font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer group"
+          >
+            <Maximize2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            <span>View Full Navigation</span>
+          </button>
         </div>
 
         {/* 2. IMMEDIATELY RIGHT BELOW THE MAP: Selected Charger Details Panel */}
@@ -1164,7 +1400,13 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
                     type="button"
                     onClick={() => {
                       playTacticalClick();
-                      setShowNavDrawer(prev => !prev);
+                      setShowNavDrawer(true);
+                      openInGoogleMaps(
+                        buildChargerNavigationUrl(selectedStation, userOrigin),
+                        selectedStation.latitude,
+                        selectedStation.longitude,
+                        `${selectedStation.name} ${selectedStation.location}`
+                      );
                     }}
                     className="flex-1 px-4 py-2.5 rounded bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow"
                   >
@@ -1183,9 +1425,11 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
                   </a>
 
                   <a
-                    href={`https://maps.google.com/?q=${encodeURIComponent(
-                      selectedStation.name + ' ' + selectedStation.location
-                    )}`}
+                    href={buildGoogleMapsUrl(
+                      selectedStation.latitude,
+                      selectedStation.longitude,
+                      `${selectedStation.name} ${selectedStation.location}`
+                    )}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-3.5 py-2.5 rounded bg-[#191D22] hover:bg-[#252A30] text-[#F1F3F5] border border-[#414851] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
@@ -1269,7 +1513,17 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
                         target="_blank"
                         rel="noopener noreferrer"
                         data-testid="launch-google-maps-directions"
-                        className="w-full sm:w-auto px-4 py-2 rounded bg-[#42B883] hover:bg-[#389d6f] text-[#08090B] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                        onClick={e => {
+                          e.preventDefault();
+                          playTacticalClick();
+                          openInGoogleMaps(
+                            buildChargerNavigationUrl(selectedStation, userOrigin),
+                            selectedStation.latitude,
+                            selectedStation.longitude,
+                            `${selectedStation.name} ${selectedStation.location}`
+                          );
+                        }}
+                        className="w-full sm:w-auto px-4 py-2 rounded bg-[#42B883] hover:bg-[#389d6f] text-[#08090B] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span>

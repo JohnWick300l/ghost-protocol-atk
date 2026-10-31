@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AudioProvider, useAudio } from './context/AudioContext';
 import { Navigation } from './components/Navigation';
@@ -46,10 +46,12 @@ import {
 import { initHybridDatabaseEngine, runHybridSyncCycle } from './utils/firebaseHybridSync';
 
 const AppContent: React.FC = () => {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading, authModalOpen, closeAuthModal } = useAuth();
   const { playTacticalClick, playChime, reducedMotion } = useAudio();
 
   const [tabHistory, setTabHistory] = useState<string[]>(['dashboard']);
+  const [showExitToast, setShowExitToast] = useState<boolean>(false);
+  const lastBackPressRef = useRef<number>(0);
 
   const [currentTab, setCurrentTabState] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -64,6 +66,26 @@ const AppContent: React.FC = () => {
     }
     return 'dashboard';
   });
+
+  // Initialize initial history entry
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const initialTab =
+        window.location.pathname === '/squadron-showdown'
+          ? 'squadron-showdown'
+          : params.get('route') || sessionStorage.getItem('ghost_protocol_active_tab') || 'dashboard';
+
+      window.history.replaceState(
+        { tab: initialTab, isRoot: initialTab === 'dashboard' },
+        '',
+        window.location.href
+      );
+    } catch {
+      // Ignore
+    }
+  }, []);
 
   const setCurrentTab = (tab: string, isBackAction = false) => {
     setCurrentTabState(prev => {
@@ -88,7 +110,7 @@ const AppContent: React.FC = () => {
                 url.searchParams.set('route', tab);
               }
             }
-            window.history.pushState({ tab }, '', url.toString());
+            window.history.pushState({ tab, isRoot: tab === 'dashboard' }, '', url.toString());
           }
         } catch {
           // Ignore storage or history errors
@@ -98,8 +120,35 @@ const AppContent: React.FC = () => {
     });
   };
 
+  const [jetEngineerTab, setJetEngineerTab] = useState<'ask' | 'train'>('ask');
+  const [jetEngineerModel, setJetEngineerModel] = useState<'F77' | 'X47' | 'Both'>('F77');
+  const [chargingMode, setChargingMode] = useState<'map' | 'autopilot'>('map');
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Pilot Welcome Screen state with cinematic take-off transition
+  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('welcome') === '1';
+    }
+    return false;
+  });
+  const [isTakingOff, setIsTakingOff] = useState<boolean>(false);
+
   const handleGoBack = () => {
     playTacticalClick();
+    if (searchOpen) {
+      setSearchOpen(false);
+      return;
+    }
+    if (authModalOpen) {
+      closeAuthModal();
+      return;
+    }
+    if (showWelcome) {
+      setShowWelcome(false);
+      return;
+    }
     if (tabHistory.length > 0 && tabHistory[tabHistory.length - 1] !== currentTab) {
       const prevTab = tabHistory[tabHistory.length - 1];
       setTabHistory(h => h.slice(0, h.length - 1));
@@ -111,38 +160,77 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const [jetEngineerTab, setJetEngineerTab] = useState<'ask' | 'train'>('ask');
-  const [jetEngineerModel, setJetEngineerModel] = useState<'F77' | 'X47' | 'Both'>('F77');
-  const [chargingMode, setChargingMode] = useState<'map' | 'autopilot'>('map');
-  const [searchOpen, setSearchOpen] = useState(false);
-
+  // Comprehensive Android Back-Button & Browser History popstate Handler
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
     const handlePopState = (e: PopStateEvent) => {
+      // 1. Close active overlays first
+      if (searchOpen) {
+        setSearchOpen(false);
+        return;
+      }
+      if (authModalOpen) {
+        closeAuthModal();
+        return;
+      }
+      if (showWelcome) {
+        setShowWelcome(false);
+        return;
+      }
+
+      // 2. Read target tab from history state or query params
       const stateTab = e.state?.tab;
       const params = new URLSearchParams(window.location.search);
       const fromPath = window.location.pathname === '/squadron-showdown' ? 'squadron-showdown' : null;
-      const nextTab = stateTab || fromPath || params.get('route') || 'dashboard';
-      setCurrentTabState(nextTab);
-      try {
-        sessionStorage.setItem('ghost_protocol_active_tab', nextTab);
-      } catch {
-        // Ignore storage errors
+      const targetTab = stateTab || fromPath || params.get('route');
+
+      if (targetTab && targetTab !== currentTab) {
+        setCurrentTabState(targetTab);
+        setTabHistory(h => (h.length > 0 ? h.slice(0, h.length - 1) : ['dashboard']));
+        try {
+          sessionStorage.setItem('ghost_protocol_active_tab', targetTab);
+        } catch {}
+        return;
+      }
+
+      // 3. If currently not on dashboard, fallback to dashboard
+      if (currentTab !== 'dashboard') {
+        setCurrentTabState('dashboard');
+        try {
+          sessionStorage.setItem('ghost_protocol_active_tab', 'dashboard');
+          const url = new URL(window.location.href);
+          url.pathname = '/';
+          url.searchParams.delete('route');
+          window.history.replaceState({ tab: 'dashboard', isRoot: true }, '', url.toString());
+        } catch {}
+        return;
+      }
+
+      // 4. We are on 'dashboard' (Root of the App).
+      // Handle Android Double-Tap Back to Exit
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) {
+        // Second back press within 2 seconds: allow native browser back / exit
+        setShowExitToast(false);
+      } else {
+        // First back press at root: catch back button, show toast notification, re-push root state
+        lastBackPressRef.current = now;
+        setShowExitToast(true);
+        setTimeout(() => setShowExitToast(false), 2200);
+
+        try {
+          const url = new URL(window.location.href);
+          url.pathname = '/';
+          url.searchParams.delete('route');
+          window.history.pushState({ tab: 'dashboard', isRoot: true }, '', url.toString());
+        } catch {}
       }
     };
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  // Pilot Welcome Screen state with cinematic take-off transition (accessible via Welcome Screen control or ?welcome=1)
-  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      return params.get('welcome') === '1';
-    }
-    return false;
-  });
-  const [isTakingOff, setIsTakingOff] = useState<boolean>(false);
+  }, [currentTab, searchOpen, authModalOpen, showWelcome, closeAuthModal]);
 
   const handleTakeOffStart = () => {
     setIsTakingOff(true);
@@ -639,6 +727,22 @@ const AppContent: React.FC = () => {
         onClose={() => setSearchOpen(false)}
         onNavigate={setCurrentTab}
       />
+
+      {/* Android Back-Press Exit Confirmation Toast */}
+      <AnimatePresence>
+        {showExitToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 rounded-xl bg-[#0D121D]/95 border border-[#38BDF8]/60 text-[#F8FAFC] font-mono text-xs font-bold tracking-wider shadow-[0_10px_30px_rgba(0,0,0,0.9)] backdrop-blur-md flex items-center gap-2.5 pointer-events-none"
+          >
+            <div className="w-2 h-2 rounded-full bg-[#38BDF8] animate-ping" />
+            <span>PRESS BACK AGAIN TO EXIT GHOST PROTOCOL</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Technical Footer */}
       <footer className="mt-auto border-t border-[#121B29] bg-[#010204] py-6 px-4 sm:px-6 text-xs font-mono text-[#64748B]">
