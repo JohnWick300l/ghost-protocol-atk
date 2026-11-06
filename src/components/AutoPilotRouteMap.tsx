@@ -21,7 +21,8 @@ import {
   type PlannedChargingStop,
   type PlannedPitStop,
   type EligibleChargerRecord,
-  type ChargerIntelligenceSummary
+  type ChargerIntelligenceSummary,
+  type EvaluatedAutoPilotRouteOption
 } from '../utils/autopilot';
 import {
   buildChargerNavigationUrl,
@@ -68,6 +69,9 @@ interface AutoPilotRouteMapProps {
   onAddManualStop: (stationId: string) => void;
   onRemoveStop: (stationId: string) => void;
   onRemovePitStop: (pitStopId: string) => void;
+  routeOptions?: EvaluatedAutoPilotRouteOption[];
+  selectedRouteId?: string;
+  onSelectRouteOption?: (routeId: string) => void;
 }
 
 function createEndpointIcon(kind: 'start' | 'dest'): L.DivIcon {
@@ -226,7 +230,10 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
   onSelectStop,
   onToggleReached,
   onToggleCharged,
-  onRemoveStop
+  onRemoveStop,
+  routeOptions = [],
+  selectedRouteId,
+  onSelectRouteOption
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -440,7 +447,54 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
 
     layerGroup.clearLayers();
 
-    // 1. Route Polyline (only when both startLocation and destination are confirmed)
+    // 1. Alternative Unselected Routes (drawn underneath so rider can compare & click to switch)
+    if (startLocation && destination && Array.isArray(routeOptions) && routeOptions.length > 1) {
+      routeOptions.forEach(opt => {
+        if (!opt || opt.id === selectedRouteId || !opt.polyline || opt.polyline.length < 2) {
+          return;
+        }
+        // Subtle glow backdrop for alternative route
+        L.polyline(opt.polyline, {
+          color: '#38BDF8',
+          weight: 6,
+          opacity: 0.16
+        }).addTo(layerGroup);
+
+        // Visible dashed cyan-slate alternative route line
+        const altLine = L.polyline(opt.polyline, {
+          color: '#38BDF8',
+          weight: 2.8,
+          opacity: 0.72,
+          dashArray: '7, 6'
+        });
+
+        // Wide invisible hit target for easy touch/click switching on map
+        const hitLine = L.polyline(opt.polyline, {
+          color: '#38BDF8',
+          weight: 18,
+          opacity: 0.01
+        });
+
+        const tooltipHtml = `<div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#0F172A;padding:2px 4px;">
+          <div style="font-weight:800;color:#0284C7;">${opt.shortLabel} (${opt.highwayBadge})</div>
+          <div style="font-weight:700;">${opt.distanceKm} km • ${opt.totalChargersOnRoute} Charger${opt.totalChargersOnRoute === 1 ? '' : 's'} on Route</div>
+          <div style="font-size:9px;color:#475569;">Click route line to switch</div>
+        </div>`;
+
+        altLine.bindTooltip(tooltipHtml, { sticky: true });
+        hitLine.bindTooltip(tooltipHtml, { sticky: true });
+
+        if (onSelectRouteOption) {
+          altLine.on('click', () => onSelectRouteOption(opt.id));
+          hitLine.on('click', () => onSelectRouteOption(opt.id));
+        }
+
+        altLine.addTo(layerGroup);
+        hitLine.addTo(layerGroup);
+      });
+    }
+
+    // 1b. Selected Active Route Polyline (only when both startLocation and destination are confirmed)
     if (startLocation && destination && routePolyline && routePolyline.length >= 2) {
       L.polyline(routePolyline, {
         color: '#FF5500',
@@ -450,8 +504,8 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
 
       L.polyline(routePolyline, {
         color: '#FF5500',
-        weight: 3.5,
-        opacity: 0.95
+        weight: 3.8,
+        opacity: 0.96
       }).addTo(layerGroup);
     }
 
@@ -583,7 +637,9 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
     chargingStops,
     pitStops,
     eligibleCorridorChargers,
-    activeStopId
+    activeStopId,
+    routeOptions,
+    selectedRouteId
   ]);
 
   // Fit bounds when route or endpoints change
@@ -592,7 +648,19 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
     if (!map) return;
 
     if (startLocation && destination && routePolyline && routePolyline.length >= 2) {
-      const bounds = L.latLngBounds(routePolyline.map(p => [p[0], p[1]] as [number, number]));
+      const allPoints: [number, number][] = routePolyline.map(
+        p => [p[0], p[1]] as [number, number]
+      );
+      if (Array.isArray(routeOptions) && routeOptions.length > 1) {
+        routeOptions.forEach(opt => {
+          if (opt && Array.isArray(opt.polyline)) {
+            opt.polyline.forEach(pt => {
+              allPoints.push([pt[0], pt[1]]);
+            });
+          }
+        });
+      }
+      const bounds = L.latLngBounds(allPoints);
       if (bounds.isValid()) {
         map.fitBounds(bounds, { padding: [44, 44], maxZoom: 12, animate: true });
       }
@@ -639,29 +707,27 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
       }`}
       style={isFullNavigation ? { paddingTop: 'max(env(safe-area-inset-top), 12px)' } : undefined}
     >
-      {/* Top Tactical HUD Bar */}
-      <div className="px-4 py-3 bg-[#0B0F18]/95 border-b border-slate-800/90 flex flex-wrap items-center justify-between gap-3 shrink-0 z-30">
-        <div className="flex items-center gap-2.5">
+      {/* Top Map Control Bar */}
+      <div className="px-3.5 py-2.5 bg-[#0B0F18]/95 border-b border-slate-800/90 flex flex-wrap items-center justify-between gap-2 shrink-0 z-30">
+        <div className="flex items-center gap-2">
           {isFullNavigation && (
             <button
               type="button"
               data-testid="exit-autopilot-full-navigation-btn"
               onClick={() => setIsFullNavigation(false)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-[#FF5500] text-[#FF5500] hover:text-white font-mono font-bold text-xs uppercase cursor-pointer mr-1"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-[#FF5500] text-[#FF5500] hover:text-white font-mono font-bold text-xs uppercase cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Exit Full Navigation</span>
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Exit</span>
             </button>
           )}
           <Compass className="w-4 h-4 text-[#FF5500]" />
-          <span className="font-mono text-xs uppercase tracking-widest text-white font-bold">
-            {isFullNavigation
-              ? 'AUTO PILOT // FULL SCREEN ROUTE EXPLORER'
-              : 'AUTO PILOT CORRIDOR RADAR // OPENSTREETMAP'}
+          <span className="font-mono text-xs uppercase tracking-wider text-white font-bold">
+            {isFullNavigation ? 'FULL SCREEN MAP' : 'ROUTE MAP'}
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-300">
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-300">
           <button
             type="button"
             data-testid="map-pick-start-mode-btn"
@@ -673,10 +739,10 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
                 ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 font-bold'
                 : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
             }`}
-            title="Click the OpenStreetMap radar to set Starting Location"
+            title="Tap map to set Starting Location"
           >
             <Crosshair className="w-3 h-3 text-emerald-400" />
-            <span>{mapPickMode === 'start' ? 'Click Map for Start...' : 'Set Start on Map'}</span>
+            <span>{mapPickMode === 'start' ? 'Tap Map: Start' : 'Set Start'}</span>
           </button>
 
           <button
@@ -690,10 +756,10 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
                 ? 'bg-[#FF5500]/20 border-[#FF5500] text-[#FF5500] font-bold'
                 : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
             }`}
-            title="Click the OpenStreetMap radar to set Final Destination"
+            title="Tap map to set Final Destination"
           >
             <Crosshair className="w-3 h-3 text-[#FF5500]" />
-            <span>{mapPickMode === 'dest' ? 'Click Map for Dest...' : 'Set Dest on Map'}</span>
+            <span>{mapPickMode === 'dest' ? 'Tap Map: Dest' : 'Set Dest'}</span>
           </button>
 
           <button
@@ -702,14 +768,24 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
             className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 flex items-center gap-1"
           >
             <RotateCcw className="w-3 h-3 text-[#FF5500]" />
-            <span>Fit Route</span>
+            <span>Fit</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="autopilot-view-full-navigation-btn"
+            onClick={() => setIsFullNavigation(prev => !prev)}
+            className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-[#FF5500]/60 text-[#FF5500] font-bold flex items-center gap-1"
+          >
+            <Maximize2 className="w-3 h-3" />
+            <span>{isFullNavigation ? 'Exit Full' : 'Full Screen'}</span>
           </button>
         </div>
       </div>
 
       {/* Active Map Pick Instruction Banner */}
       {mapPickMode && !candidatePin && (
-        <div className="px-4 py-2 bg-slate-900/95 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+        <div className="px-3.5 py-2 bg-slate-900/95 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
           <div className="flex items-center gap-2 text-slate-200">
             <MapPin
               className={`w-3.5 h-3.5 ${
@@ -717,11 +793,10 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
               }`}
             />
             <span>
-              Click anywhere on the OpenStreetMap below to place your{' '}
+              Tap anywhere on the map to set{' '}
               <strong className={mapPickMode === 'start' ? 'text-emerald-400' : 'text-[#FF5500]'}>
-                {mapPickMode === 'start' ? 'STARTING LOCATION' : 'FINAL DESTINATION'}
-              </strong>{' '}
-              marker, or drop a pin at the map center:
+                {mapPickMode === 'start' ? 'START' : 'DESTINATION'}
+              </strong>
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -731,7 +806,7 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
               onClick={() => handlePlacePinAtMapCenter(mapPickMode)}
               className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white text-[11px] font-bold"
             >
-              Drop Pin at Map Center
+              Use Map Center
             </button>
             <button
               type="button"
@@ -749,7 +824,7 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
       {candidatePin && (
         <div
           data-testid="map-candidate-confirmation-bar"
-          className="px-4 py-3 bg-[#0D1322] border-b border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          className="px-3.5 py-2.5 bg-[#0D1322] border-b border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
         >
           <div className="min-w-0 space-y-0.5">
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
@@ -760,7 +835,7 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
                     : 'bg-[#FF5500]/20 border border-[#FF5500]/40 text-[#FF5500]'
                 }`}
               >
-                MAP PIN: {candidatePin.target === 'start' ? 'STARTING LOCATION' : 'FINAL DESTINATION'}
+                {candidatePin.target === 'start' ? 'START PIN' : 'DESTINATION PIN'}
               </span>
               <span
                 data-testid="map-candidate-coords"
@@ -771,15 +846,12 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
               {candidatePin.resolving && (
                 <span className="text-slate-400 flex items-center gap-1">
                   <Loader2 className="w-3 h-3 animate-spin" />
-                  Resolving address...
+                  Resolving...
                 </span>
               )}
             </div>
             <div className="text-xs font-bold text-white truncate">{candidatePin.name}</div>
             <div className="text-[11px] text-slate-300 line-clamp-1">{candidatePin.address}</div>
-            <div className="text-[10px] text-slate-400 font-mono">
-              Drag the pin on the map to refine its position, then press Confirm Location.
-            </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -821,56 +893,26 @@ export const AutoPilotRouteMap: React.FC<AutoPilotRouteMapProps> = ({
         data-testid="autopilot-route-map"
         className={`w-full z-0 bg-[#06090F] [&_.leaflet-tile-pane]:invert [&_.leaflet-tile-pane]:hue-rotate-180 [&_.leaflet-tile-pane]:brightness-90 [&_.leaflet-tile-pane]:contrast-110 ${
           mapPickMode ? 'cursor-crosshair' : ''
-        } ${isFullNavigation ? 'h-full flex-1' : 'h-[420px] sm:h-[460px]'}`}
+        } ${isFullNavigation ? 'h-full flex-1' : 'h-[340px] sm:h-[420px]'}`}
       />
 
-      {/* Legend Bar */}
-      <div className="px-4 py-2 bg-[#090D16] border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400 z-10 shrink-0">
+      {/* Compact Legend Bar */}
+      <div className="px-3.5 py-2 bg-[#090D16] border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400 z-10 shrink-0">
         <div className="flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
-            START (DRAGGABLE)
+            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+            START
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF] inline-block" />
-            PRIMARY STOP ({chargingStops.length})
+            <span className="w-2 h-2 rounded-full bg-[#00E5FF] inline-block" />
+            CHARGING STOP ({chargingStops.length})
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
-            BACKUP ({backupMap.size})
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-violet-400 inline-block" />
-            PIT STOP ({pitStops.length})
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#FF5500] inline-block" />
-            DESTINATION (DRAGGABLE)
+            <span className="w-2 h-2 rounded-full bg-[#FF5500] inline-block" />
+            DESTINATION
           </span>
         </div>
-        <span>Click map or drag START / DEST markers to set custom coordinates</span>
-      </div>
-
-      {/* View Full Navigation Launch Bar (Positioned Right Below the Auto Pilot Map) */}
-      <div className="px-4 py-2.5 bg-[#0B0F18] border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 z-10">
-        <div className="flex items-center gap-2 text-xs font-mono text-slate-300">
-          <Compass className="w-4 h-4 text-[#FF5500] shrink-0 animate-spin" style={{ animationDuration: '16s' }} />
-          <div>
-            <span className="font-bold text-white uppercase">Auto Pilot Full Screen Navigation</span>
-            <span className="hidden sm:inline text-slate-400 ml-2">• Full-screen route corridor & charging telemetry</span>
-          </div>
-        </div>
-        <button
-          type="button"
-          data-testid="autopilot-view-full-navigation-btn"
-          onClick={() => {
-            setIsFullNavigation(prev => !prev);
-          }}
-          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-slate-900 to-slate-800 hover:from-[#FF5500] hover:to-[#FF5500] text-[#FF5500] hover:text-slate-950 border border-[#FF5500] font-mono font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer group"
-        >
-          <Maximize2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
-          <span>{isFullNavigation ? 'Exit Full Navigation' : 'View Full Navigation'}</span>
-        </button>
+        <span className="hidden sm:inline">Tap any marker for details</span>
       </div>
 
       {/* Full Navigation Interactive Stop Details Drawer */}

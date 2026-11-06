@@ -4,20 +4,10 @@ import {
   Phone,
   MapPin,
   Shield,
-  Clock,
-  CheckCircle2,
-  Lock,
   Compass,
-  ArrowRight,
-  FileText,
-  UserCheck,
-  Radio,
   Bell,
-  Users,
   X
 } from 'lucide-react';
-import { MissionMode } from './MissionMode';
-import { BackButton } from './BackButton';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { EmergencyRequest } from '../types';
@@ -31,7 +21,11 @@ import {
   OFFLINE_SYNC_EVENT,
   DATA_UPDATED_EVENT
 } from '../utils/telemetryCache';
-import { calculateDistanceKm } from '../utils/rules';
+import {
+  calculateDistanceKm,
+  buildPhoneDialIntentUri,
+  openPhoneDialer
+} from '../utils/rules';
 
 const QUICK_SOS_CITIES = [
   { name: 'Bengaluru', lat: 12.9716, lng: 77.5946 },
@@ -99,10 +93,9 @@ interface DispatchSummaryBanner {
   timestamp: string;
 }
 
-export const SquadronAssist: React.FC<{ initialMode?: 'sos' | 'mission' }> = ({ initialMode = 'sos' }) => {
+export const SquadronAssist: React.FC = () => {
   const { currentUser, availableUsers } = useAuth();
   const { playTacticalClick, playChime, playAlert } = useAudio();
-  const [squadronMode, setSquadronMode] = useState<'sos' | 'mission'>(initialMode);
 
   const [emergencies, setEmergencies] = useState<EmergencyRequest[]>(() =>
     loadFromCache<EmergencyRequest[]>(CACHE_KEYS.EMERGENCY, [])
@@ -459,84 +452,81 @@ export const SquadronAssist: React.FC<{ initialMode?: 'sos' | 'mission' }> = ({ 
   };
 
   const activeRequests = emergencies.filter(e => e.status !== 'Resolved' && e.status !== 'Cancelled');
+  const activeSelectedEmergency =
+    (selectedEmergency && activeRequests.find(e => e.id === selectedEmergency.id)) ||
+    activeRequests[0] ||
+    null;
 
   return (
-    <div className="space-y-6">
-      {/* Squadron Assist Sub-Module Switcher: Roadside SOS Dispatch vs Mission Mode */}
-      <div className="bg-[#13161A] border border-[#282D34] rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono text-xs">
-        <div className="flex items-center gap-2 text-[#F1F3F5] font-bold tracking-wider uppercase">
-          <span>SQUADRON ASSIST OPERATIONS</span>
+    <div className="space-y-5">
+      {/* Squadron Assist Roadside SOS Header */}
+      <div className="bg-[#13161A] border border-[#282D34] rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-lg">
+        <div className="flex items-start sm:items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[#E04F5F]/15 border border-[#E04F5F]/50 flex items-center justify-center text-[#E04F5F] shrink-0">
+            <AlertTriangle className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-base sm:text-lg font-mono font-bold text-[#F1F3F5] tracking-wider uppercase flex flex-wrap items-center gap-2">
+              <span>SQUADRON ASSIST</span>
+              <span className="text-[11px] px-2 py-0.5 rounded bg-[#E04F5F]/15 text-[#E04F5F] border border-[#E04F5F]/30">
+                24/7 ROADSIDE SOS
+              </span>
+            </div>
+            <div className="text-xs sm:text-sm text-[#A0A7B0] mt-0.5">
+              Alerts nearby city riders &amp; Admin Command. Dial 112 for medical emergencies.
+            </div>
+          </div>
         </div>
-        <div
-          role="tablist"
-          aria-label="Squadron Assist Sub-Module"
-          className="flex items-center bg-[#090B0E] border border-[#2D343E] rounded-lg p-1"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={squadronMode === 'sos'}
-            onClick={() => {
-              playTacticalClick();
-              setSquadronMode('sos');
+
+        <div className="flex items-center gap-2.5 shrink-0">
+          <a
+            href={buildPhoneDialIntentUri('112')}
+            data-testid="squadron-call-112-btn"
+            onClick={e => {
+              e.preventDefault();
+              playAlert();
+              openPhoneDialer('112');
             }}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-md transition-colors cursor-pointer ${
-              squadronMode === 'sos'
-                ? 'bg-[#E04F5F] text-white font-bold shadow'
-                : 'text-[#A0A7B0] hover:text-[#F1F3F5]'
-            }`}
+            className="px-3.5 py-2.5 rounded-lg bg-[#252A30] hover:bg-[#414851] text-[#E04F5F] border border-[#E04F5F]/40 text-xs sm:text-sm font-mono font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>ROADSIDE SOS DISPATCH</span>
-          </button>
+            <Phone className="w-4 h-4" />
+            <span>CALL 112</span>
+          </a>
           <button
-            type="button"
-            role="tab"
-            data-testid="squadron-mission-mode-tab"
-            aria-selected={squadronMode === 'mission'}
             onClick={() => {
-              playTacticalClick();
-              setSquadronMode('mission');
+              playAlert();
+              if (!formCity && currentUser?.city) {
+                setFormCity(currentUser.city);
+              }
+              setShowCreateModal(true);
             }}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-md transition-colors cursor-pointer ${
-              squadronMode === 'mission'
-                ? 'bg-[#E8AA45] text-[#08090B] font-bold shadow'
-                : 'text-[#A0A7B0] hover:text-[#F1F3F5]'
-            }`}
+            className="flex-1 sm:flex-initial justify-center px-4 py-2.5 rounded-lg bg-[#E04F5F] hover:bg-[#c93f4e] text-white text-xs sm:text-sm font-mono font-bold tracking-wide transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
           >
-            <Radio className="w-3.5 h-3.5" />
-            <span>MISSION MODE</span>
+            <AlertTriangle className="w-4 h-4" />
+            <span>TRIGGER SQUADRON SOS</span>
           </button>
         </div>
       </div>
-
-      {squadronMode === 'mission' ? (
-        <MissionMode />
-      ) : (
-        <>
-          {/* Live SOS Dispatch Confirmation Banner (City Notification + Priority Admin Alert) */}
+          {/* Live SOS Dispatch Confirmation Banner */}
           {dispatchConfirmation && (
             <div
               data-testid="sos-dispatch-confirmation-banner"
-              className="bg-[#1A0D10] border-2 border-[#E04F5F] rounded-lg p-4 font-mono text-xs space-y-3 shadow-[0_0_24px_rgba(224,79,95,0.25)]"
+              className="bg-[#1A0D10] border border-[#E04F5F] rounded-xl p-4 font-mono text-xs space-y-2.5 shadow-[0_0_20px_rgba(224,79,95,0.2)]"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded bg-[#E04F5F]/20 border border-[#E04F5F] flex items-center justify-center text-[#E04F5F] shrink-0 animate-pulse">
+                  <div className="w-8 h-8 rounded-lg bg-[#E04F5F]/20 border border-[#E04F5F] flex items-center justify-center text-[#E04F5F] shrink-0 animate-pulse">
                     <Bell className="w-4 h-4" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-[#F8FAFC] flex flex-wrap items-center gap-2">
-                      <span>SQUADRON SOS BROADCAST TRANSMITTED</span>
+                    <div className="text-xs sm:text-sm font-bold text-[#F8FAFC] flex flex-wrap items-center gap-2">
+                      <span>SOS BROADCAST ACTIVE</span>
                       <span className="px-2 py-0.5 rounded bg-[#E04F5F] text-white text-[10px] font-bold uppercase">
-                        CITY SECTOR: {dispatchConfirmation.city.toUpperCase()}
-                      </span>
-                      <span className="px-2 py-0.5 rounded bg-[#F59E0B]/20 text-[#FDE68A] border border-[#F59E0B]/50 text-[10px] font-bold uppercase">
-                        ADMIN PRIORITY ALERT SENT
+                        {dispatchConfirmation.city.toUpperCase()}
                       </span>
                     </div>
                     <div className="text-[11px] text-[#FCA5A5] mt-0.5">
-                      Incident {dispatchConfirmation.emergencyId} • {dispatchConfirmation.category} at {dispatchConfirmation.locationName}
+                      {dispatchConfirmation.category} • {dispatchConfirmation.locationName}
                     </div>
                   </div>
                 </div>
@@ -549,116 +539,34 @@ export const SquadronAssist: React.FC<{ initialMode?: 'sos' | 'mission' }> = ({ 
                   <X className="w-4 h-4" />
                 </button>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-[#E04F5F]/30">
-                <div className="p-2.5 rounded bg-[#0D0F12]/90 border border-[#F59E0B]/40 flex items-start gap-2.5">
-                  <Shield className="w-4 h-4 text-[#F59E0B] shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-[11px] font-bold text-[#FDE68A] uppercase">
-                      PRIORITY ADMIN COMMAND ALERTED ({dispatchConfirmation.adminNotifiedCount} ADMIN)
-                    </div>
-                    <div className="text-[11px] text-[#AEB5BE] mt-0.5">
-                      High-priority emergency alert & audit log dispatched directly to Admin Control Centre for immediate oversight.
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded bg-[#0D0F12]/90 border border-[#38BDF8]/40 flex items-start gap-2.5">
-                  <Users className="w-4 h-4 text-[#38BDF8] shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-[11px] font-bold text-[#BAE6FD] uppercase">
-                      {dispatchConfirmation.city.toUpperCase()} REGISTERED USERS NOTIFIED ({dispatchConfirmation.cityUsersNotified.length})
-                    </div>
-                    <div className="text-[11px] text-[#AEB5BE] mt-0.5">
-                      {dispatchConfirmation.cityUsersNotified.length > 0 ? (
-                        <>
-                          Instant SOS notification sent to {dispatchConfirmation.city} riders:{' '}
-                          <span className="text-[#F1F3F5] font-semibold">
-                            {dispatchConfirmation.cityUsersNotified.map(u => u.name).join(', ')}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          Broadcast active across {dispatchConfirmation.city} sector. Any rider registered in {dispatchConfirmation.city} is automatically alerted.
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
+              <div className="text-[11px] text-[#D4D8DE] pt-2 border-t border-[#E04F5F]/25 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span>
+                  <strong className="text-[#FDE68A]">Admin Command:</strong> Priority alert dispatched ({dispatchConfirmation.adminNotifiedCount})
+                </span>
+                <span>
+                  <strong className="text-[#BAE6FD]">{dispatchConfirmation.city} Riders Notified:</strong>{' '}
+                  {dispatchConfirmation.cityUsersNotified.length > 0
+                    ? dispatchConfirmation.cityUsersNotified.map(u => u.name).join(', ')
+                    : 'Sector broadcast active'}
+                </span>
               </div>
             </div>
           )}
 
-          {/* Top Banner & Emergency Disclaimer */}
-          <div className="bg-[#191D22] border border-[#E04F5F]/50 rounded-lg p-5">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-center space-x-3.5">
-                <div className="w-10 h-10 rounded bg-[#252A30] border border-[#E04F5F]/70 flex items-center justify-center text-[#E04F5F] shrink-0">
-                  <AlertTriangle className="w-5 h-5 text-[#E04F5F]" />
-                </div>
-                <div>
-                  <div className="text-sm font-mono font-bold text-[#E04F5F] tracking-wider flex flex-wrap items-center gap-2">
-                    <span>SQUADRON ASSIST — EMERGENCY RAPID RESPONSE</span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#E04F5F]/20 text-[#E04F5F] border border-[#E04F5F]/30">
-                      CITY SECTOR + 25 KM
-                    </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#F59E0B]/20 text-[#FDE68A] border border-[#F59E0B]/40">
-                      DIRECT ADMIN ALERT
-                    </span>
-                  </div>
-                  <div className="text-xs text-[#A0A7B0] mt-0.5">
-                    Alerts all riders registered in the SOS city/area + dispatches a priority alert to Admin Command
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-3">
-                <a
-                  href="tel:112"
-                  className="px-3.5 py-2 rounded bg-[#252A30] hover:bg-[#414851] text-[#E04F5F] border border-[#E04F5F]/40 text-xs font-mono font-bold flex items-center gap-1.5 transition-colors"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>DIRECT CALL 112 (EMS)</span>
-                </a>
-                <button
-                  onClick={() => {
-                    playAlert();
-                    if (!formCity && currentUser?.city) {
-                      setFormCity(currentUser.city);
-                    }
-                    setShowCreateModal(true);
-                  }}
-                  className="px-4 py-2 rounded bg-[#E04F5F] hover:bg-[#c93f4e] text-white text-xs font-mono font-bold tracking-wide transition-all shadow-lg flex items-center gap-1.5 cursor-pointer"
-                >
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>TRIGGER SQUADRON SOS</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Life-Safety Advisory */}
-            <div className="mt-4 pt-3 border-t border-[#282D34] text-[11px] font-mono text-[#AEB5BE] flex items-center gap-2">
-              <Shield className="w-3.5 h-3.5 text-[#E04F5F] shrink-0" />
-              <span>
-                CRITICAL SAFETY ADVISORY: For severe injuries, collisions, or high-risk road situations, dial national emergency services 112 immediately. GHOST PROTOCOL volunteer assist does not replace professional emergency services.
-              </span>
-            </div>
-          </div>
-
-          {/* Main Grid: Active Incidents & Log Details */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Main Grid: Active Incidents & Selected Details */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
             {/* Active Emergency Requests (7 Cols) */}
-            <div className="lg:col-span-7 space-y-4">
+            <div className="lg:col-span-7 space-y-3.5">
               <div className="flex items-center justify-between pb-2 border-b border-[#282D34] text-xs font-mono">
                 <span className="font-bold text-[#D4D8DE] uppercase">
-                  ACTIVE SQUADRON INCIDENTS ({activeRequests.length})
+                  ACTIVE INCIDENTS ({activeRequests.length})
                 </span>
-                <span className="text-[#42B883]">CITY & ADMIN DISPATCH ONLINE</span>
+                <span className="text-[#42B883] text-[11px]">LIVE DISPATCH</span>
               </div>
 
               {activeRequests.length === 0 ? (
-                <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-10 text-center text-xs font-mono text-[#707883]">
-                  NO ACTIVE DISTRESS SIGNALS WITHIN SQUADRON SECTORS
+                <div className="bg-[#0D0F12] border border-[#282D34] rounded-xl p-10 text-center text-xs font-mono text-[#707883]">
+                  NO ACTIVE DISTRESS SIGNALS IN YOUR SECTOR
                 </div>
               ) : (
                 activeRequests.map(emg => {
@@ -671,9 +579,9 @@ export const SquadronAssist: React.FC<{ initialMode?: 'sos' | 'mission' }> = ({ 
                         playTacticalClick();
                         setSelectedEmergency(emg);
                       }}
-                      className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                      className={`p-4 rounded-xl border cursor-pointer transition-all ${
                         isSelected
-                          ? 'bg-[#191D22] border-[#E04F5F]/60'
+                          ? 'bg-[#191D22] border-[#E04F5F]/70 shadow-lg'
                           : 'bg-[#0D0F12] border-[#282D34] hover:border-[#414851]'
                       }`}
                     >
@@ -683,55 +591,42 @@ export const SquadronAssist: React.FC<{ initialMode?: 'sos' | 'mission' }> = ({ 
                             {emg.category}
                           </span>
                           <span className="px-2 py-0.5 rounded bg-[#38BDF8]/15 text-[#38BDF8] border border-[#38BDF8]/30 font-bold uppercase">
-                            CITY: {incidentCity}
-                          </span>
-                          <span className="px-2 py-0.5 rounded bg-[#F59E0B]/15 text-[#FDE68A] border border-[#F59E0B]/30 font-bold uppercase">
-                            ADMIN ALERTED
+                            {incidentCity}
                           </span>
                         </div>
-                        <span className="text-[#707883]">
-                          NOTIFIED: {emg.notifiedCount} ({incidentCity.toUpperCase()} + ADMIN)
-                        </span>
+                        <span className="text-[#42B883] font-bold uppercase">{emg.status}</span>
                       </div>
 
-                      <div className="text-sm font-semibold text-[#F1F3F5]">{emg.requesterName}</div>
-                      <div className="text-xs font-mono text-[#A0A7B0] mt-0.5">{emg.requesterModel}</div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <div className="text-base font-bold text-[#F8FAFC]">{emg.requesterName}</div>
+                        <div className="text-xs font-mono text-[#A0A7B0]">{emg.requesterModel}</div>
+                      </div>
 
-                      <p className="text-xs text-[#D4D8DE] mt-2 line-clamp-2 leading-relaxed">
+                      <p className="text-sm text-[#D4D8DE] mt-1.5 line-clamp-2 leading-relaxed">
                         {emg.description}
                       </p>
 
-                      {emg.notifiedCityUsers && emg.notifiedCityUsers.length > 0 && (
-                        <div className="mt-2.5 px-2.5 py-1.5 rounded bg-[#13161A] border border-[#282D34] text-[10px] font-mono text-[#AEB5BE] flex items-center gap-1.5">
-                          <Bell className="w-3 h-3 text-[#38BDF8] shrink-0" />
-                          <span className="truncate">
-                            Alerted in {incidentCity}:{' '}
-                            <strong className="text-[#F1F3F5]">
-                              {emg.notifiedCityUsers.map(u => u.name).join(', ')}
-                            </strong>
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-[#282D34] text-xs font-mono">
+                      <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-[#282D34] text-xs font-mono gap-2">
                         <div className="flex items-center gap-1.5 text-[#AEB5BE] truncate">
                           <MapPin className="w-3.5 h-3.5 text-[#E04F5F] shrink-0" />
                           <span className="truncate">{emg.locationName}</span>
                         </div>
-                        <span className="text-[#42B883] font-semibold">{emg.status}</span>
+                        <span className="text-[10px] text-[#707883] shrink-0">
+                          {emg.notifiedCount} riders alerted
+                        </span>
                       </div>
 
                       {/* Actions inside card */}
-                      <div className="mt-3 flex items-center justify-end space-x-2">
+                      <div className="mt-3 flex items-center justify-end gap-2">
                         {emg.status === 'Submitted' && (
                           <button
                             onClick={e => {
                               e.stopPropagation();
                               handleRespond(emg.id);
                             }}
-                            className="px-3 py-1.5 rounded bg-[#42B883]/20 hover:bg-[#42B883]/30 text-[#42B883] border border-[#42B883]/40 text-xs font-mono font-bold cursor-pointer"
+                            className="px-3 py-1.5 rounded-lg bg-[#42B883]/20 hover:bg-[#42B883]/30 text-[#42B883] border border-[#42B883]/40 text-xs font-mono font-bold cursor-pointer"
                           >
-                            ACKNOWLEDGE & RESPOND
+                            ACKNOWLEDGE &amp; RESPOND
                           </button>
                         )}
                         {emg.status === 'Acknowledged' && (
@@ -740,7 +635,7 @@ export const SquadronAssist: React.FC<{ initialMode?: 'sos' | 'mission' }> = ({ 
                               e.stopPropagation();
                               handleUpdateStatus(emg.id, 'Assistance Arranged');
                             }}
-                            className="px-3 py-1.5 rounded bg-[#729BCB]/20 text-[#729BCB] border border-[#729BCB]/40 text-xs font-mono font-bold cursor-pointer"
+                            className="px-3 py-1.5 rounded-lg bg-[#729BCB]/20 text-[#729BCB] border border-[#729BCB]/40 text-xs font-mono font-bold cursor-pointer"
                           >
                             MARK ASSISTANCE ARRANGED
                           </button>
@@ -751,7 +646,7 @@ export const SquadronAssist: React.FC<{ initialMode?: 'sos' | 'mission' }> = ({ 
                               e.stopPropagation();
                               handleUpdateStatus(emg.id, 'Resolved');
                             }}
-                            className="px-3 py-1.5 rounded bg-[#252A30] hover:bg-[#414851] text-[#F1F3F5] text-xs font-mono font-bold cursor-pointer"
+                            className="px-3 py-1.5 rounded-lg bg-[#252A30] hover:bg-[#414851] text-[#F1F3F5] text-xs font-mono font-bold cursor-pointer"
                           >
                             MARK RESOLVED
                           </button>
@@ -763,119 +658,87 @@ export const SquadronAssist: React.FC<{ initialMode?: 'sos' | 'mission' }> = ({ 
               )}
             </div>
 
-            {/* Selected Incident Telemetry & Access Log (5 Cols) */}
-            <div className="lg:col-span-5 space-y-4">
-              <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5">
-                <div className="text-xs font-mono font-semibold text-[#D4D8DE] uppercase pb-2 mb-3 border-b border-[#282D34]">
-                  CONFIDENTIAL INCIDENT TELEMETRY
+            {/* Selected Incident Details (5 Cols) */}
+            <div className="lg:col-span-5">
+              <div className="bg-[#0D0F12] border border-[#282D34] rounded-xl p-5 lg:sticky lg:top-4">
+                <div className="text-xs font-mono font-bold text-[#D4D8DE] uppercase pb-2.5 mb-3.5 border-b border-[#282D34] flex items-center justify-between">
+                  <span>INCIDENT TELEMETRY</span>
+                  {activeSelectedEmergency && (
+                    <span className="text-[#38BDF8]">
+                      {activeSelectedEmergency.city || normalizeCity(activeSelectedEmergency.locationName) || 'BENGALURU'}
+                    </span>
+                  )}
                 </div>
 
-                {selectedEmergency ? (
-                  <div className="space-y-4 text-xs font-mono">
+                {activeSelectedEmergency ? (
+                  <div className="space-y-3.5 text-xs font-mono">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="text-[#707883]">INCIDENT ID:</div>
-                        <div className="text-[#F1F3F5] font-bold">{selectedEmergency.id}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[#707883]">SOS CITY SECTOR:</div>
-                        <div className="text-[#38BDF8] font-bold uppercase">
-                          {selectedEmergency.city || normalizeCity(selectedEmergency.locationName) || 'BENGALURU'}
+                        <div className="text-[10px] text-[#707883]">RIDER / MODEL</div>
+                        <div className="text-[#F1F3F5] font-bold">
+                          {activeSelectedEmergency.requesterName} • {activeSelectedEmergency.requesterModel}
                         </div>
                       </div>
+                      <span className="px-2 py-0.5 rounded bg-[#E04F5F]/20 text-[#E04F5F] text-[10px] font-bold uppercase">
+                        {activeSelectedEmergency.category}
+                      </span>
                     </div>
 
                     <div>
-                      <div className="text-[#707883]">CATEGORY:</div>
-                      <div className="text-[#E04F5F] font-bold">{selectedEmergency.category}</div>
-                    </div>
-
-                    <div>
-                      <div className="text-[#707883]">LOCATION:</div>
-                      <div className="text-[#D4D8DE] bg-[#13161A] p-2 rounded border border-[#282D34] mt-1">
-                        {selectedEmergency.locationName}
+                      <div className="text-[10px] text-[#707883]">LOCATION</div>
+                      <div className="text-[#D4D8DE] bg-[#13161A] p-2.5 rounded-lg border border-[#282D34] mt-1">
+                        {activeSelectedEmergency.locationName}
                       </div>
                     </div>
 
-                    {/* Admin & City Alert Status */}
-                    <div className="p-2.5 rounded bg-[#13161A] border border-[#F59E0B]/40 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-[#FDE68A] uppercase flex items-center gap-1.5">
-                          <Shield className="w-3.5 h-3.5 text-[#F59E0B]" />
-                          ADMIN COMMAND ALERT STATUS
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded bg-[#10B981]/20 text-[#10B981] text-[10px] font-bold">
-                          PRIORITY ALERT SENT
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-[#AEB5BE]">
-                        Notified Admin Command +{' '}
-                        <strong className="text-[#F1F3F5]">
-                          {selectedEmergency.notifiedCityUsers?.length ?? selectedEmergency.notifiedCount}
-                        </strong>{' '}
-                        registered user(s) in{' '}
-                        <strong className="text-[#38BDF8]">
-                          {selectedEmergency.city || normalizeCity(selectedEmergency.locationName) || 'Bengaluru'}
-                        </strong>
-                        .
-                      </div>
-                      {selectedEmergency.notifiedCityUsers && selectedEmergency.notifiedCityUsers.length > 0 && (
-                        <div className="text-[10px] text-[#707883] pt-1 border-t border-[#282D34]">
-                          City Riders Alerted:{' '}
-                          <span className="text-[#D4D8DE]">
-                            {selectedEmergency.notifiedCityUsers.map(u => u.name).join(', ')}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {selectedEmergency.callbackPhone && (
-                      <div>
-                        <div className="text-[#707883]">CALLBACK CONTACT:</div>
+                    {activeSelectedEmergency.callbackPhone && (
+                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#13161A] border border-[#42B883]/30">
+                        <span className="text-[10px] text-[#A0A7B0]">DIRECT RIDER CONTACT</span>
                         <a
-                          href={`tel:${selectedEmergency.callbackPhone}`}
-                          className="text-[#42B883] font-bold hover:underline flex items-center gap-1 mt-0.5"
+                          href={buildPhoneDialIntentUri(activeSelectedEmergency.callbackPhone)}
+                          onClick={e => {
+                            e.preventDefault();
+                            openPhoneDialer(activeSelectedEmergency.callbackPhone);
+                          }}
+                          className="text-[#42B883] font-bold hover:underline flex items-center gap-1.5 cursor-pointer"
                         >
                           <Phone className="w-3.5 h-3.5" />
-                          <span>{selectedEmergency.callbackPhone}</span>
+                          <span>{activeSelectedEmergency.callbackPhone}</span>
                         </a>
                       </div>
                     )}
 
-                    {selectedEmergency.responderName && (
-                      <div>
-                        <div className="text-[#707883]">ASSIGNED RESPONDER:</div>
-                        <div className="text-[#42B883] font-bold">{selectedEmergency.responderName}</div>
+                    {activeSelectedEmergency.responderName && (
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-[#707883]">ASSIGNED RESPONDER:</span>
+                        <span className="text-[#42B883] font-bold">{activeSelectedEmergency.responderName}</span>
                       </div>
                     )}
 
-                    {/* Audit & Access Log */}
-                    <div className="pt-3 border-t border-[#282D34]">
-                      <div className="text-[11px] font-bold text-[#D4D8DE] uppercase mb-2 flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-[#707883]" />
-                        CONFIDENTIAL ACCESS & DISPATCH LOGS
+                    {/* Compact Alerted Riders & Dispatch Log */}
+                    <div className="pt-2.5 border-t border-[#282D34] space-y-2">
+                      <div className="text-[10px] font-bold text-[#A0A7B0] uppercase flex items-center justify-between">
+                        <span>DISPATCH &amp; ACCESS LOG</span>
+                        <span className="text-[#10B981]">ADMIN + {activeSelectedEmergency.notifiedCount} RIDERS</span>
                       </div>
-                      <div className="space-y-2 max-h-44 overflow-y-auto">
-                        {selectedEmergency.accessLogs?.map((log, i) => (
-                          <div key={i} className="p-2 rounded bg-[#13161A] border border-[#282D34] text-[10px]">
-                            <div className="flex items-center justify-between text-[#AEB5BE]">
-                              <span className="font-semibold">{log.userName}</span>
-                              <span>
-                                {new Date(log.accessedAt).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </span>
-                            </div>
-                            <div className="text-[#707883] mt-0.5">{log.reason}</div>
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                        {activeSelectedEmergency.accessLogs?.map((log, i) => (
+                          <div key={i} className="p-2 rounded bg-[#13161A] border border-[#282D34] text-[10px] flex items-center justify-between gap-2">
+                            <span className="text-[#D4D8DE] font-semibold truncate">{log.userName}</span>
+                            <span className="text-[#707883] shrink-0">
+                              {new Date(log.accessedAt).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
                           </div>
                         ))}
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="py-12 text-center text-xs font-mono text-[#707883]">
-                    SELECT AN ACTIVE INCIDENT TO INSPECT COORDINATES & AUDIT ACCESS
+                  <div className="py-10 text-center text-xs font-mono text-[#707883]">
+                    SELECT AN INCIDENT TO INSPECT DETAILS
                   </div>
                 )}
               </div>
@@ -1061,8 +924,6 @@ export const SquadronAssist: React.FC<{ initialMode?: 'sos' | 'mission' }> = ({ 
               </div>
             </div>
           )}
-        </>
-      )}
     </div>
   );
 };

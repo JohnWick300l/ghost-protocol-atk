@@ -109,20 +109,17 @@ export const MyGarage: React.FC = () => {
   return (
     <div className="max-w-3xl mx-auto space-y-6 font-mono text-xs">
       {/* Header Card */}
-      <div className="bg-[#13161A] border border-[#282D34] rounded-xl p-5 flex items-center justify-between gap-4 shadow-lg">
+      <div className="bg-[#13161A] border border-[#282D34] rounded-xl p-4 sm:p-5 flex items-center justify-between gap-4 shadow-lg">
         <div className="flex items-center space-x-3.5">
-          <div className="w-10 h-10 rounded-lg bg-[#191D22] border border-[#E8AA45]/50 flex items-center justify-center text-[#E8AA45]">
+          <div className="w-10 h-10 rounded-lg bg-[#191D22] border border-[#E8AA45]/50 flex items-center justify-center text-[#E8AA45] shrink-0">
             <Layers className="w-5 h-5 text-[#E8AA45]" />
           </div>
           <div>
-            <div className="text-sm font-mono font-bold text-[#F1F3F5] tracking-wider flex items-center gap-2">
-              MY GARAGE
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded uppercase border bg-[#10B981]/15 text-[#10B981] border-[#10B981]/30 font-semibold">
-                VERIFIED GARAGE PROFILE
-              </span>
+            <div className="text-base sm:text-lg font-mono font-bold text-[#F1F3F5] tracking-wider flex items-center gap-2">
+              <span>MY GARAGE</span>
             </div>
-            <div className="text-xs text-[#94A3B8] mt-0.5">
-              Directly edit and sync your motorcycle model, registration number, blood group & emergency contacts
+            <div className="text-xs sm:text-sm text-[#94A3B8] mt-0.5">
+              Manage your motorcycle model, registration number, blood group &amp; emergency contact
             </div>
           </div>
         </div>

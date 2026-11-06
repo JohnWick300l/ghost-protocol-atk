@@ -79,7 +79,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
     loadFromCache<MarketplaceItem[]>(CACHE_KEYS.MARKETPLACE, [])
   );
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState<SectionTab>('buy');
+  const [activeSection, setActiveSection] = useState<SectionTab>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedModel, setSelectedModel] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -882,43 +882,43 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Header & Quick Listing Launchers */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-3">
-            <ShoppingBag className="w-8 h-8 text-amber-500" />
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
+            <ShoppingBag className="w-7 h-7 text-amber-500" />
             SQUADRON MARKETPLACE
           </h1>
-          <p className="text-zinc-400 text-sm mt-1">
-            Buy &amp; sell components, rent touring gear by the day, or bid on rare Ultraviolette hardware in live auctions. Direct Phone &amp; Email owner contact on every listing.
+          <p className="text-zinc-400 text-xs sm:text-sm mt-1">
+            Buy &amp; sell parts, rent touring gear by the day, or bid in live rider auctions.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="grid grid-cols-3 sm:flex items-center gap-2">
           <button
             type="button"
             onClick={() => openCreateModalForType('buy')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            Sell Item
+            <Plus className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Sell</span>
           </button>
           <button
             type="button"
             onClick={() => openCreateModalForType('rent')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
           >
-            <KeyRound className="w-4 h-4" />
-            Rent Out Item
+            <KeyRound className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Rent Out</span>
           </button>
           <button
             type="button"
             onClick={() => openCreateModalForType('auction')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
           >
-            <Gavel className="w-4 h-4" />
-            Auction Product
+            <Gavel className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Auction</span>
           </button>
         </div>
       </div>
@@ -927,31 +927,22 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
       <div
         role="tablist"
         aria-label="Marketplace Sections"
-        className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 bg-zinc-900/90 border border-zinc-800 p-2 rounded-xl"
+        className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-5 bg-zinc-900/90 border border-zinc-800 p-2 rounded-xl"
       >
         <button
           type="button"
           role="tab"
           aria-selected={activeSection === 'buy'}
           onClick={() => setActiveSection('buy')}
-          className={`flex items-center justify-between px-4 py-3 rounded-lg text-left transition-all cursor-pointer ${
+          className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left transition-all cursor-pointer ${
             activeSection === 'buy'
               ? 'bg-amber-500 text-black font-black shadow-md'
               : 'bg-zinc-950/60 hover:bg-zinc-800/80 text-zinc-300'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <Tag className="w-4 h-4 shrink-0" />
-            <div>
-              <div className="text-xs uppercase tracking-wider font-bold">Buy &amp; Sell</div>
-              <div
-                className={`text-[11px] ${
-                  activeSection === 'buy' ? 'text-black/80 font-medium' : 'text-zinc-500'
-                }`}
-              >
-                Direct pilot trade
-              </div>
-            </div>
+            <div className="text-xs uppercase tracking-wider font-bold">Buy &amp; Sell</div>
           </div>
           <span className="text-xs font-mono font-bold">{buyCount}</span>
         </button>
@@ -961,24 +952,15 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
           role="tab"
           aria-selected={activeSection === 'rent'}
           onClick={() => setActiveSection('rent')}
-          className={`flex items-center justify-between px-4 py-3 rounded-lg text-left transition-all cursor-pointer ${
+          className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left transition-all cursor-pointer ${
             activeSection === 'rent'
               ? 'bg-cyan-400 text-black font-black shadow-md'
               : 'bg-zinc-950/60 hover:bg-zinc-800/80 text-zinc-300'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <KeyRound className="w-4 h-4 shrink-0" />
-            <div>
-              <div className="text-xs uppercase tracking-wider font-bold">Rent Gear &amp; Items</div>
-              <div
-                className={`text-[11px] ${
-                  activeSection === 'rent' ? 'text-black/80 font-medium' : 'text-zinc-500'
-                }`}
-              >
-                Cost/day &amp; rental rules
-              </div>
-            </div>
+            <div className="text-xs uppercase tracking-wider font-bold">Rent Gear</div>
           </div>
           <span className="text-xs font-mono font-bold">{rentCount}</span>
         </button>
@@ -988,24 +970,15 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
           role="tab"
           aria-selected={activeSection === 'auction'}
           onClick={() => setActiveSection('auction')}
-          className={`flex items-center justify-between px-4 py-3 rounded-lg text-left transition-all cursor-pointer ${
+          className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left transition-all cursor-pointer ${
             activeSection === 'auction'
               ? 'bg-emerald-400 text-black font-black shadow-md'
               : 'bg-zinc-950/60 hover:bg-zinc-800/80 text-zinc-300'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <Gavel className="w-4 h-4 shrink-0" />
-            <div>
-              <div className="text-xs uppercase tracking-wider font-bold">Live Auctions</div>
-              <div
-                className={`text-[11px] ${
-                  activeSection === 'auction' ? 'text-black/80 font-medium' : 'text-zinc-500'
-                }`}
-              >
-                Bid &amp; choose winner
-              </div>
-            </div>
+            <div className="text-xs uppercase tracking-wider font-bold">Auctions</div>
           </div>
           <span className="text-xs font-mono font-bold">{auctionCount}</span>
         </button>
@@ -1015,71 +988,19 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
           role="tab"
           aria-selected={activeSection === 'all'}
           onClick={() => setActiveSection('all')}
-          className={`flex items-center justify-between px-4 py-3 rounded-lg text-left transition-all cursor-pointer ${
+          className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left transition-all cursor-pointer ${
             activeSection === 'all'
               ? 'bg-zinc-100 text-black font-black shadow-md'
               : 'bg-zinc-950/60 hover:bg-zinc-800/80 text-zinc-300'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <ShoppingBag className="w-4 h-4 shrink-0" />
-            <div>
-              <div className="text-xs uppercase tracking-wider font-bold">All Listings</div>
-              <div
-                className={`text-[11px] ${
-                  activeSection === 'all' ? 'text-black/80 font-medium' : 'text-zinc-500'
-                }`}
-              >
-                Buy, Rent &amp; Auction
-              </div>
-            </div>
+            <div className="text-xs uppercase tracking-wider font-bold">All Items</div>
           </div>
           <span className="text-xs font-mono font-bold">{allItems.length}</span>
         </button>
       </div>
-
-      {/* Section Contextual Banner */}
-      {activeSection === 'rent' && (
-        <div className="mb-6 p-4 rounded-xl bg-cyan-950/30 border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
-              <KeyRound className="w-4 h-4" />
-              Peer-to-Peer Gear &amp; Hardware Rentals
-            </h2>
-            <p className="text-xs text-zinc-300 mt-0.5">
-              Rent verified chargers, touring luggage, and track suits from fellow pilots. View daily rates, refundable deposits, and owner rental rules, or contact the owner directly via Phone &amp; Email.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => openCreateModalForType('rent')}
-            className="px-4 py-2 bg-cyan-400 hover:bg-cyan-300 text-black font-bold text-xs rounded-lg shrink-0 cursor-pointer"
-          >
-            + List Item for Rent
-          </button>
-        </div>
-      )}
-
-      {activeSection === 'auction' && (
-        <div className="mb-6 p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-2">
-              <Gavel className="w-4 h-4" />
-              Squadron Live Auctions — Transparent Open Bidding
-            </h2>
-            <p className="text-xs text-zinc-300 mt-0.5">
-              Place bids on rare components, see all bids from other pilots in real time, and let the owner award the highest bid or select a winning bidder.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => openCreateModalForType('auction')}
-            className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-black font-bold text-xs rounded-lg shrink-0 cursor-pointer"
-          >
-            + Start New Auction
-          </button>
-        </div>
-      )}
 
       {statusBanner && (
         <div

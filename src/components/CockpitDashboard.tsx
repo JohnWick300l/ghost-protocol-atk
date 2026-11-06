@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Settings,
   Cpu,
   Radio,
   Wrench,
@@ -9,27 +8,20 @@ import {
   Layers,
   MessageSquare,
   ShoppingBag,
-  ShoppingCart,
   Calendar,
   Shield,
-  Search,
-  Bell,
   Volume2,
   VolumeX,
   User as UserIcon,
   X,
   ChevronRight,
-  ChevronDown,
-  ChevronUp,
   BookOpen,
-  Compass,
   LayoutGrid,
-  Users,
-  Navigation as NavArrow,
-  ClipboardList,
-  BarChart3,
   MapPin,
-  KeyRound
+  Gamepad2,
+  Wifi,
+  WifiOff,
+  Info
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
@@ -42,20 +34,23 @@ import {
   NotificationItem
 } from '../types';
 import {
-  COCKPIT_ROTARY_STAGE_ASSET_PATH,
   ALL_SYSTEM_CONTROLS_DIRECTORY,
-  getAuthorizedRotaryDestinations,
-  formatRotarySelectionCounter,
+  COCKPIT_BOOT_TIMELINE_MS,
+  COCKPIT_DIAL_CENTER,
+  COCKPIT_INTERACTIVE_ZONES,
+  COCKPIT_RADIAL_EXPANSION_RAYS,
+  cycleCockpitSector,
+  getCockpitBootTransformSpec,
+  getCockpitZoneById,
   isUserAuthorizedForAdmin,
-  calculatePointerAngleDeg,
-  shortestAngularDelta,
-  getSegmentStepDeg,
-  getNearestRotaryIndex,
-  getTargetWheelRotationForIndex,
-  computeInertialSnapIndex,
+  resolveCockpitBootPhase,
+  shouldSkipCockpitBootAnimation,
+  resolveCockpitZoneFromCanvasPoint,
+  resolveCockpitOperatorBadge,
   resolveJetEngineerAction,
-  type RotaryDestinationItem,
-  type RotaryIconKey
+  COCKPIT_COMMUNITY_DISCLAIMER_TEXT,
+  COCKPIT_COMMUNITY_DISCLAIMER_TAGLINE,
+  type CockpitBootPhase
 } from '../utils/rules';
 
 export interface CockpitNavigateOptions {
@@ -83,176 +78,377 @@ interface CockpitDashboardProps {
   onMarkNotificationRead?: (id: string) => void;
   onMarkAllNotificationsRead?: () => void;
   openSearch?: () => void;
+  initialShowSystemControls?: boolean;
+  skipBootAnimation?: boolean;
 }
-
-const ROTARY_SELECTION_STORAGE_KEY = 'ghost_protocol_rotary_selected_id';
-let hasPlayedCockpitEntranceInSession = false;
 
 /**
- * Generates a mathematically exact SVG annular sector path centered at 12 o'clock (0°).
- * All segments share identical inner/outer radii and angular span so radial dividers meet
- * cleanly at the concentric inner and outer rings with uniform segment geometry.
+ * Tracks whether the initial Cockpit Core-to-Full-Interface transformation animation
+ * has already played during the current application session so Back / Previous Page
+ * navigation skips the animation immediately.
  */
-function buildAnnularWedgePath(
-  rInner: number,
-  rOuter: number,
-  halfSpanDeg: number
-): string {
-  const aRad = Math.max(1, halfSpanDeg) * (Math.PI / 180);
+let hasPlayedInitialCockpitBoot = false;
 
-  const x1In = -rInner * Math.sin(aRad);
-  const y1In = -rInner * Math.cos(aRad);
-  const x2In = rInner * Math.sin(aRad);
-  const y2In = -rInner * Math.cos(aRad);
+/**
+ * Preserves the last active cockpit zone across navigation so the targeting arrow
+ * and active sector remain aligned when returning from a subpage.
+ */
+let lastActiveCockpitZoneId = 'sector_priority_issues';
 
-  const x1Out = -rOuter * Math.sin(aRad);
-  const y1Out = -rOuter * Math.cos(aRad);
-  const x2Out = rOuter * Math.sin(aRad);
-  const y2Out = -rOuter * Math.cos(aRad);
+/**
+ * Exact approved GHOST PROTOCOL dashboard image assets & photorealistic red-glow state layers.
+ */
+export const ORIGINAL_COCKPIT_DASHBOARD_IMAGE =
+  '/assets/aistudio/file_00000000453c8208a2f1cff80222d13e_01cc3087.png';
+export const COCKPIT_ALL_BLUE_IMAGE = '/assets/cockpit/cockpit_all_blue.png';
+export const COCKPIT_ALL_RED_IMAGE = '/assets/cockpit/cockpit_all_red.png';
 
-  return [
-    `M ${x1In.toFixed(2)} ${y1In.toFixed(2)}`,
-    `L ${x1Out.toFixed(2)} ${y1Out.toFixed(2)}`,
-    `A ${rOuter} ${rOuter} 0 0 1 ${x2Out.toFixed(2)} ${y2Out.toFixed(2)}`,
-    `L ${x2In.toFixed(2)} ${y2In.toFixed(2)}`,
-    `A ${rInner} ${rInner} 0 0 0 ${x1In.toFixed(2)} ${y1In.toFixed(2)}`,
-    'Z'
-  ].join(' ');
+interface TransparentHotspot {
+  id: string;
+  testId: string;
+  ariaLabel: string;
+  routeId: string;
+  leftPct: number;
+  topPct: number;
+  widthPct: number;
+  heightPct: number;
+  clipPolygon?: string;
 }
+
+/**
+ * Exact Transparent Hotspots across Navigation Bar, Contribute, 8 Dashboard Sectors, Reticle, and ALL SYSTEMS.
+ * Percentage-based relative to the 941 x 1672 cockpit instrument canvas.
+ */
+const DASHBOARD_TRANSPARENT_HOTSPOTS: TransparentHotspot[] = [
+  // --- TOP NAVIGATION BAR (RIDE • CONNECT • SUPPORT • UPGRADE) ---
+  {
+    id: 'nav_ride',
+    testId: 'cockpit-hotspot-nav_ride',
+    ariaLabel: 'RIDE',
+    routeId: 'mission',
+    leftPct: 11.5,
+    topPct: 11.8,
+    widthPct: 13.0,
+    heightPct: 3.4
+  },
+  {
+    id: 'nav_connect',
+    testId: 'cockpit-hotspot-nav_connect',
+    ariaLabel: 'CONNECT',
+    routeId: 'discussions',
+    leftPct: 28.0,
+    topPct: 11.8,
+    widthPct: 16.0,
+    heightPct: 3.4
+  },
+  {
+    id: 'nav_support',
+    testId: 'cockpit-hotspot-nav_support',
+    ariaLabel: 'SUPPORT',
+    routeId: 'service',
+    leftPct: 49.5,
+    topPct: 11.8,
+    widthPct: 16.5,
+    heightPct: 3.4
+  },
+  {
+    id: 'nav_upgrade',
+    testId: 'cockpit-hotspot-nav_upgrade',
+    ariaLabel: 'UPGRADE',
+    routeId: 'modifications',
+    leftPct: 71.5,
+    topPct: 11.8,
+    widthPct: 17.5,
+    heightPct: 3.4
+  },
+  // --- STATUS ROW RIGHT: SUPPORT APP CONTRIBUTE ---
+  {
+    id: 'top_right_contribute',
+    testId: 'cockpit-contribute-button',
+    ariaLabel: 'SUPPORT APP CONTRIBUTE',
+    routeId: 'contribute',
+    leftPct: 71.8,
+    topPct: 18.2,
+    widthPct: 25.8,
+    heightPct: 5.0
+  },
+  // --- 8 CIRCULAR COCKPIT SECTORS + AVIONICS CORE RETICLE ---
+  {
+    id: 'sector_jet_engineer',
+    testId: 'cockpit-hotspot-sector_jet_engineer',
+    ariaLabel: 'JET ENGINEER — AI ASSIST • DIAGNOSE • FIX',
+    routeId: 'jet_engineer',
+    leftPct: 28.5,
+    topPct: 28.0,
+    widthPct: 43.0,
+    heightPct: 18.0,
+    clipPolygon: 'polygon(18% 0%, 82% 0%, 100% 42%, 74% 100%, 26% 100%, 0% 42%)'
+  },
+  {
+    id: 'sector_priority_issues',
+    testId: 'cockpit-hotspot-sector_priority_issues',
+    ariaLabel: 'PRIORITY ISSUES',
+    routeId: 'problems',
+    leftPct: 1.2,
+    topPct: 37.5,
+    widthPct: 16.0,
+    heightPct: 11.5
+  },
+  {
+    id: 'sector_mod_lab',
+    testId: 'cockpit-hotspot-sector_mod_lab',
+    ariaLabel: 'MOD LAB',
+    routeId: 'modifications',
+    leftPct: 1.2,
+    topPct: 49.5,
+    widthPct: 16.0,
+    heightPct: 9.8
+  },
+  {
+    id: 'sector_squadron_assist',
+    testId: 'cockpit-hotspot-sector_squadron_assist',
+    ariaLabel: 'SQUADRON ASSIST — RIDER HELP • EMERGENCY RSA',
+    routeId: 'emergency',
+    leftPct: 16.5,
+    topPct: 37.0,
+    widthPct: 21.8,
+    heightPct: 22.0,
+    clipPolygon: 'polygon(42% 0%, 100% 24%, 88% 50%, 100% 76%, 42% 100%, 0% 72%, 0% 28%)'
+  },
+  {
+    id: 'sector_charging_network',
+    testId: 'cockpit-hotspot-sector_charging_network',
+    ariaLabel: 'CHARGING NETWORK — FIND • REPORT • NAVIGATE',
+    routeId: 'charging',
+    leftPct: 61.7,
+    topPct: 37.0,
+    widthPct: 21.8,
+    heightPct: 22.0,
+    clipPolygon: 'polygon(58% 0%, 100% 28%, 100% 72%, 58% 100%, 0% 76%, 12% 50%, 0% 24%)'
+  },
+  {
+    id: 'sector_marketplace',
+    testId: 'cockpit-hotspot-sector_marketplace',
+    ariaLabel: 'MARKET PLACE',
+    routeId: 'marketplace',
+    leftPct: 82.8,
+    topPct: 37.5,
+    widthPct: 16.0,
+    heightPct: 11.5
+  },
+  {
+    id: 'sector_discussions',
+    testId: 'cockpit-hotspot-sector_discussions',
+    ariaLabel: 'DISCUSSIONS',
+    routeId: 'discussions',
+    leftPct: 82.8,
+    topPct: 49.5,
+    widthPct: 16.0,
+    heightPct: 9.8
+  },
+  {
+    id: 'sector_mission_mode',
+    testId: 'cockpit-hotspot-sector_mission_mode',
+    ariaLabel: 'MISSION MODE — PLAN • RIDE • LOG',
+    routeId: 'mission',
+    leftPct: 28.5,
+    topPct: 56.5,
+    widthPct: 43.0,
+    heightPct: 14.5,
+    clipPolygon: 'polygon(26% 0%, 74% 0%, 100% 58%, 82% 100%, 18% 100%, 0% 58%)'
+  },
+  {
+    id: 'sector_center_core',
+    testId: 'cockpit-hotspot-center-reticle',
+    ariaLabel: 'AVIONICS CORE RETICLE',
+    routeId: 'system_controls',
+    leftPct: 37.0,
+    topPct: 40.0,
+    widthPct: 26.0,
+    heightPct: 17.5,
+    clipPolygon: 'circle(48% at 50% 50%)'
+  },
+  // --- BOTTOM ALL SYSTEMS BUTTON ---
+  {
+    id: 'panel_all_system_controls',
+    testId: 'cockpit-hotspot-panel_all_system_controls',
+    ariaLabel: 'ALL SYSTEMS',
+    routeId: 'system_controls',
+    leftPct: 16.5,
+    topPct: 75.9,
+    widthPct: 67.0,
+    heightPct: 7.8
+  }
+];
 
 export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
   onNavigate,
   selectedJetModel = 'F77',
   onSelectJetModel,
-  onOpenWelcome,
+  isOffline = false,
+  isSimulatedOffline = false,
+  onToggleSimulateOffline,
+  cacheAge = 'Just now',
+  queuedActionCount = 0,
   notifications = [],
   onMarkNotificationRead,
   onMarkAllNotificationsRead,
-  openSearch
+  openSearch,
+  initialShowSystemControls = false,
+  skipBootAnimation = false
 }) => {
-  const { currentUser, switchPersona, availableUsers, openAuthModal, logout } = useAuth();
-  const { soundEnabled, toggleSound, reducedMotion, playTacticalClick } = useAudio();
+  const { currentUser, openAuthModal, logout } = useAuth();
+  const {
+    soundEnabled,
+    toggleSound,
+    reducedMotion,
+    playTacticalClick,
+    playRadarPulse
+  } = useAudio();
+
+  const effectiveOffline = isOffline || isSimulatedOffline;
 
   const canAccessAdmin = useMemo(
     () => isUserAuthorizedForAdmin(currentUser),
     [currentUser]
   );
 
-  const authorizedDestinations = useMemo(
-    () => getAuthorizedRotaryDestinations(currentUser),
-    [currentUser]
-  );
-
-  const totalDestinations = authorizedDestinations.length;
-  const stepDeg = useMemo(
-    () => getSegmentStepDeg(totalDestinations),
-    [totalDestinations]
-  );
-
-  // Restore last selected destination in session if valid & authorized
-  const [selectedIndex, setSelectedIndex] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedId = sessionStorage.getItem(ROTARY_SELECTION_STORAGE_KEY);
-        if (savedId) {
-          const idx = authorizedDestinations.findIndex(d => d.id === savedId);
-          if (idx >= 0) return idx;
-        }
-      } catch {
-        // Ignore storage errors
-      }
-    }
-    return 0;
-  });
-
-  const [wheelRotationDeg, setWheelRotationDeg] = useState<number>(() => {
-    return -selectedIndex * getSegmentStepDeg(authorizedDestinations.length);
-  });
-
-  const [isDraggingDial, setIsDraggingDial] = useState(false);
-  const [hubPressed, setHubPressed] = useState(false);
-  const [selectionPulse, setSelectionPulse] = useState(false);
-  const [pressedControlId, setPressedControlId] = useState<string | null>(null);
   const [jetModel, setJetModel] = useState<'F77' | 'X47' | 'Both'>(selectedJetModel);
-  const [showSystemControls, setShowSystemControls] = useState(false);
+  const [showSystemControls, setShowSystemControls] = useState<boolean>(Boolean(initialShowSystemControls));
   const [showPersonaMenu, setShowPersonaMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [imageLoadFailed, setImageLoadFailed] = useState(false);
-  const [entranceActive, setEntranceActive] = useState<boolean>(() => {
-    if (hasPlayedCockpitEntranceInSession) return false;
-    return true;
+  const [networkToast, setNetworkToast] = useState<boolean>(false);
+  const networkToastTimerRef = useRef<number | null>(null);
+
+  // Interactive red-glow target state (defaults to 'sector_priority_issues' or last active zone)
+  const [activeZoneId, setActiveZoneId] = useState<string>(() => lastActiveCockpitZoneId || 'sector_priority_issues');
+  const [ignitingZoneId, setIgnitingZoneId] = useState<string | null>(null);
+  const [isScrubbingDial, setIsScrubbingDial] = useState<boolean>(false);
+
+  // Transforming Boot Animation State: 'core_logo' -> 'dial_expand' -> 'full_deploy' -> 'ready'
+  const ForcedBootPhase = useMemo<CockpitBootPhase | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const param = new URLSearchParams(window.location.search).get('bootPhase');
+    if (
+      param === 'core_logo' ||
+      param === 'dial_expand' ||
+      param === 'full_deploy' ||
+      param === 'ready'
+    ) {
+      return param;
+    }
+    return null;
+  }, []);
+
+  const shouldSkipBoot = shouldSkipCockpitBootAnimation({
+    hasBootedInSession: hasPlayedInitialCockpitBoot,
+    skipBootAnimation,
+    reducedMotion,
+    initialShowSystemControls
   });
 
-  const dialContainerRef = useRef<HTMLDivElement>(null);
+  const [bootPhase, setBootPhase] = useState<CockpitBootPhase>(() => {
+    if (ForcedBootPhase) return ForcedBootPhase;
+    if (shouldSkipBoot) return 'ready';
+    return 'core_logo';
+  });
+
+  const stageRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const personaRef = useRef<HTMLDivElement>(null);
-  const isNavigatingRef = useRef<boolean>(false);
-  const lastWheelTimestampRef = useRef<number>(0);
 
-  // Mutable gesture state for 60fps pointer tracking without stale closures
-  const dragStateRef = useRef<{
-    active: boolean;
-    pointerId: number | null;
-    centerX: number;
-    centerY: number;
-    lastPointerAngleDeg: number;
-    currentWheelDeg: number;
-    totalAbsMovedDeg: number;
-    lastMoveTimeMs: number;
-    angularVelocityDegPerSec: number;
-    tappedSegmentIndex: number | null;
-  }>({
-    active: false,
-    pointerId: null,
-    centerX: 0,
-    centerY: 0,
-    lastPointerAngleDeg: 0,
-    currentWheelDeg: 0,
-    totalAbsMovedDeg: 0,
-    lastMoveTimeMs: 0,
-    angularVelocityDegPerSec: 0,
-    tappedSegmentIndex: null
-  });
+  const triggerNetworkStatusToast = () => {
+    setNetworkToast(true);
+    if (networkToastTimerRef.current !== null) {
+      window.clearTimeout(networkToastTimerRef.current);
+    }
+    networkToastTimerRef.current = window.setTimeout(() => {
+      setNetworkToast(false);
+      networkToastTimerRef.current = null;
+    }, 3400);
+  };
 
   useEffect(() => {
-    if (!hasPlayedCockpitEntranceInSession) {
-      hasPlayedCockpitEntranceInSession = true;
-      const timer = setTimeout(() => {
-        setEntranceActive(false);
-      }, reducedMotion ? 50 : 650);
-      return () => clearTimeout(timer);
+    return () => {
+      if (networkToastTimerRef.current !== null) {
+        window.clearTimeout(networkToastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const activeZone = useMemo(
+    () => getCockpitZoneById(activeZoneId),
+    [activeZoneId]
+  );
+
+  const bootSpec = useMemo(
+    () => getCockpitBootTransformSpec(bootPhase),
+    [bootPhase]
+  );
+
+  // Orchestrate the 4-stage Cockpit Core-to-Full-Interface Transforming Boot Sequence ONLY on first app start
+  useEffect(() => {
+    if (ForcedBootPhase) {
+      setBootPhase(ForcedBootPhase);
+      return;
     }
-  }, [reducedMotion]);
+    if (
+      shouldSkipCockpitBootAnimation({
+        hasBootedInSession: hasPlayedInitialCockpitBoot,
+        skipBootAnimation,
+        reducedMotion,
+        initialShowSystemControls
+      })
+    ) {
+      setBootPhase('ready');
+      return;
+    }
+
+    // Mark as played immediately so returning via Back / Previous Page always skips the animation
+    hasPlayedInitialCockpitBoot = true;
+
+    setBootPhase(resolveCockpitBootPhase(0, false));
+    playRadarPulse();
+
+    const t1 = window.setTimeout(() => {
+      setBootPhase(resolveCockpitBootPhase(COCKPIT_BOOT_TIMELINE_MS.CORE_LOGO_END + 10, false));
+    }, COCKPIT_BOOT_TIMELINE_MS.CORE_LOGO_END);
+
+    const t2 = window.setTimeout(() => {
+      setBootPhase(resolveCockpitBootPhase(COCKPIT_BOOT_TIMELINE_MS.DIAL_EXPAND_END + 10, false));
+    }, COCKPIT_BOOT_TIMELINE_MS.DIAL_EXPAND_END);
+
+    const t3 = window.setTimeout(() => {
+      setBootPhase(resolveCockpitBootPhase(COCKPIT_BOOT_TIMELINE_MS.FULL_DEPLOY_END + 10, false));
+    }, COCKPIT_BOOT_TIMELINE_MS.FULL_DEPLOY_END);
+
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+    };
+  }, [skipBootAnimation, reducedMotion, initialShowSystemControls, ForcedBootPhase]);
+
+  const activateCockpitZone = (zoneId: string, withAudioPulse = true) => {
+    lastActiveCockpitZoneId = zoneId;
+    setActiveZoneId(prev => {
+      if (prev !== zoneId && withAudioPulse) {
+        playRadarPulse();
+      }
+      return zoneId;
+    });
+  };
 
   useEffect(() => {
     setJetModel(selectedJetModel);
   }, [selectedJetModel]);
 
-  // Keep selectedIndex within bounds if user permissions change (e.g. signing out from Admin)
   useEffect(() => {
-    if (selectedIndex >= totalDestinations) {
-      const safeIdx = 0;
-      setSelectedIndex(safeIdx);
-      setWheelRotationDeg(prev =>
-        getTargetWheelRotationForIndex(prev, safeIdx, totalDestinations)
-      );
-    } else {
-      setWheelRotationDeg(prev =>
-        getTargetWheelRotationForIndex(prev, selectedIndex, totalDestinations)
-      );
+    if (initialShowSystemControls) {
+      setBootPhase('ready');
+      setShowSystemControls(true);
     }
-  }, [totalDestinations, selectedIndex]);
-
-  // Persist selected destination ID to sessionStorage
-  useEffect(() => {
-    const activeItem = authorizedDestinations[selectedIndex];
-    if (!activeItem || typeof window === 'undefined') return;
-    try {
-      sessionStorage.setItem(ROTARY_SELECTION_STORAGE_KEY, activeItem.id);
-    } catch {
-      // Ignore storage errors
-    }
-  }, [selectedIndex, authorizedDestinations]);
+  }, [initialShowSystemControls]);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -270,7 +466,33 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
       if (e.key === 'Escape') {
         setShowNotifications(false);
         setShowPersonaMenu(false);
+        setNetworkToast(false);
         setShowSystemControls(false);
+        return;
+      }
+      if (
+        showSystemControls ||
+        showPersonaMenu ||
+        showNotifications
+      )
+        return;
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const next = cycleCockpitSector(activeZoneId, 'up');
+        activateCockpitZone(next.id, true);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = cycleCockpitSector(activeZoneId, 'down');
+        activateCockpitZone(next.id, true);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const next = cycleCockpitSector(activeZoneId, 'left');
+        activateCockpitZone(next.id, true);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const next = cycleCockpitSector(activeZoneId, 'right');
+        activateCockpitZone(next.id, true);
       }
     };
     document.addEventListener('mousedown', handleOutsideClick);
@@ -279,82 +501,25 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('keydown', handleKeyDown);
     };
+  }, [activeZoneId, showSystemControls, showPersonaMenu, showNotifications]);
+
+  // Close any active Cockpit overlays (All Systems, Notifications, Persona menu) on Android back navigation
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleOverlayPopState = () => {
+      setShowSystemControls(false);
+      setShowPersonaMenu(false);
+      setShowNotifications(false);
+    };
+    window.addEventListener('popstate', handleOverlayPopState);
+    return () => window.removeEventListener('popstate', handleOverlayPopState);
   }, []);
 
   const unreadNotificationsCount = notifications.filter(n => !n.read).length;
 
-  const operatorDisplayName = currentUser?.fullName
-    ? currentUser.fullName.toUpperCase()
-    : 'SIGN IN';
-
-  const operatorRoleLabel = currentUser
-    ? (
-        currentUser.pilotNickname ||
-        (currentUser.motorcycleModel?.toUpperCase().includes('X47')
-          ? 'X47 PILOT'
-          : 'F77 PILOT')
-      ).toUpperCase()
-    : 'VISITOR MODE';
-
-  const selectedDestination: RotaryDestinationItem =
-    authorizedDestinations[selectedIndex] || authorizedDestinations[0];
-
-  const selectDestinationByIndex = useCallback(
-    (targetIdx: number, playAudio = true) => {
-      const normalizedIdx =
-        ((targetIdx % totalDestinations) + totalDestinations) % totalDestinations;
-      if (playAudio) {
-        playTacticalClick();
-      }
-      setSelectedIndex(normalizedIdx);
-      setWheelRotationDeg(prev =>
-        getTargetWheelRotationForIndex(prev, normalizedIdx, totalDestinations)
-      );
-      if (!reducedMotion) {
-        setSelectionPulse(true);
-        setTimeout(() => setSelectionPulse(false), 240);
-      }
-    },
-    [totalDestinations, playTacticalClick, reducedMotion]
-  );
-
-  const activateDestination = useCallback(
-    (destination: RotaryDestinationItem, overrideJetMode?: 'ask' | 'train') => {
-      if (isNavigatingRef.current) return;
-      // Enforce authorization check before navigating to restricted route
-      if (destination.requiresAdminOrOwner && !canAccessAdmin) {
-        return;
-      }
-
-      isNavigatingRef.current = true;
-      playTacticalClick();
-      setHubPressed(true);
-
-      const delay = reducedMotion ? 20 : 150;
-      setTimeout(() => {
-        setHubPressed(false);
-        isNavigatingRef.current = false;
-        if (destination.routeId === 'jet_engineer') {
-          const desiredMode = overrideJetMode || destination.jetMode || 'ask';
-          const resolved = resolveJetEngineerAction(
-            desiredMode === 'train' ? 'train' : 'help'
-          );
-          onNavigate(resolved.routeId, {
-            jetMode: desiredMode,
-            jetModel
-          });
-          return;
-        }
-        if (destination.routeId === 'charging') {
-          onNavigate('charging', {
-            chargingMode: destination.chargingMode || 'map'
-          });
-          return;
-        }
-        onNavigate(destination.routeId);
-      }, delay);
-    },
-    [canAccessAdmin, jetModel, onNavigate, playTacticalClick, reducedMotion]
+  const operatorBadge = useMemo(
+    () => resolveCockpitOperatorBadge(currentUser),
+    [currentUser]
   );
 
   const triggerCockpitNavigation = (
@@ -362,201 +527,93 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
     routeId: string,
     options?: CockpitNavigateOptions
   ) => {
-    playTacticalClick();
-    setPressedControlId(controlId);
-
-    if (routeId === 'system_controls') {
-      setShowSystemControls(true);
-      setPressedControlId(null);
+    // Tapping the GHOST PROTOCOL logo while on the home screen keeps the interface ready without replaying the boot animation
+    if (controlId === 'header_logo' && routeId === 'dashboard') {
+      activateCockpitZone('header_logo', false);
+      playTacticalClick();
       return;
     }
 
-    const delay = reducedMotion ? 20 : 120;
+    // Ensure any navigation click during boot immediately unlocks the full interface
+    if (bootPhase !== 'ready') {
+      setBootPhase('ready');
+    }
+
+    activateCockpitZone(controlId, false);
+    setIgnitingZoneId(controlId);
+    playTacticalClick();
+
+    if (routeId === 'system_controls') {
+      setTimeout(() => {
+        setIgnitingZoneId(null);
+        setShowSystemControls(true);
+        try {
+          window.history.pushState(
+            { tab: 'dashboard', overlay: 'system_controls' },
+            '',
+            window.location.href
+          );
+        } catch {}
+      }, reducedMotion ? 20 : 140);
+      return;
+    }
+
+    const delay = reducedMotion ? 20 : 180;
     setTimeout(() => {
-      onNavigate(routeId, options);
-      setPressedControlId(null);
+      setIgnitingZoneId(null);
+      if (routeId === 'jet_engineer') {
+        const desiredMode = options?.jetMode || 'ask';
+        const resolved = resolveJetEngineerAction(
+          desiredMode === 'train' ? 'train' : 'help'
+        );
+        onNavigate(resolved.routeId, {
+          jetMode: desiredMode,
+          jetModel
+        });
+      } else if (routeId === 'charging') {
+        onNavigate('charging', {
+          chargingMode: options?.chargingMode || 'map'
+        });
+      } else {
+        onNavigate(routeId, options);
+      }
     }, delay);
+  };
+
+  // Rotary pointer/touch scrub handler across the circular dial
+  const handleStagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!stageRef.current) return;
+    // On touch devices, scrub when finger is pressed down; on mouse, track hover smoothly
+    if (e.pointerType === 'touch' && !isScrubbingDial && e.buttons === 0) return;
+
+    // Resolve the exact hotspot element under the pointer coordinates first (prevents touch-capture or boundary drift)
+    const hitEl =
+      typeof document !== 'undefined' && typeof document.elementFromPoint === 'function'
+        ? (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)
+        : (e.target as HTMLElement | null);
+    const hotspotEl = hitEl?.closest?.('[data-zone-id]') as HTMLElement | null;
+    const directZoneId = hotspotEl?.getAttribute('data-zone-id');
+    if (directZoneId) {
+      activateCockpitZone(directZoneId, true);
+      return;
+    }
+
+    const rect = stageRef.current.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const canvasX = ((e.clientX - rect.left) / rect.width) * 941;
+    const canvasY = ((e.clientY - rect.top) / rect.height) * 1672;
+
+    const resolvedZone = resolveCockpitZoneFromCanvasPoint(canvasX, canvasY);
+    if (resolvedZone) {
+      activateCockpitZone(resolvedZone.id, true);
+    }
   };
 
   const handleModelSelect = (model: 'F77' | 'X47' | 'Both') => {
     playTacticalClick();
     setJetModel(model);
     onSelectJetModel?.(model);
-  };
-
-  // Pointer Gesture Handlers for the Rotary Dial
-  const handleDialPointerDown = (
-    e: React.PointerEvent<HTMLElement>,
-    tappedSegmentIndex: number | null = null
-  ) => {
-    // Ignore right-clicks
-    if (e.button !== 0 && e.pointerType === 'mouse') return;
-    if (!dialContainerRef.current) return;
-
-    const rect = dialContainerRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const distFromCenter = Math.hypot(e.clientX - centerX, e.clientY - centerY);
-    const hubRadiusPx = rect.width * (148 / 768);
-
-    // If pointer down is inside the central activation hub, let the hub button handle it directly
-    if (distFromCenter < hubRadiusPx && tappedSegmentIndex === null) {
-      return;
-    }
-
-    const startAngle = calculatePointerAngleDeg(centerX, centerY, e.clientX, e.clientY);
-    dragStateRef.current = {
-      active: true,
-      pointerId: e.pointerId,
-      centerX,
-      centerY,
-      lastPointerAngleDeg: startAngle,
-      currentWheelDeg: wheelRotationDeg,
-      totalAbsMovedDeg: 0,
-      lastMoveTimeMs: performance.now(),
-      angularVelocityDegPerSec: 0,
-      tappedSegmentIndex
-    };
-
-    setIsDraggingDial(true);
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // Ignore pointer capture errors on synthetic events
-    }
-  };
-
-  const handleDialPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const state = dragStateRef.current;
-    if (!state.active || state.pointerId !== e.pointerId) return;
-
-    const now = performance.now();
-    const newPointerAngle = calculatePointerAngleDeg(
-      state.centerX,
-      state.centerY,
-      e.clientX,
-      e.clientY
-    );
-    const deltaDeg = shortestAngularDelta(state.lastPointerAngleDeg, newPointerAngle);
-    if (Math.abs(deltaDeg) < 0.05) return;
-
-    const dtSec = Math.max(0.008, (now - state.lastMoveTimeMs) / 1000);
-    const instVelocity = deltaDeg / dtSec;
-
-    state.angularVelocityDegPerSec =
-      state.angularVelocityDegPerSec * 0.4 + instVelocity * 0.6;
-    state.lastPointerAngleDeg = newPointerAngle;
-    state.lastMoveTimeMs = now;
-    state.currentWheelDeg += deltaDeg;
-    state.totalAbsMovedDeg += Math.abs(deltaDeg);
-
-    setWheelRotationDeg(state.currentWheelDeg);
-
-    const nearestIdx = getNearestRotaryIndex(state.currentWheelDeg, totalDestinations);
-    if (nearestIdx !== selectedIndex) {
-      setSelectedIndex(nearestIdx);
-      playTacticalClick();
-    }
-  };
-
-  const finishDialPointerGesture = (e: React.PointerEvent<HTMLDivElement>) => {
-    const state = dragStateRef.current;
-    if (!state.active) return;
-
-    state.active = false;
-    setIsDraggingDial(false);
-    try {
-      if (state.pointerId !== null && e.currentTarget.hasPointerCapture(state.pointerId)) {
-        e.currentTarget.releasePointerCapture(state.pointerId);
-      }
-    } catch {
-      // Ignore release errors
-    }
-
-    // If movement was minimal (< 5°), treat as a click/tap on a segment to select & align it
-    if (state.totalAbsMovedDeg < 5 && state.tappedSegmentIndex !== null) {
-      selectDestinationByIndex(state.tappedSegmentIndex, true);
-      return;
-    }
-
-    // Otherwise, perform deterministic magnetic snapping with controlled inertia
-    const { targetIndex, targetRotationDeg } = computeInertialSnapIndex(
-      state.currentWheelDeg,
-      state.angularVelocityDegPerSec,
-      totalDestinations,
-      reducedMotion
-    );
-
-    if (targetIndex !== selectedIndex) {
-      playTacticalClick();
-    }
-    setSelectedIndex(targetIndex);
-    setWheelRotationDeg(targetRotationDeg);
-    if (!reducedMotion) {
-      setSelectionPulse(true);
-      setTimeout(() => setSelectionPulse(false), 240);
-    }
-  };
-
-  const handleDialKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      selectDestinationByIndex(selectedIndex + 1, true);
-    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      selectDestinationByIndex(selectedIndex - 1, true);
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      selectDestinationByIndex(0, true);
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      selectDestinationByIndex(totalDestinations - 1, true);
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      if (selectedDestination) {
-        activateDestination(selectedDestination);
-      }
-    }
-  };
-
-  const handleDialWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    const now = performance.now();
-    if (now - lastWheelTimestampRef.current < 130) return;
-    if (Math.abs(e.deltaY) < 8 && Math.abs(e.deltaX) < 8) return;
-    lastWheelTimestampRef.current = now;
-    const dir = (e.deltaY || e.deltaX) > 0 ? 1 : -1;
-    selectDestinationByIndex(selectedIndex + dir, true);
-  };
-
-  const renderRotaryIcon = (iconKey: RotaryIconKey, className: string) => {
-    switch (iconKey) {
-      case 'cog':
-        return <Settings className={className} />;
-      case 'zap':
-        return <Zap className={className} />;
-      case 'users':
-        return <Users className={className} />;
-      case 'navigation':
-        return <NavArrow className={className} />;
-      case 'clipboard':
-        return <ClipboardList className={className} />;
-      case 'message':
-        return <MessageSquare className={className} />;
-      case 'cart':
-        return <ShoppingCart className={className} />;
-      case 'book':
-        return <BookOpen className={className} />;
-      case 'chart':
-        return <BarChart3 className={className} />;
-      case 'pin':
-        return <MapPin className={className} />;
-      case 'key':
-        return <KeyRound className={className} />;
-      case 'shield':
-        return <Shield className={className} />;
-      default:
-        return <Cpu className={className} />;
-    }
   };
 
   const getDirectoryIcon = (id: string) => {
@@ -585,6 +642,8 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
         return <Wrench className="w-4 h-4 text-[#42B883]" />;
       case 'dir_marketplace':
         return <ShoppingBag className="w-4 h-4 text-[#F59E0B]" />;
+      case 'dir_squadron_showdown':
+        return <Gamepad2 className="w-4 h-4 text-[#EF4444]" />;
       case 'dir_admin':
         return <Shield className="w-4 h-4 text-[#E04F5F]" />;
       default:
@@ -596,23 +655,13 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
     item => !item.requiresAdminOrOwner || canAccessAdmin
   );
 
-  // Precompute uniform SVG wedge geometry for the current number of authorized destinations.
-  // Both idle and active segments use the exact same annular wedge path (rInner=198, rOuter=374)
-  // so radial dividers meet cleanly at the inner and outer concentric rings and the active segment
-  // remains the exact same size and geometry as all other segments.
-  const halfSpanDeg = stepDeg / 2;
-  const segmentWedgePath = useMemo(
-    () => buildAnnularWedgePath(198, 374, halfSpanDeg),
-    [halfSpanDeg]
-  );
-
   const renderNotificationsPopover = () => (
     <div
       role="dialog"
       aria-label="Notifications"
-      className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-[#020408]/95 backdrop-blur-xl border border-[#1E2D42] rounded-lg shadow-[0_20px_60px_rgba(0,0,0,0.98)] p-3.5 z-50 text-xs font-sans text-[#E8EDF2]"
+      className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-[#040812]/98 backdrop-blur-xl border border-[#1E3A5F] rounded-lg shadow-[0_20px_60px_rgba(0,0,0,0.98)] p-3.5 z-50 text-xs font-sans text-[#E8EDF2]"
     >
-      <div className="flex items-center justify-between border-b border-[#141E2E] pb-2 mb-2.5">
+      <div className="flex items-center justify-between border-b border-[#142238] pb-2 mb-2.5">
         <span className="font-bold font-mono tracking-wider text-[#F8FAFC] uppercase">
           Notifications {unreadNotificationsCount > 0 ? `(${unreadNotificationsCount})` : ''}
         </span>
@@ -623,1325 +672,1510 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
               playTacticalClick();
               onMarkAllNotificationsRead();
             }}
-            className="text-[11px] font-mono text-[#38BDF8] hover:underline cursor-pointer"
+            className="text-[11px] font-mono text-[#38BDF8] hover:underline"
           >
             Mark all read
           </button>
         )}
       </div>
-      <div className="max-h-64 overflow-y-auto space-y-2">
-        {notifications.length === 0 ? (
-          <div className="text-center py-5 text-[#64748B] text-[11px] font-mono">
-            No active notifications
-          </div>
-        ) : (
-          notifications.map(n => (
+      {notifications.length === 0 ? (
+        <p className="text-[#8E98A4] py-4 text-center font-mono text-[11px]">
+          No active alerts in queue.
+        </p>
+      ) : (
+        <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+          {notifications.slice(0, 12).map(n => (
             <button
-              type="button"
               key={n.id}
+              type="button"
               onClick={() => {
                 playTacticalClick();
                 onMarkNotificationRead?.(n.id);
+                setShowNotifications(false);
+                if (n.link) {
+                  onNavigate(n.link);
+                }
               }}
-              className={`w-full text-left p-2.5 rounded border transition-colors cursor-pointer ${
+              className={`w-full text-left p-2.5 rounded border transition-colors ${
                 n.read
-                  ? 'bg-[#060A12]/80 border-[#131C2B] text-[#94A3B8]'
-                  : 'bg-[#09101C] border-[#38BDF8]/50 text-[#F8FAFC]'
+                  ? 'bg-[#080F1E]/70 border-[#142238] text-[#8E98A4]'
+                  : 'bg-[#0C1930] border-[#38BDF8]/50 text-[#F8FAFC]'
               }`}
             >
-              <div className="font-semibold text-[11px] mb-0.5 flex items-center justify-between gap-2">
-                <span>{n.title}</span>
-                {!n.read && (
-                  <span className="w-2 h-2 rounded-full bg-[#F59E0B] shrink-0" />
-                )}
+              <div className="font-semibold text-[11px] leading-snug">{n.title}</div>
+              <div className="text-[11px] text-[#94A3B8] mt-0.5 line-clamp-2">
+                {n.message}
               </div>
-              <div className="text-[10px] leading-snug text-[#CBD5E1]">{n.message}</div>
             </button>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 
-  const renderProfilePopover = () => (
+  const renderPersonaPopover = () => (
     <div
       role="dialog"
-      aria-label="Operator Profile Menu"
-      className="absolute right-0 top-full mt-2 w-72 bg-[#020408]/95 backdrop-blur-xl border border-[#1E2D42] rounded-lg shadow-[0_20px_60px_rgba(0,0,0,0.98)] p-3.5 z-50 text-xs font-sans text-[#E8EDF2]"
+      aria-label="Operator Profile & Controls"
+      className="absolute right-0 top-full mt-2 w-64 bg-[#040812]/98 backdrop-blur-xl border border-[#1E3A5F] rounded-lg shadow-[0_20px_60px_rgba(0,0,0,0.98)] p-3.5 z-50 text-xs font-sans text-[#E8EDF2]"
     >
-      <div className="text-[10px] font-mono tracking-wider text-[#94A3B8] uppercase mb-2 border-b border-[#141E2E] pb-1.5 flex items-center justify-between">
-        <span>Active Operator</span>
-        <span className="text-[#38BDF8]">{operatorRoleLabel}</span>
-      </div>
-
       {currentUser ? (
-        <div className="space-y-2 mb-3">
-          <div>
-            <div className="font-bold text-sm text-[#F8FAFC]">{currentUser.fullName}</div>
-            <div className="text-[11px] font-mono text-[#94A3B8]">
-              {currentUser.motorcycleModel} · {currentUser.role.toUpperCase()}
+        <div className="space-y-3">
+          <div className="border-b border-[#142238] pb-2.5">
+            <div className="font-bold text-[#F8FAFC] text-sm truncate">
+              {operatorBadge.fullName}
+            </div>
+            <div className="text-[10px] font-mono text-[#38BDF8] uppercase tracking-wider mt-0.5">
+              ID: {operatorBadge.userId}
+            </div>
+            <div className="text-[11px] font-mono text-[#EF4444] uppercase tracking-wider mt-0.5">
+              {operatorBadge.pilotLabel} • {currentUser.motorcycleModel || 'F77'}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setShowPersonaMenu(false);
-                triggerCockpitNavigation('profile_garage', 'garage');
-              }}
-              className="py-1.5 px-2.5 rounded bg-[#070B13] hover:bg-[#0D1524] text-[#F8FAFC] border border-[#1E2D42] font-mono text-[10px] uppercase transition-colors cursor-pointer text-left"
-            >
-              My Garage
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowPersonaMenu(false);
-                setShowSystemControls(true);
-              }}
-              className="py-1.5 px-2.5 rounded bg-[#070B13] hover:bg-[#0D1524] text-[#38BDF8] border border-[#1E2D42] font-mono text-[10px] uppercase transition-colors cursor-pointer text-left"
-            >
-              All Controls
-            </button>
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-[#8E98A4] mb-1.5">
+              Platform Telemetry Filter
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {(['F77', 'X47', 'Both'] as const).map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => handleModelSelect(m)}
+                  className={`py-1.5 rounded font-mono text-[11px] font-bold border transition-colors ${
+                    jetModel === m
+                      ? 'bg-[#38BDF8]/20 border-[#38BDF8] text-[#F8FAFC]'
+                      : 'bg-[#080F1E] border-[#142238] text-[#8E98A4] hover:text-white'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {canAccessAdmin && (
+          <div className="space-y-1.5 pt-1 border-t border-[#142238]">
             <button
               type="button"
               onClick={() => {
+                playTacticalClick();
                 setShowPersonaMenu(false);
-                triggerCockpitNavigation('profile_admin', 'admin');
+                onNavigate('garage');
               }}
-              className="w-full py-1.5 px-2.5 rounded bg-[#F59E0B]/15 hover:bg-[#F59E0B]/25 text-[#F59E0B] border border-[#F59E0B]/40 font-mono font-bold text-[10px] uppercase transition-colors cursor-pointer text-left flex items-center justify-between"
+              className="w-full flex items-center justify-between px-2.5 py-2 rounded bg-[#0A1324] hover:bg-[#112240] border border-[#1E3A5F]/60 text-[#F8FAFC] font-mono text-[11px]"
             >
-              <span>Admin Centre</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <span>MY GARAGE</span>
+              <ChevronRight className="w-3.5 h-3.5 text-[#38BDF8]" />
             </button>
-          )}
 
-          <button
-            type="button"
-            onClick={() => {
-              setShowPersonaMenu(false);
-              void logout();
-            }}
-            className="w-full py-1.5 px-2.5 rounded bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 text-[#E04F5F] border border-[#E04F5F]/40 font-mono font-bold text-[10px] uppercase transition-colors cursor-pointer"
-          >
-            Sign Out
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                playTacticalClick();
+                toggleSound();
+              }}
+              className="w-full flex items-center justify-between px-2.5 py-2 rounded bg-[#0A1324] hover:bg-[#112240] border border-[#1E3A5F]/60 text-[#F8FAFC] font-mono text-[11px]"
+            >
+              <span>AVIONICS AUDIO</span>
+              <span className="flex items-center gap-1 text-[#38BDF8]">
+                {soundEnabled ? (
+                  <>
+                    <Volume2 className="w-3.5 h-3.5" /> ON
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="w-3.5 h-3.5 text-[#8E98A4]" /> MUTED
+                  </>
+                )}
+              </span>
+            </button>
+
+            {canAccessAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  playTacticalClick();
+                  setShowPersonaMenu(false);
+                  onNavigate('admin');
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-2 rounded bg-[#2A0A10] hover:bg-[#3F0F18] border border-[#EF4444]/60 text-[#FCA5A5] font-mono text-[11px]"
+              >
+                <span>ADMIN CENTRE</span>
+                <Shield className="w-3.5 h-3.5 text-[#EF4444]" />
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                playTacticalClick();
+                setShowPersonaMenu(false);
+                logout();
+              }}
+              className="w-full text-left px-2.5 py-1.5 rounded text-[#EF4444] hover:bg-[#EF4444]/10 font-mono text-[11px]"
+            >
+              SIGN OUT
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="space-y-2 mb-3">
-          <div className="text-[11px] text-[#94A3B8]">
-            Public Visitor Mode (Read-Only Telemetry)
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setShowPersonaMenu(false);
-              openAuthModal();
-            }}
-            className="w-full py-2 px-3 rounded bg-[#38BDF8] hover:bg-[#0EA5E9] text-[#020408] font-mono font-bold text-[11px] uppercase transition-colors cursor-pointer"
-          >
-            Sign In / Register Motorcycle
-          </button>
-        </div>
-      )}
-
-      {/* Cockpit Audio & Welcome Utilities */}
-      <div className="border-t border-[#141E2E] pt-2.5 mb-2.5 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            toggleSound();
-          }}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded border font-mono text-[10px] uppercase transition-colors cursor-pointer ${
-            soundEnabled
-              ? 'bg-[#08111E] border-[#38BDF8]/50 text-[#38BDF8]'
-              : 'bg-[#05080F] border-[#1E2D42] text-[#94A3B8] hover:text-[#F8FAFC]'
-          }`}
-        >
-          {soundEnabled ? <Volume2 className="w-3 h-3" /> : <VolumeX className="w-3 h-3" />}
-          <span>Audio: {soundEnabled ? 'Online' : 'Muted'}</span>
-        </button>
-      </div>
-    </div>
-  );
-
-  // CSS transition for the rotating ring: immediate during pointer drag, smooth magnetic snap on release
-  const wheelTransitionStyle: React.CSSProperties = {
-    transform: `rotate(${wheelRotationDeg.toFixed(2)}deg)`,
-    transition:
-      isDraggingDial || reducedMotion
-        ? 'none'
-        : 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)'
-  };
-
-  return (
-    <div className="relative w-full min-h-[calc(100vh-3.5rem)] bg-[#010204] text-[#F8FAFC] overflow-x-hidden select-none font-sans flex flex-col items-center justify-start">
-      {/* Desktop Wide Cool-Black Obsidian Cockpit Framing Backdrop (md+) */}
-      <div
-        aria-hidden="true"
-        className="hidden md:block fixed inset-0 pointer-events-none z-0 overflow-hidden bg-[#010204]"
-      >
-        <div
-          className="absolute inset-0 opacity-20 bg-cover bg-top blur-3xl scale-110 brightness-75 contrast-125 saturate-75"
-          style={{
-            backgroundImage: `url('${COCKPIT_ROTARY_STAGE_ASSET_PATH}')`
-          }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(circle at 50% 42%, rgba(56, 189, 248, 0.06) 0%, rgba(2, 4, 8, 0.88) 48%, rgba(1, 2, 4, 0.99) 100%)'
-          }}
-        />
-        <div className="absolute inset-0 stealth-grid opacity-50" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#010204] via-transparent to-[#010204]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#010204]/80 via-transparent to-[#010204]/95" />
-      </div>
-
-      {/* =====================================================================
-          AUTHORITATIVE COCKPIT STAGE (848 × 1855 Reference Proportions)
-          Combines the exact supplied GHOST PROTOCOL cockpit artwork with
-          the live interactive Rotary Navigation Instrument, live Selected-Page
-          panel, live Header controls, and All System Controls.
-          ===================================================================== */}
-      <div className="relative z-10 w-full flex justify-center">
-        <div
-          data-testid="cockpit-rotary-stage"
-          className={`relative w-full max-w-[440px] md:max-w-[420px] lg:max-w-[436px] aspect-[848/1855] mx-auto bg-[#010204] border-x border-[#121D2D]/70 shadow-[0_0_120px_rgba(0,0,0,1),0_0_40px_rgba(14,165,233,0.08)] transition-opacity duration-500 ${
-            entranceActive && !reducedMotion ? 'opacity-95' : 'opacity-100'
-          }`}
-        >
-          {/* Layer 1: Exact Cleaned Reference Artwork (848x1855) with Cool-Black Obsidian Toning */}
-          {!imageLoadFailed ? (
-            <>
-              <img
-                src={COCKPIT_ROTARY_STAGE_ASSET_PATH}
-                alt="GHOST PROTOCOL — Tactical Cockpit Flight Deck"
-                referrerPolicy="no-referrer"
-                draggable={false}
-                onError={() => setImageLoadFailed(true)}
-                className="w-full h-full object-contain block pointer-events-none select-none brightness-[0.88] contrast-[1.16] saturate-[0.92]"
-              />
-              {/* Subtle Cool-Black Obsidian Vignette Scrim over non-interactive edges */}
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  background:
-                    'radial-gradient(ellipse 82% 76% at 50% 48%, rgba(2, 4, 8, 0.08) 0%, rgba(2, 4, 8, 0.36) 72%, rgba(1, 2, 4, 0.72) 100%)'
-                }}
-              />
-            </>
-          ) : (
-            <div className="w-full h-full bg-gradient-to-b from-[#03060C] via-[#050912] to-[#010204] border border-[#141E2E]" />
-          )}
-
-          {/* =================================================================
-              Layer 2: TOP HEADER INTERACTION CONTROLS
-              Search, Notifications, and Dynamic Authenticated Operator Profile
-              ================================================================= */}
-          {/* Search Trigger (x=476..532, y=126..184) */}
+        <div className="space-y-2.5">
+          <p className="text-[#94A3B8] text-[11px] leading-relaxed">
+            Authenticate your Ultraviolette pilot profile to unlock squadron telemetry and garage records.
+          </p>
           <button
             type="button"
             onClick={() => {
               playTacticalClick();
-              openSearch?.();
+              setShowPersonaMenu(false);
+              openAuthModal('login');
             }}
-            aria-label="Search System"
-            title="Search System (Ctrl+K)"
-            style={{
-              left: '56.13%',
-              top: '6.79%',
-              width: '6.60%',
-              height: '3.13%'
-            }}
-            className="absolute z-30 rounded-full flex items-center justify-center transition-all duration-150 hover:bg-[#38BDF8]/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] cursor-pointer"
+            className="w-full py-2 rounded bg-[#38BDF8]/20 hover:bg-[#38BDF8]/30 border border-[#38BDF8] text-[#F8FAFC] font-mono font-bold text-xs uppercase tracking-wider"
           >
-            <span className="sr-only">Search System</span>
+            Sign In / Register
           </button>
+        </div>
+      )}
+    </div>
+  );
 
-          {/* Notifications Trigger (x=548..608, y=126..184) */}
-          <div
-            ref={notificationsRef}
-            style={{
-              left: '64.62%',
-              top: '6.79%',
-              width: '7.08%',
-              height: '3.13%'
-            }}
-            className="absolute z-30"
+  // Compute compass laser x-offset inside the 330..020 compass window (x = 325..616)
+  const compassShiftPx = useMemo(() => {
+    const normalized = ((activeZone.bearingDeg + 180) % 360) - 180;
+    return Math.max(-110, Math.min(110, (normalized / 180) * 105));
+  }, [activeZone.bearingDeg]);
+
+  return (
+    <div
+      data-testid="cockpit-dashboard-root"
+      data-active-zone={activeZoneId}
+      data-boot-phase={bootPhase}
+      style={{
+        backgroundColor: '#010204'
+      }}
+      className="relative w-full h-[100dvh] min-h-[100dvh] max-h-[100dvh] flex flex-col justify-between items-center overflow-hidden select-none bg-[#010204]"
+    >
+      {/* Inline Keyframe Animations for Fighter-Jet HUD, Laser Trace, Radar Sweep & Transforming Boot */}
+      <style>{`
+        @keyframes gpLaserPerimeterTrace {
+          0% { stroke-dashoffset: 1200; }
+          100% { stroke-dashoffset: 0; }
+        }
+        @keyframes gpCrimsonPulse {
+          0%, 100% { opacity: 0.88; }
+          50% { opacity: 1; }
+        }
+        @keyframes gpRadarSweepSpin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes gpCounterSpin {
+          0% { transform: rotate(360deg); }
+          100% { transform: rotate(0deg); }
+        }
+        @keyframes gpIgnitionShockwave {
+          0% { transform: scale(0.25); opacity: 1; stroke-width: 10px; }
+          100% { transform: scale(1.65); opacity: 0; stroke-width: 1px; }
+        }
+        @keyframes gpCompassScan {
+          0%, 100% { opacity: 0.45; transform: scaleY(0.92); }
+          50% { opacity: 0.95; transform: scaleY(1.06); }
+        }
+        @keyframes gpBootRayShoot {
+          0% { stroke-dashoffset: 360; opacity: 1; }
+          65% { stroke-dashoffset: 0; opacity: 1; }
+          100% { stroke-dashoffset: -120; opacity: 0.15; }
+        }
+        @keyframes gpBootPerimeterFlash {
+          0% { stroke-dashoffset: 900; opacity: 0.95; }
+          70% { stroke-dashoffset: 0; opacity: 1; }
+          100% { stroke-dashoffset: 0; opacity: 0; }
+        }
+      `}</style>
+
+      {/* =====================================================================
+          EXACT APPROVED GHOST PROTOCOL COCKPIT DASHBOARD (941 x 1672)
+          Accurate circular dial aspect-ratio without any stretching or compression
+          ===================================================================== */}
+      <div
+        ref={stageRef}
+        data-testid="cockpit-rotary-stage"
+        onPointerDown={() => setIsScrubbingDial(true)}
+        onPointerUp={() => setIsScrubbingDial(false)}
+        onPointerCancel={() => setIsScrubbingDial(false)}
+        onPointerMove={handleStagePointerMove}
+        style={{
+          width:
+            'min(460px, 100vw, calc((100dvh - 52px - env(safe-area-inset-bottom, 0px)) * 0.5628))',
+          aspectRatio: '941 / 1672'
+        }}
+        className="relative aspect-[941/1672] shrink-0 mx-auto select-none"
+      >
+        {/* Transforming Iris Wrapper: Starts at Central Core (9.2%) -> Expands Circular Interface (46.5%) -> Deploys All Buttons (115%) */}
+        <div
+          data-testid="cockpit-transform-iris"
+          style={{
+            clipPath: bootSpec.clipPathCss,
+            transformOrigin: '50% 48.44%',
+            transform:
+              bootPhase === 'ready'
+                ? 'none'
+                : `scale(${bootSpec.stageScale}) rotate(${bootSpec.stageRotateDeg}deg)`,
+            transition: reducedMotion
+              ? 'none'
+              : 'clip-path 760ms cubic-bezier(0.16, 1, 0.3, 1), transform 760ms cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+          className="relative w-full h-full pointer-events-none select-none"
+        >
+          {/* Base Cockpit Layer: All sectors in electric blue so only the active toggled page glows red */}
+          <img
+            src={COCKPIT_ALL_BLUE_IMAGE}
+            alt="GHOST PROTOCOL Cockpit Dashboard"
+            width={941}
+            height={1672}
+            loading="eager"
+            decoding="sync"
+            fetchPriority="high"
+            draggable={false}
+            className="block w-full h-full object-contain pointer-events-none select-none"
+          />
+
+          {/* ===================================================================
+              INTERACTIVE RED GLOW + FIGHTER-JET HUD ANIMATION SVG OVERLAY
+              =================================================================== */}
+          <svg
+            viewBox="0 0 941 1672"
+            data-testid="cockpit-interactive-hud-svg"
+            className="absolute inset-0 w-full h-full pointer-events-none select-none z-10"
           >
-            <button
-              type="button"
-              onClick={() => {
-                playTacticalClick();
-                setShowNotifications(prev => !prev);
-                setShowPersonaMenu(false);
+            <defs>
+              {/* Radial Crimson Inner Plasma Fill for Active Toggled Sector */}
+              <radialGradient
+                id="gp-active-crimson-plasma"
+                cx={activeZone.centerPoint.x}
+                cy={activeZone.centerPoint.y}
+                r="210"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop offset="0%" stopColor="#FF1E27" stopOpacity="0.28" />
+                <stop offset="55%" stopColor="#DC2626" stopOpacity="0.14" />
+                <stop offset="100%" stopColor="#991B1B" stopOpacity="0.0" />
+              </radialGradient>
+
+              {/* Conic-like Radar Sweep Gradient inside Central Reticle */}
+              <linearGradient id="gp-radar-sweep-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#FF1E27" stopOpacity="0.48" />
+                <stop offset="45%" stopColor="#EF4444" stopOpacity="0.12" />
+                <stop offset="100%" stopColor="#38BDF8" stopOpacity="0.0" />
+              </linearGradient>
+
+              {/* Hardware-Accelerated ClipPath revealing the exact photorealistic red-glow image over the active zone */}
+              <clipPath id="cockpit-active-red-clip">
+                <path d={activeZone.svgMaskPath} />
+              </clipPath>
+            </defs>
+
+            {/* 1. Photorealistic Crimson-Red Cockpit Layer Clipped to the Exact Groove of the Active Button */}
+            <image
+              href={COCKPIT_ALL_RED_IMAGE}
+              width="941"
+              height="1672"
+              clipPath="url(#cockpit-active-red-clip)"
+              style={{
+                transition: 'opacity 180ms ease-out',
+                animation: reducedMotion ? 'none' : 'gpCrimsonPulse 2.2s ease-in-out infinite'
               }}
-              aria-label={
-                unreadNotificationsCount > 0
-                  ? `Notifications (${unreadNotificationsCount} unread)`
-                  : 'Notifications'
-              }
-              aria-expanded={showNotifications}
-              className="w-full h-full rounded-full flex items-center justify-center relative transition-all duration-150 hover:bg-[#38BDF8]/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] cursor-pointer"
-            >
-              {unreadNotificationsCount > 0 && (
-                <span
-                  data-testid="unread-notifications-dot"
-                  className="absolute top-[10%] right-[14%] w-2.5 h-2.5 rounded-full bg-[#F59E0B] shadow-[0_0_8px_#F59E0B]"
-                />
-              )}
-            </button>
-            {showNotifications && renderNotificationsPopover()}
-          </div>
+            />
 
-          {/* Operator Profile Pill Trigger (x=618..844, y=120..190) */}
-          <div
-            ref={personaRef}
-            style={{
-              left: '72.0%',
-              top: '6.47%',
-              width: '27.4%',
-              height: '3.77%'
-            }}
-            className="absolute z-30"
-          >
-            <button
-              type="button"
-              onClick={() => {
-                playTacticalClick();
-                setShowPersonaMenu(prev => !prev);
-                setShowNotifications(false);
-              }}
-              aria-label={`Operator Profile: ${operatorDisplayName}, ${operatorRoleLabel}`}
-              aria-expanded={showPersonaMenu}
-              className="w-full h-full rounded-full flex items-center justify-end pr-[2%] pl-[29%] text-left transition-all duration-150 hover:bg-[#38BDF8]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] cursor-pointer"
-            >
-              <div className="flex items-center justify-between w-full min-w-0 gap-0.5">
-                <div className="min-w-0 flex-1 leading-tight">
-                  <div
-                    data-testid="cockpit-operator-name"
-                    className="font-sans font-bold text-[9.5px] sm:text-[10.5px] tracking-wide text-[#F8FAFC] truncate"
-                  >
-                    {operatorDisplayName}
-                  </div>
-                  <div
-                    data-testid="cockpit-operator-role"
-                    className="font-mono font-medium text-[8px] sm:text-[9px] tracking-wider text-[#38BDF8] whitespace-nowrap"
-                  >
-                    {operatorRoleLabel}
-                  </div>
-                </div>
-                <ChevronDown className="w-3 h-3 text-[#CBD5E1] shrink-0" />
-              </div>
-            </button>
-            {showPersonaMenu && renderProfilePopover()}
-          </div>
+            {/* 2. Active Zone Path Marker for Telemetry & Testing (zero artificial SVG bleed outside curved bevels) */}
+            <path
+              data-testid="cockpit-active-red-glow-path"
+              d={activeZone.svgMaskPath}
+              fill="none"
+              stroke="none"
+            />
 
-          {/* =================================================================
-              Layer 2B: TOP-RIGHT CONTRIBUTION EMBLEM & INTERFACE (BELOW LOGIN)
-              Separate from the circular rotary dashboard.
-              ================================================================= */}
-          <button
-            type="button"
-            data-testid="cockpit-contribute-button"
-            onClick={() => triggerCockpitNavigation('top_right_contribute', 'contribute')}
-            aria-label="Contribute to GHOST PROTOCOL"
-            title="Contribute to GHOST PROTOCOL"
-            style={{
-              right: '2.2%',
-              top: '11.0%'
-            }}
-            className="absolute z-30 flex items-center gap-2 pl-2 pr-2.5 py-1.5 rounded-xl bg-gradient-to-r from-[#171105]/95 via-[#0B0F19]/95 to-[#1B1205]/95 border border-[#F59E0B]/80 hover:border-[#FDE68A] shadow-[0_6px_22px_rgba(0,0,0,0.88),0_0_18px_rgba(245,158,11,0.32)] hover:shadow-[0_6px_28px_rgba(245,158,11,0.55)] transition-all duration-200 hover:scale-[1.03] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F59E0B] cursor-pointer group"
-          >
-            {/* Attractive Custom Gold Reactor-Heart Patron Crest SVG */}
-            <div className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-gradient-to-br from-[#FDE68A] via-[#F59E0B] to-[#B45309] p-[1px] shadow-[0_0_12px_rgba(245,158,11,0.65)] shrink-0">
-              <div className="w-full h-full rounded-[7px] bg-[#090603] flex items-center justify-center">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="w-4 h-4 sm:w-[17px] sm:h-[17px] transition-transform duration-200 group-hover:scale-110"
+            {/* 4. Dynamic Compass Heading Laser Scanner (330 • 340 • 000 • 010 • 020) */}
+            <g
+              transform={`translate(${compassShiftPx}, 0)`}
+              style={{ transition: 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+            >
+              <line
+                x1="470.5"
+                y1="316"
+                x2="470.5"
+                y2="378"
+                stroke="#FF1E27"
+                strokeWidth="6"
+                strokeOpacity="0.28"
+              />
+              <line
+                x1="470.5"
+                y1="316"
+                x2="470.5"
+                y2="378"
+                stroke="#FF3B44"
+                strokeWidth="2.2"
+                strokeOpacity="0.85"
+                style={{
+                  transformOrigin: '470.5px 347px',
+                  animation: reducedMotion ? 'none' : 'gpCompassScan 1.6s ease-in-out infinite'
+                }}
+              />
+              <circle
+                cx="470.5"
+                cy="347"
+                r="6"
+                fill="#FF1E27"
+                fillOpacity="0.38"
+              />
+              <circle
+                cx="470.5"
+                cy="347"
+                r="3"
+                fill="#FFE4E6"
+              />
+            </g>
+
+            {/* 5. Outer Cockpit Ring Rotating Micro-Telemetry Arcs */}
+            {!reducedMotion && (
+              <g
+                style={{
+                  transformOrigin: `${COCKPIT_DIAL_CENTER.x}px ${COCKPIT_DIAL_CENTER.y}px`,
+                  animation: 'gpCounterSpin 28s linear infinite'
+                }}
+              >
+                <circle
+                  cx={COCKPIT_DIAL_CENTER.x}
+                  cy={COCKPIT_DIAL_CENTER.y}
+                  r="348"
                   fill="none"
+                  stroke="#FF1E27"
+                  strokeWidth="1.8"
+                  strokeOpacity="0.42"
+                  strokeDasharray="24 160 12 200"
+                />
+              </g>
+            )}
+
+            {/* 6. Central Avionics Targeting Reticle: Radar Sweep */}
+            <g>
+              {/* Continuous 360-degree Radar Sweep inside Central Reticle */}
+              {!reducedMotion && (
+                <g
+                  style={{
+                    transformOrigin: `${COCKPIT_DIAL_CENTER.x}px ${COCKPIT_DIAL_CENTER.y}px`,
+                    animation: 'gpRadarSweepSpin 4.8s linear infinite'
+                  }}
                 >
                   <path
-                    d="M12 2L14.8 4.5L18.5 4.2L19.5 7.8L22 10.5L20.2 13.8L21 17.5L17.5 19L15.2 22L12 20.4L8.8 22L6.5 19L3 17.5L3.8 13.8L2 10.5L4.5 7.8L5.5 4.2L9.2 4.5L12 2Z"
-                    stroke="#38BDF8"
-                    strokeWidth="1.2"
-                    strokeOpacity="0.7"
+                    d={`M ${COCKPIT_DIAL_CENTER.x} ${COCKPIT_DIAL_CENTER.y} L ${COCKPIT_DIAL_CENTER.x} ${COCKPIT_DIAL_CENTER.y - 114} A 114 114 0 0 1 ${COCKPIT_DIAL_CENTER.x + 98} ${COCKPIT_DIAL_CENTER.y - 57} Z`}
+                    fill="url(#gp-radar-sweep-grad)"
                   />
-                  <path
-                    d="M12 17.6C12 17.6 6.8 14.1 6.8 10.1C6.8 8.3 8.2 7 9.8 7C10.8 7 11.6 7.5 12 8.3C12.4 7.5 13.2 7 14.2 7C15.8 7 17.2 8.3 17.2 10.1C17.2 14.1 12 17.6 12 17.6Z"
-                    fill="#F59E0B"
-                    stroke="#FDE68A"
-                    strokeWidth="1.3"
+                  <circle
+                    cx={COCKPIT_DIAL_CENTER.x}
+                    cy={COCKPIT_DIAL_CENTER.y}
+                    r="112"
+                    fill="none"
+                    stroke="#FF1E27"
+                    strokeWidth="1.5"
+                    strokeOpacity="0.5"
+                    strokeDasharray="36 180"
                   />
-                </svg>
-              </div>
-            </div>
+                </g>
+              )}
+            </g>
 
-            <div className="text-left leading-none">
-              <div className="font-mono font-bold text-[7px] sm:text-[7.5px] tracking-[0.14em] text-[#FDE68A] uppercase">
-                SUPPORT APP
-              </div>
-              <div className="font-sans font-bold text-[9.5px] sm:text-[10.5px] tracking-[0.05em] text-[#FFFFFF] group-hover:text-[#FDE68A] uppercase mt-0.5 flex items-center gap-1">
-                <span>CONTRIBUTE</span>
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]" />
-              </div>
-            </div>
-          </button>
+            {/* 7. Target Lock-On Ignition Shockwave Burst on Click/Navigation */}
+            {ignitingZoneId && (
+              <g
+                style={{
+                  transformOrigin: `${activeZone.centerPoint.x}px ${activeZone.centerPoint.y}px`,
+                  animation: 'gpIgnitionShockwave 220ms ease-out forwards'
+                }}
+              >
+                <circle
+                  cx={activeZone.centerPoint.x}
+                  cy={activeZone.centerPoint.y}
+                  r="85"
+                  fill="rgba(255, 30, 39, 0.28)"
+                  stroke="#FFE4E6"
+                  strokeWidth="6"
+                />
+              </g>
+            )}
 
-          {/* =================================================================
-              Layer 3: INTERACTIVE ROTARY NAVIGATION INSTRUMENT
-              Strictly circular (aspect-square) centered at (cx=424, cy=860),
-              width=90.57% of stage width.
-              Supports Mouse Drag, Touch Drag/Swipe, Click-to-Select, Keyboard
-              Arrow navigation, and Mouse Wheel.
-              ================================================================= */}
-          <div
-            ref={dialContainerRef}
-            data-testid="cockpit-rotary-dial"
-            role="region"
-            aria-label={`Cockpit Rotary Navigation Selector — Selected: ${selectedDestination?.label} (${formatRotarySelectionCounter(selectedIndex, totalDestinations)})`}
-            tabIndex={0}
-            onPointerDown={e => handleDialPointerDown(e, null)}
-            onPointerMove={handleDialPointerMove}
-            onPointerUp={finishDialPointerGesture}
-            onPointerCancel={finishDialPointerGesture}
-            onKeyDown={handleDialKeyDown}
-            onWheel={handleDialWheel}
-            style={{
-              left: '50%',
-              top: '46.36%',
-              width: '90.57%',
-              transform: 'translate(-50%, -50%)',
-              touchAction: 'none'
-            }}
-            className={`absolute z-20 aspect-square rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
-              isDraggingDial ? 'cursor-grabbing' : 'cursor-grab'
-            }`}
+            {/* 8. Dynamic ONLINE / OFFLINE Cockpit Status Capsule Overlay (x: 33..241, y: 315..373, centerY: 344) */}
+            {effectiveOffline ? (
+              <g data-testid="cockpit-capsule-offline-visual">
+                {/* Inner dark cockpit pill mask covering baked-in green dot & ONLINE text */}
+                <rect
+                  x="33"
+                  y="315"
+                  width="208"
+                  height="58"
+                  rx="29"
+                  fill="#060811"
+                  stroke="#F59E0B"
+                  strokeWidth="2.2"
+                  strokeOpacity="0.92"
+                />
+                {/* Pulsing Amber/Red Offline Status Dot at (62, 344) */}
+                <circle
+                  cx="62"
+                  cy="344"
+                  r="14"
+                  fill="#EF4444"
+                  fillOpacity="0.34"
+                  style={{
+                    transformOrigin: '62px 344px',
+                    animation: reducedMotion ? 'none' : 'gpReticlePulse 1.8s ease-in-out infinite'
+                  }}
+                />
+                <circle
+                  cx="62"
+                  cy="344"
+                  r="8"
+                  fill="#F59E0B"
+                  stroke="#FEF3C7"
+                  strokeWidth="1.5"
+                />
+                {/* Wi-Fi Off / Disconnected Vector Icon at (101, 344) */}
+                <path
+                  d="M 89 339 A 17 17 0 0 1 113 339"
+                  fill="none"
+                  stroke="#F59E0B"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M 93 345 A 11 11 0 0 1 109 345"
+                  fill="none"
+                  stroke="#F59E0B"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                />
+                <circle cx="101" cy="351" r="2.2" fill="#F59E0B" />
+                <line
+                  x1="88"
+                  y1="332"
+                  x2="114"
+                  y2="356"
+                  stroke="#EF4444"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+                {/* Crisp Tactical OFFLINE Label */}
+                <text
+                  x="176"
+                  y="351"
+                  textAnchor="middle"
+                  fill="#FDE68A"
+                  fontSize="20.5"
+                  fontWeight="800"
+                  letterSpacing="1.2"
+                  fontFamily="sans-serif"
+                >
+                  OFFLINE
+                </text>
+              </g>
+            ) : (
+              <g data-testid="cockpit-capsule-online-visual">
+                {/* Crisp Vector ONLINE Capsule Interior */}
+                <rect
+                  x="33"
+                  y="315"
+                  width="208"
+                  height="58"
+                  rx="29"
+                  fill="#040914"
+                  stroke="#38BDF8"
+                  strokeWidth="1.6"
+                  strokeOpacity="0.55"
+                />
+                {/* Live Pulsing Emerald Telemetry Halo & Status LED at (62, 344) */}
+                <circle
+                  cx="62"
+                  cy="344"
+                  r="14"
+                  fill="#22C55E"
+                  fillOpacity="0.32"
+                  style={{
+                    transformOrigin: '62px 344px',
+                    animation: reducedMotion ? 'none' : 'gpReticlePulse 2.2s ease-in-out infinite'
+                  }}
+                />
+                <circle
+                  cx="62"
+                  cy="344"
+                  r="8"
+                  fill="#4ADE80"
+                  stroke="#DCFCE7"
+                  strokeWidth="1.5"
+                />
+                {/* Crisp Wi-Fi Connected Vector Icon at (103, 344) */}
+                <path
+                  d="M 90 338 A 18 18 0 0 1 116 338"
+                  fill="none"
+                  stroke="#F8FAFC"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M 95 344 A 11.5 11.5 0 0 1 111 344"
+                  fill="none"
+                  stroke="#F8FAFC"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+                <circle cx="103" cy="351" r="2.4" fill="#4ADE80" />
+                {/* Crisp Tactical ONLINE Label */}
+                <text
+                  x="176"
+                  y="351"
+                  textAnchor="middle"
+                  fill="#FFFFFF"
+                  fontSize="21.5"
+                  fontWeight="800"
+                  letterSpacing="1.4"
+                  fontFamily="sans-serif"
+                >
+                  ONLINE
+                </text>
+              </g>
+            )}
+
+            {/* 9. Dynamic Top-Right Operator Identity & Bike Model Pilot Badge (x: 738..864, y: 96..158) */}
+            <g data-testid="cockpit-operator-identity-badge">
+              {/* Solid cockpit obsidian mask covering static baked-in 'ABINAV / F77 PILOT' raster text */}
+              <rect
+                x="738"
+                y="96"
+                width="126"
+                height="62"
+                rx="4"
+                fill="#010102"
+              />
+              {/* Active User Name / Callsign */}
+              <text
+                data-testid="cockpit-operator-name-text"
+                x="742"
+                y="123"
+                textAnchor="start"
+                fill="#F8FAFC"
+                fontSize={
+                  operatorBadge.displayName.length > 9
+                    ? '18'
+                    : operatorBadge.displayName.length > 7
+                    ? '20.5'
+                    : '23.5'
+                }
+                fontWeight="800"
+                letterSpacing="0.8"
+                fontFamily="sans-serif"
+              >
+                {operatorBadge.displayName}
+              </text>
+              {/* Active User Bike Model Pilot Tag (e.g. F77 PILOT / X47 PILOT / Nickname) */}
+              <text
+                data-testid="cockpit-operator-pilot-text"
+                x="742"
+                y="149"
+                textAnchor="start"
+                fill="#FF1E27"
+                fontSize={operatorBadge.pilotLabel.length > 10 ? '14.5' : '17.5'}
+                fontWeight="800"
+                letterSpacing="0.6"
+                fontFamily="sans-serif"
+              >
+                {operatorBadge.pilotLabel}
+              </text>
+            </g>
+          </svg>
+        </div>
+
+        {/* ===================================================================
+            COCKPIT BOOT TRANSFORMATION OVERLAY SVG (UNCLIPPED)
+            Starts with Logo in Center -> Expands Circular Interface -> Deploys All Buttons
+            =================================================================== */}
+        {bootPhase !== 'ready' && (
+          <svg
+            viewBox="0 0 941 1672"
+            data-testid="cockpit-boot-transformation-layer"
+            className="absolute inset-0 w-full h-full pointer-events-none select-none z-15"
           >
-            {/* SVG Rotary Instrument Layer (Concentric Rings + Uniform Segmented Wheel) */}
-            <svg
-              viewBox="-384 -384 768 768"
-              className="w-full h-full overflow-visible pointer-events-none select-none"
-            >
-              <defs>
-                <radialGradient id="idleSegmentFill" cx="50%" cy="50%" r="55%">
-                  <stop offset="0%" stopColor="#060B15" stopOpacity="0.96" />
-                  <stop offset="70%" stopColor="#02050B" stopOpacity="0.98" />
-                  <stop offset="100%" stopColor="#071222" stopOpacity="0.99" />
-                </radialGradient>
-                <radialGradient id="redIdleSegmentFill" cx="50%" cy="50%" r="55%">
-                  <stop offset="0%" stopColor="#22070A" stopOpacity="0.96" />
-                  <stop offset="70%" stopColor="#140204" stopOpacity="0.98" />
-                  <stop offset="100%" stopColor="#2C080D" stopOpacity="0.99" />
-                </radialGradient>
-                <radialGradient id="greenIdleSegmentFill" cx="50%" cy="50%" r="55%">
-                  <stop offset="0%" stopColor="#061D13" stopOpacity="0.96" />
-                  <stop offset="70%" stopColor="#02100A" stopOpacity="0.98" />
-                  <stop offset="100%" stopColor="#082519" stopOpacity="0.99" />
-                </radialGradient>
-                <linearGradient id="activeSegmentFill" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#082442" stopOpacity="0.97" />
-                  <stop offset="52%" stopColor="#051326" stopOpacity="0.98" />
-                  <stop offset="100%" stopColor="#0A2E52" stopOpacity="0.98" />
-                </linearGradient>
-                <linearGradient id="redActiveSegmentFill" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#450A0A" stopOpacity="0.98" />
-                  <stop offset="52%" stopColor="#180202" stopOpacity="0.98" />
-                  <stop offset="100%" stopColor="#550D0D" stopOpacity="0.98" />
-                </linearGradient>
-                <linearGradient id="greenActiveSegmentFill" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#064E3B" stopOpacity="0.98" />
-                  <stop offset="52%" stopColor="#022118" stopOpacity="0.98" />
-                  <stop offset="100%" stopColor="#065F46" stopOpacity="0.98" />
-                </linearGradient>
-                <radialGradient id="centerHubFill" cx="50%" cy="42%" r="58%">
-                  <stop offset="0%" stopColor="#070E1B" stopOpacity="0.98" />
-                  <stop offset="65%" stopColor="#020409" stopOpacity="0.99" />
-                  <stop offset="100%" stopColor="#000000" stopOpacity="1" />
-                </radialGradient>
-                <filter id="amberGlow" x="-15%" y="-15%" width="130%" height="130%">
-                  <feGaussianBlur stdDeviation="2.5" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-                <filter id="cyanGlow" x="-15%" y="-15%" width="130%" height="130%">
-                  <feGaussianBlur stdDeviation="2" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-                <filter id="redGlow" x="-15%" y="-15%" width="130%" height="130%">
-                  <feGaussianBlur stdDeviation="2.5" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-                <filter id="greenGlow" x="-15%" y="-15%" width="130%" height="130%">
-                  <feGaussianBlur stdDeviation="2.5" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-              </defs>
+            <defs>
+              <radialGradient
+                id="gp-boot-core-aura"
+                cx={COCKPIT_DIAL_CENTER.x}
+                cy={COCKPIT_DIAL_CENTER.y}
+                r="320"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop offset="0%" stopColor="#FF1E27" stopOpacity="0.45" />
+                <stop offset="45%" stopColor="#38BDF8" stopOpacity="0.22" />
+                <stop offset="100%" stopColor="#020408" stopOpacity="0" />
+              </radialGradient>
+            </defs>
 
-              {/* Outer Cool-Black Stealth Bezel Ring */}
+            {/* Expanding Iris Perimeter Ring & Radial Shockwave */}
+            <g
+              style={{
+                opacity: bootSpec.dialWaveOpacity,
+                transition: 'opacity 500ms ease-out'
+              }}
+            >
+              {/* Expanding Outer Plasma Shockwave Ring */}
               <circle
-                cx="0"
-                cy="0"
-                r="380"
-                fill="rgba(1, 2, 4, 0.78)"
-                stroke="#1E2D42"
-                strokeWidth="1.5"
+                cx={COCKPIT_DIAL_CENTER.x}
+                cy={COCKPIT_DIAL_CENTER.y}
+                r={bootSpec.dialWaveRadiusPx}
+                fill="none"
+                stroke="#38BDF8"
+                strokeWidth="4.5"
+                strokeOpacity="0.78"
+                style={{
+                  transition: 'r 760ms cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
+              />
+              {/* Expanding Crimson Inner Lock Ring */}
+              <circle
+                cx={COCKPIT_DIAL_CENTER.x}
+                cy={COCKPIT_DIAL_CENTER.y}
+                r={Math.max(96, bootSpec.dialWaveRadiusPx - 22)}
+                fill="none"
+                stroke="#FF1E27"
+                strokeWidth="3"
+                strokeDasharray="36 18"
+                strokeOpacity="0.88"
+                style={{
+                  transition: 'r 760ms cubic-bezier(0.16, 1, 0.3, 1)'
+                }}
               />
 
-              {/* Rotating Segmented Wheel Assembly */}
-              <g style={wheelTransitionStyle}>
-                {/* Pass 1: Render all idle segments (only Squadron Assist in red, all others including Jet Engineer in blue) */}
-                {authorizedDestinations.map((dest, idx) => {
-                  if (idx === selectedIndex) return null;
-                  const segAngleDeg = idx * stepDeg;
-                  const isEmergency = dest.routeId === 'emergency';
-                  const fillUrl = isEmergency
-                    ? 'url(#redIdleSegmentFill)'
-                    : 'url(#idleSegmentFill)';
-                  const strokeColor = isEmergency
-                    ? '#EF4444'
-                    : '#0EA5E9';
-                  const strokeWidth = isEmergency ? '1.8' : '1.4';
-                  const strokeOpacity = isEmergency ? '0.92' : '0.62';
-                  const filterAttr = isEmergency
-                    ? 'url(#redGlow)'
-                    : undefined;
+              {/* 8 Radial Vector Rays Slicing Out the Circular Interface Sectors */}
+              {bootPhase === 'dial_expand' &&
+                COCKPIT_RADIAL_EXPANSION_RAYS.map(ray => (
+                  <line
+                    key={ray.id}
+                    x1={ray.x1}
+                    y1={ray.y1}
+                    x2={ray.x2}
+                    y2={ray.y2}
+                    stroke={ray.accentColor}
+                    strokeWidth="3.2"
+                    strokeDasharray="340"
+                    style={{
+                      animation: 'gpBootRayShoot 760ms cubic-bezier(0.16, 1, 0.3, 1) forwards'
+                    }}
+                  />
+                ))}
 
-                  return (
-                    <g key={dest.id} transform={`rotate(${segAngleDeg.toFixed(2)})`}>
-                      <path
-                        d={segmentWedgePath}
-                        fill={fillUrl}
-                        stroke={strokeColor}
-                        strokeWidth={strokeWidth}
-                        strokeOpacity={strokeOpacity}
-                        strokeLinejoin="round"
-                        filter={filterAttr}
-                      />
-                    </g>
-                  );
-                })}
+              {/* Sector Perimeter Ignition Wave during Circular Interface Expansion */}
+              {bootPhase === 'dial_expand' &&
+                COCKPIT_INTERACTIVE_ZONES.filter(z => z.id.startsWith('sector_')).map(zone => (
+                  <path
+                    key={`boot_sector_trace_${zone.id}`}
+                    d={zone.svgBorderPath}
+                    fill="none"
+                    stroke="#FF1E27"
+                    strokeWidth="3.2"
+                    strokeDasharray="900"
+                    style={{
+                      animation: 'gpBootPerimeterFlash 780ms ease-out forwards'
+                    }}
+                  />
+                ))}
+            </g>
 
-                {/* Outer & Inner Concentric Segment Boundary Rings so radial dividers meet cleanly */}
-                <circle
-                  cx="0"
-                  cy="0"
-                  r="374"
-                  fill="none"
-                  stroke="#0EA5E9"
-                  strokeWidth="1.5"
-                  strokeOpacity="0.7"
+            {/* Stage 3: Upward & Downward Conduits + All Outer Buttons Perimeter Lock-On */}
+            {bootPhase === 'full_deploy' && (
+              <g>
+                {/* Upward Energy Conduits from Circular Ring to Top Nav & Header */}
+                <line
+                  x1="470.5"
+                  y1="450"
+                  x2="470.5"
+                  y2="75"
+                  stroke="#38BDF8"
+                  strokeWidth="3.5"
+                  strokeDasharray="380"
+                  style={{ animation: 'gpBootRayShoot 680ms ease-out forwards' }}
                 />
-                <circle
-                  cx="0"
-                  cy="0"
-                  r="198"
-                  fill="none"
-                  stroke="#0EA5E9"
-                  strokeWidth="1.5"
-                  strokeOpacity="0.7"
+                {/* Downward Energy Conduits from Circular Ring to ALL SYSTEMS & Keel */}
+                <line
+                  x1="470.5"
+                  y1="1165"
+                  x2="470.5"
+                  y2="1672"
+                  stroke="#FF1E27"
+                  strokeWidth="3.5"
+                  strokeDasharray="500"
+                  style={{ animation: 'gpBootRayShoot 680ms ease-out forwards' }}
                 />
+                {/* Outer Buttons & Panels Perimeter Lock-On Flash */}
+                {COCKPIT_INTERACTIVE_ZONES.filter(z => !z.id.startsWith('sector_')).map(zone => (
+                  <path
+                    key={`boot_outer_trace_${zone.id}`}
+                    d={zone.svgBorderPath}
+                    fill="none"
+                    stroke="#38BDF8"
+                    strokeWidth="3.2"
+                    strokeDasharray="900"
+                    style={{
+                      animation: 'gpBootPerimeterFlash 720ms ease-out forwards'
+                    }}
+                  />
+                ))}
+              </g>
+            )}
 
-                {/* Pass 2: Render the active segment on top with identical wedge geometry, dedicated accent outline, and restrained glow */}
-                {authorizedDestinations[selectedIndex] && (() => {
-                  const activeDest = authorizedDestinations[selectedIndex];
-                  const isEmergency = activeDest.routeId === 'emergency';
+            {/* Stage 1 & 2: Central GHOST PROTOCOL Logo & Turbine Core at (470.5, 810) */}
+            <g
+              data-testid="cockpit-boot-center-logo"
+              style={{
+                transformOrigin: `${COCKPIT_DIAL_CENTER.x}px ${COCKPIT_DIAL_CENTER.y}px`,
+                transform: `scale(${bootSpec.centerLogoScale})`,
+                opacity: bootSpec.centerLogoOpacity,
+                transition:
+                  'transform 620ms cubic-bezier(0.16, 1, 0.3, 1), opacity 520ms ease-out'
+              }}
+            >
+              {/* Core Radial Plasma Glow */}
+              <circle
+                cx={COCKPIT_DIAL_CENTER.x}
+                cy={COCKPIT_DIAL_CENTER.y}
+                r="260"
+                fill="url(#gp-boot-core-aura)"
+              />
 
-                  const fillUrl = isEmergency
-                    ? 'url(#redActiveSegmentFill)'
-                    : 'url(#activeSegmentFill)';
-                  const strokeColor = isEmergency
-                    ? '#EF4444'
-                    : '#38BDF8';
-                  const innerStroke = isEmergency
-                    ? '#FCA5A5'
-                    : '#7DD3FC';
-                  const glowFilter = isEmergency
-                    ? 'url(#redGlow)'
-                    : 'url(#cyanGlow)';
-                  const pointerFill = isEmergency
-                    ? '#FCA5A5'
-                    : '#7DD3FC';
-                  const pointerStroke = isEmergency
-                    ? '#EF4444'
-                    : '#38BDF8';
-
-                  return (
-                    <g
-                      key={activeDest.id}
-                      transform={`rotate(${(selectedIndex * stepDeg).toFixed(2)})`}
-                    >
-                      <path
-                        d={segmentWedgePath}
-                        fill={fillUrl}
-                        stroke={strokeColor}
-                        strokeWidth="2.4"
-                        strokeOpacity="0.98"
-                        strokeLinejoin="round"
-                        filter={glowFilter}
-                      />
-                      <path
-                        d={segmentWedgePath}
-                        fill="none"
-                        stroke={innerStroke}
-                        strokeWidth="0.9"
-                        strokeOpacity="0.8"
-                        strokeLinejoin="round"
-                      />
-                      {/* Compact inward selection pointer at the inner rim of the active segment */}
-                      <polygon
-                        points="0,-188 -7,-198 7,-198"
-                        fill={pointerFill}
-                        stroke={pointerStroke}
-                        strokeWidth="1.2"
-                      />
-                    </g>
-                  );
-                })()}
+              {/* Outer Counter-Rotating Cyan Turbine Ring */}
+              <g
+                style={{
+                  transformOrigin: `${COCKPIT_DIAL_CENTER.x}px ${COCKPIT_DIAL_CENTER.y}px`,
+                  animation: 'gpCounterSpin 6s linear infinite'
+                }}
+              >
+                <circle
+                  cx={COCKPIT_DIAL_CENTER.x}
+                  cy={COCKPIT_DIAL_CENTER.y}
+                  r="154"
+                  fill="none"
+                  stroke="#38BDF8"
+                  strokeWidth="3.5"
+                  strokeDasharray="48 24 16 24"
+                />
               </g>
 
-              {/* Stationary Concentric Inner Instrument Rings & Restrained Technical Ticks */}
-              <circle
-                cx="0"
-                cy="0"
-                r="188"
-                fill="none"
-                stroke={
-                  authorizedDestinations[selectedIndex]?.routeId === 'emergency'
-                    ? '#EF4444'
-                    : '#0EA5E9'
-                }
-                strokeWidth="1.2"
-                strokeOpacity="0.6"
-              />
-              <circle
-                cx="0"
-                cy="0"
-                r="174"
-                fill="none"
-                stroke={
-                  authorizedDestinations[selectedIndex]?.routeId === 'emergency'
-                    ? '#EF4444'
-                    : selectionPulse
-                    ? '#F59E0B'
-                    : '#38BDF8'
-                }
-                strokeWidth={selectionPulse ? '2.6' : '2'}
-                strokeOpacity="0.88"
-                filter={
-                  authorizedDestinations[selectedIndex]?.routeId === 'emergency'
-                    ? 'url(#redGlow)'
-                    : 'url(#cyanGlow)'
-                }
-              />
-              {/* 72 Restrained Degree Tick Marks around r=179..186 */}
-              {Array.from({ length: 72 }).map((_, i) => {
-                const deg = i * 5;
-                const isMajor = i % 6 === 0;
-                const isTopIndex = i === 0 || i === 36;
-                return (
-                  <line
-                    key={i}
-                    x1="0"
-                    y1={isMajor ? -179 : -182}
-                    x2="0"
-                    y2={-186}
-                    stroke={
-                      isTopIndex
-                        ? authorizedDestinations[selectedIndex]?.routeId === 'emergency'
-                          ? '#EF4444'
-                          : '#F59E0B'
-                        : '#38BDF8'
-                    }
-                    strokeWidth={isMajor ? 1.6 : 0.9}
-                    strokeOpacity={isMajor ? 0.75 : 0.32}
-                    transform={`rotate(${deg})`}
-                  />
-                );
-              })}
-
-              {/* Top & Cardinal Fixed Alignment Pointers */}
-              <polygon
-                points="0,-166 -7,-179 7,-179"
-                fill={
-                  authorizedDestinations[selectedIndex]?.routeId === 'emergency'
-                    ? '#EF4444'
-                    : '#F59E0B'
-                }
-              />
-              <polygon points="0,166 -6,179 6,179" fill="#F59E0B" opacity="0.8" />
-              <polygon points="-166,0 -179,-5 -179,5" fill="#F59E0B" opacity="0.7" />
-              <polygon points="166,0 179,-5 179,5" fill="#F59E0B" opacity="0.7" />
-
-              {/* Central Hub Outer Bezel */}
-              <circle
-                cx="0"
-                cy="0"
-                r="152"
-                fill="url(#centerHubFill)"
-                stroke="#38BDF8"
-                strokeWidth="1.8"
-                strokeOpacity="0.82"
-              />
-              <circle
-                cx="0"
-                cy="0"
-                r="138"
-                fill="none"
-                stroke="#38BDF8"
-                strokeWidth="1"
-                strokeOpacity="0.28"
-                strokeDasharray="6 4"
-              />
-            </svg>
-
-            {/* Upright HTML Segment Buttons (Calculated from angular position; counter-rotated so labels remain strictly horizontal) */}
-            <div
-              style={wheelTransitionStyle}
-              className="absolute inset-0 pointer-events-none"
-            >
-              {authorizedDestinations.map((dest, idx) => {
-                const isSelected = idx === selectedIndex;
-                const segAngleDeg = idx * stepDeg;
-                const rad = (segAngleDeg * Math.PI) / 180;
-                // Position segment content at exact radial midpoint r = (198 + 374) / 2 = 286 out of 768 (37.24%)
-                const radiusPct = (286 / 768) * 100;
-                const leftPct = 50 + Math.sin(rad) * radiusPct;
-                const topPct = 50 - Math.cos(rad) * radiusPct;
-                // Counter-rotate by -wheelRotationDeg so icons & labels remain 100% horizontal/upright at every wheel angle
-                const uprightCounterDeg = -wheelRotationDeg;
-
-                return (
-                  <button
-                    key={dest.id}
-                    type="button"
-                    data-testid={`rotary-segment-${dest.id}`}
-                    aria-label={`${dest.label}${isSelected ? ' (Selected)' : ''}`}
-                    aria-pressed={isSelected}
-                    onPointerDown={e => {
-                      e.stopPropagation();
-                      handleDialPointerDown(e, idx);
-                    }}
-                    onClick={e => {
-                      // Keyboard click or assistive technology activation (where pointer events did not fire)
-                      if (e.detail === 0) {
-                        selectDestinationByIndex(idx, true);
-                      }
-                    }}
-                    style={{
-                      left: `${leftPct.toFixed(2)}%`,
-                      top: `${topPct.toFixed(2)}%`,
-                      width: '21%',
-                      height: '17%',
-                      transform: `translate(-50%, -50%) rotate(${uprightCounterDeg.toFixed(2)}deg)`,
-                      transition:
-                        isDraggingDial || reducedMotion
-                          ? 'none'
-                          : 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)'
-                    }}
-                    className={`absolute pointer-events-auto flex flex-col items-center justify-center gap-1 text-center rounded-xl p-1 focus-visible:outline-none focus-visible:ring-2 ${
-                      dest.routeId === 'emergency'
-                        ? 'focus-visible:ring-[#EF4444]'
-                        : 'focus-visible:ring-[#F59E0B]'
-                    } group ${
-                      isDraggingDial ? 'cursor-grabbing' : 'cursor-pointer'
-                    }`}
-                  >
-                    {/* Segment Icon */}
-                    <div
-                      className={`transition-transform duration-150 group-hover:scale-105 flex items-center justify-center relative ${
-                        dest.routeId === 'emergency'
-                          ? isSelected
-                            ? 'text-[#FCA5A5] drop-shadow-[0_0_10px_rgba(239,68,68,0.95)]'
-                            : 'text-[#EF4444] group-hover:text-[#F87171] drop-shadow-[0_0_8px_rgba(239,68,68,0.7)]'
-                          : isSelected
-                          ? 'text-[#7DD3FC] drop-shadow-[0_0_8px_rgba(56,189,248,0.85)]'
-                          : 'text-[#38BDF8] group-hover:text-[#7DD3FC] drop-shadow-[0_0_5px_rgba(56,189,248,0.4)]'
-                      }`}
-                    >
-                      {renderRotaryIcon(
-                        dest.iconKey,
-                        isSelected
-                          ? 'w-4 h-4 sm:w-5 sm:h-5 stroke-[2]'
-                          : 'w-4 h-4 sm:w-[18px] sm:h-[18px] stroke-[1.85]'
-                      )}
-                    </div>
-
-                    {/* Segment Actual Page Name (Strictly Horizontal & Upright, Zero Subtitles) */}
-                    <div
-                      className={`font-sans font-semibold uppercase tracking-[0.04em] leading-[1.15] ${
-                        dest.routeId === 'emergency'
-                          ? isSelected
-                            ? 'text-[9px] sm:text-[10.5px] text-[#FFFFFF] font-bold drop-shadow-[0_1px_4px_rgba(239,68,68,0.95)]'
-                            : 'text-[8.5px] sm:text-[9.5px] text-[#FCA5A5] font-bold group-hover:text-white drop-shadow-[0_1px_3px_rgba(185,28,28,0.8)]'
-                          : isSelected
-                          ? 'text-[9px] sm:text-[10.5px] text-[#FFFFFF] drop-shadow-[0_1px_3px_rgba(0,0,0,0.95)]'
-                          : 'text-[8.5px] sm:text-[9.5px] text-[#E2E8F0] group-hover:text-white'
-                      }`}
-                    >
-                      {dest.segmentLines.map((line, lIdx) => (
-                        <div key={lIdx} className="whitespace-nowrap flex items-center justify-center gap-1">
-                          <span>{line}</span>
-                          {dest.routeId === 'emergency' && lIdx === 0 && (
-                            <span
-                              data-testid="squadron-assist-indicator-dot"
-                              className="inline-block w-1.5 h-1.5 rounded-full bg-[#EF4444] shadow-[0_0_6px_#EF4444] animate-pulse shrink-0"
-                            />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Central Activation Hub Button (Radius = 136px / 384px = 35.4% of dial, well inside r=138 border) */}
-            <button
-              type="button"
-              data-testid="cockpit-central-hub"
-              onPointerDown={() => setHubPressed(true)}
-              onPointerUp={() => setHubPressed(false)}
-              onPointerLeave={() => setHubPressed(false)}
-              onClick={e => {
-                e.stopPropagation();
-                if (selectedDestination) {
-                  activateDestination(selectedDestination);
-                }
-              }}
-              aria-label={`Open Module: ${selectedDestination?.label}`}
-              style={{
-                left: '50%',
-                top: '50%',
-                width: '35.4%',
-                height: '35.4%',
-                transform: `translate(-50%, -50%) scale(${hubPressed ? 0.96 : 1})`
-              }}
-              className={`absolute z-30 rounded-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 text-center p-2 transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 overflow-hidden ${
-                selectedDestination?.routeId === 'emergency'
-                  ? 'focus-visible:ring-[#EF4444]'
-                  : 'focus-visible:ring-[#38BDF8]'
-              } group ${
-                selectedDestination?.routeId === 'emergency'
-                  ? 'hover:shadow-[0_0_36px_rgba(239,68,68,0.7)] shadow-[0_0_22px_rgba(239,68,68,0.4)]'
-                  : hubPressed
-                  ? 'shadow-[0_0_36px_rgba(56,189,248,0.7)]'
-                  : 'hover:shadow-[0_0_28px_rgba(56,189,248,0.45)]'
-              }`}
-            >
-              {/* Tactical Deep Avionics Obsidian Core */}
-              <div
-                className={`absolute inset-0 rounded-full pointer-events-none transition-colors duration-300 ${
-                  selectedDestination?.routeId === 'emergency'
-                    ? 'bg-[#120404]'
-                    : 'bg-[#030813]'
-                }`}
-              />
-
-              {/* Holographic Radar Sweep Beam (Continuous 360-degree radar scan across the entire dial) */}
-              <div
-                className={`absolute inset-[-20%] pointer-events-none rounded-full animate-[spin_4.5s_linear_infinite] transition-opacity duration-300 opacity-60 group-hover:opacity-90 ${
-                  selectedDestination?.routeId === 'emergency'
-                    ? 'bg-[conic-gradient(from_0deg,transparent_0_300deg,rgba(239,68,68,0.06)_330deg,rgba(239,68,68,0.32)_360deg)]'
-                    : 'bg-[conic-gradient(from_0deg,transparent_0_300deg,rgba(56,189,248,0.06)_330deg,rgba(56,189,248,0.3)_360deg)]'
-                }`}
-              />
-
-              {/* Soft Center Radial Plasma Core Glow */}
-              <div
-                className={`absolute inset-0 rounded-full pointer-events-none transition-opacity duration-300 ${
-                  selectedDestination?.routeId === 'emergency'
-                    ? 'bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.28)_0%,rgba(239,68,68,0.08)_50%,transparent_75%)]'
-                    : 'bg-[radial-gradient(circle_at_center,rgba(56,189,248,0.24)_0%,rgba(56,189,248,0.06)_50%,transparent_75%)]'
-                }`}
-              />
-
-              {/* Animated HUD Reticle Rings & Crosshair Elements */}
-              <svg
-                className="absolute inset-0 w-full h-full pointer-events-none animate-[spin_24s_linear_infinite]"
-                viewBox="0 0 100 100"
-              >
-                {/* Outer Dashed Orbit Ring */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="46"
-                  fill="none"
-                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
-                  strokeWidth="0.8"
-                  strokeDasharray="3 6"
-                  strokeOpacity="0.45"
-                />
-                {/* 4 Cardinal Reticle Calibrations */}
-                <line
-                  x1="50"
-                  y1="2"
-                  x2="50"
-                  y2="7"
-                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
-                  strokeWidth="1.5"
-                  strokeOpacity="0.85"
-                />
-                <line
-                  x1="50"
-                  y1="93"
-                  x2="50"
-                  y2="98"
-                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
-                  strokeWidth="1.5"
-                  strokeOpacity="0.85"
-                />
-                <line
-                  x1="2"
-                  y1="50"
-                  x2="7"
-                  y2="50"
-                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
-                  strokeWidth="1.5"
-                  strokeOpacity="0.85"
-                />
-                <line
-                  x1="93"
-                  y1="50"
-                  x2="98"
-                  y2="50"
-                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
-                  strokeWidth="1.5"
-                  strokeOpacity="0.85"
-                />
-              </svg>
-
-              {/* Counter-Rotating Precision Orbit with Fine Hash Pips */}
-              <svg
-                className="absolute inset-1.5 w-[calc(100%-12px)] h-[calc(100%-12px)] pointer-events-none animate-[spin_36s_linear_infinite_reverse]"
-                viewBox="0 0 100 100"
-              >
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="41"
-                  fill="none"
-                  stroke={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
-                  strokeWidth="0.6"
-                  strokeDasharray="1.2 5"
-                  strokeOpacity="0.32"
-                />
-                {/* Orbital Tracking Satellite Dots */}
-                <circle
-                  cx="50"
-                  cy="9"
-                  r="1.2"
-                  fill={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
-                  opacity="0.9"
-                />
-                <circle
-                  cx="50"
-                  cy="91"
-                  r="1.2"
-                  fill={selectedDestination?.routeId === 'emergency' ? '#EF4444' : '#38BDF8'}
-                  opacity="0.9"
-                />
-              </svg>
-
-              {/* Blended Central HUD Content (Organic Typography seamlessly integrated into the HUD animations without any text box) */}
-              <div className="relative z-10 flex flex-col items-center justify-center gap-1.5 sm:gap-2 select-none pointer-events-none">
-                {/* Organic Flanked OPEN MODULE Action */}
-                <div
-                  data-testid="central-hub-action-label"
-                  className="flex items-center justify-center gap-1.5 sm:gap-2 transition-transform duration-200 group-hover:scale-105"
-                >
-                  {/* Left Horizon Reticle Wing */}
-                  <span
-                    className={`w-2.5 sm:w-3.5 h-[1.5px] transition-all duration-200 origin-right group-hover:w-4 ${
-                      selectedDestination?.routeId === 'emergency'
-                        ? 'bg-gradient-to-r from-transparent to-[#EF4444]'
-                        : 'bg-gradient-to-r from-transparent to-[#38BDF8]'
-                    }`}
-                  />
-
-                  {/* Main Blended "OPEN MODULE" Typography */}
-                  <span
-                    className={`font-mono font-black text-[9.5px] sm:text-[11.5px] tracking-[0.2em] uppercase whitespace-nowrap transition-all duration-200 ${
-                      selectedDestination?.routeId === 'emergency'
-                        ? 'text-white drop-shadow-[0_0_10px_rgba(239,68,68,0.9)] group-hover:drop-shadow-[0_0_18px_rgba(239,68,68,1)]'
-                        : 'text-white drop-shadow-[0_0_10px_rgba(56,189,248,0.85)] group-hover:text-[#F0F9FF] group-hover:drop-shadow-[0_0_18px_rgba(56,189,248,1)] group-hover:tracking-[0.24em]'
-                    }`}
-                  >
-                    OPEN MODULE
-                  </span>
-
-                  {/* Right Horizon Reticle Wing */}
-                  <span
-                    className={`w-2.5 sm:w-3.5 h-[1.5px] transition-all duration-200 origin-left group-hover:w-4 ${
-                      selectedDestination?.routeId === 'emergency'
-                        ? 'bg-gradient-to-l from-transparent to-[#EF4444]'
-                        : 'bg-gradient-to-l from-transparent to-[#38BDF8]'
-                    }`}
-                  />
-                </div>
-
-                {/* Organic Blended "ROTATE TO NAVIGATE" Telemetry Guidance */}
-                <div className="flex items-center justify-center gap-1.5 transition-opacity duration-200 group-hover:opacity-100 opacity-80">
-                  {/* Micro Rotating Compass Gyro Arrow */}
-                  <svg
-                    className={`w-2.5 h-2.5 sm:w-3 sm:h-3 animate-[spin_6s_linear_infinite] shrink-0 ${
-                      selectedDestination?.routeId === 'emergency'
-                        ? 'text-[#EF4444] drop-shadow-[0_0_6px_rgba(239,68,68,0.7)]'
-                        : 'text-[#38BDF8] drop-shadow-[0_0_6px_rgba(56,189,248,0.6)]'
-                    }`}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                    <path d="M21 3v5h-5" />
-                  </svg>
-
-                  {/* Organic Monospace Telemetry Subtext */}
-                  <span
-                    className={`font-mono text-[6.5px] sm:text-[7.5px] font-bold tracking-[0.22em] uppercase whitespace-nowrap transition-colors duration-150 ${
-                      selectedDestination?.routeId === 'emergency'
-                        ? 'text-[#FCA5A5]'
-                        : 'text-[#7DD3FC]/85 group-hover:text-[#BAE6FD]'
-                    }`}
-                  >
-                    ROTATE TO NAVIGATE
-                  </span>
-                </div>
-              </div>
-            </button>
-          </div>
-
-          {/* =================================================================
-              Layer 4: REDESIGNED SELECTED-PAGE PANEL
-              Positioned inside the metallic chamfered bay below the rotary dial
-              (left=10.85%, top=70.62%, width=78.30%, height=7.55%).
-              Contains ONLY:
-              - Left: Medium-sized icon for the selected page.
-              - Centre: Selected page's full name displayed prominently (never truncated).
-              - Right: Compact selection counter ("01 / 09") + OPEN MODULE button.
-              ================================================================= */}
-          {(() => {
-            const isSelectedEmergency = selectedDestination?.routeId === 'emergency';
-
-            const iconBoxBorder = isSelectedEmergency
-              ? 'border-[#EF4444] bg-[#1A0707] shadow-[0_0_16px_rgba(239,68,68,0.5)]'
-              : 'border-[#38BDF8]/85 bg-[#06101E] shadow-[0_0_12px_rgba(56,189,248,0.28)]';
-
-            const iconClass = isSelectedEmergency
-              ? 'w-4 h-4 sm:w-[18px] sm:h-[18px] text-[#EF4444]'
-              : 'w-4 h-4 sm:w-[18px] sm:h-[18px] text-[#38BDF8]';
-
-            const labelSubtext = isSelectedEmergency
-              ? 'EMERGENCY RAPID RESPONSE'
-              : 'SELECTED PAGE';
-
-            const labelSubtextColor = isSelectedEmergency
-              ? 'text-[#F87171]'
-              : 'text-[#38BDF8]';
-
-            const openBtnStyle = isSelectedEmergency
-              ? 'bg-[#EF4444]/25 hover:bg-[#EF4444]/40 border-[#EF4444] text-[#FCA5A5] shadow-[0_0_14px_rgba(239,68,68,0.45)]'
-              : 'bg-[#38BDF8]/15 hover:bg-[#38BDF8]/28 border-[#38BDF8]/85 text-[#7DD3FC] shadow-[0_0_10px_rgba(56,189,248,0.2)]';
-
-            return (
-              <div
-                data-testid="cockpit-selected-page-panel"
+              {/* Inner Rotating Crimson Reactor Ring */}
+              <g
                 style={{
-                  left: '10.85%',
-                  top: '70.62%',
-                  width: '78.30%',
-                  height: '7.55%'
+                  transformOrigin: `${COCKPIT_DIAL_CENTER.x}px ${COCKPIT_DIAL_CENTER.y}px`,
+                  animation: 'gpRadarSweepSpin 4s linear infinite'
                 }}
-                className={`absolute z-20 flex items-center justify-between gap-2.5 sm:gap-3 px-[3.6%] py-[1.4%] rounded-xl bg-[#03060C]/95 backdrop-blur-md border ${
-                  isSelectedEmergency
-                    ? 'border-[#EF4444]/70 shadow-[0_0_20px_rgba(239,68,68,0.25)]'
-                    : 'border-[#1E2D42]/60'
-                }`}
               >
-                {/* Left: Medium-Sized Selected Page Icon */}
-                <div
-                  className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg border flex items-center justify-center shrink-0 transition-all ${iconBoxBorder}`}
-                >
-                  {selectedDestination &&
-                    renderRotaryIcon(selectedDestination.iconKey, iconClass)}
-                </div>
+                <circle
+                  cx={COCKPIT_DIAL_CENTER.x}
+                  cy={COCKPIT_DIAL_CENTER.y}
+                  r="128"
+                  fill="none"
+                  stroke="#FF1E27"
+                  strokeWidth="4.5"
+                  strokeDasharray="64 28"
+                />
+              </g>
 
-                {/* Centre: Selected Page Indicator + Full Name Displayed Prominently */}
-                <div className="min-w-0 flex-1 flex flex-col justify-center">
-                  <span
-                    className={`font-mono text-[7px] sm:text-[8px] tracking-[0.14em] uppercase leading-none mb-0.5 whitespace-nowrap font-bold flex items-center gap-1.5 ${labelSubtextColor}`}
-                  >
-                    {isSelectedEmergency && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444] shadow-[0_0_5px_#EF4444] animate-pulse" />
-                    )}
-                    {labelSubtext}
-                  </span>
-                  <div
-                    data-testid="cockpit-selected-page-title"
-                    className="font-sans font-semibold text-[11px] sm:text-[13px] tracking-[0.03em] text-[#F8FAFC] uppercase leading-[1.15]"
-                  >
-                    {selectedDestination?.label}
-                  </div>
-                </div>
+              {/* Central Delta Wing Emblem Glow */}
+              <polygon
+                points="470.5,856 420,766 470.5,788 521,766"
+                fill="rgba(255, 30, 39, 0.32)"
+                stroke="#FF1E27"
+                strokeWidth="4"
+              />
+              <polygon
+                points="470.5,848 430,774 470.5,793 511,774"
+                fill="#F8FAFC"
+                stroke="#38BDF8"
+                strokeWidth="2"
+              />
 
-                {/* Right: Compact Selection Counter + OPEN MODULE Button */}
-                <div className="flex flex-col items-end justify-center gap-1 shrink-0">
-                  <span
-                    data-testid="cockpit-selected-page-counter"
-                    className={`font-mono font-semibold text-[8.5px] sm:text-[9.5px] tracking-[0.1em] tabular-nums whitespace-nowrap leading-none ${
-                      isSelectedEmergency
-                        ? 'text-[#FCA5A5]'
-                        : 'text-[#CBD5E1]'
-                    }`}
-                  >
-                    {formatRotarySelectionCounter(selectedIndex, totalDestinations)}
-                  </span>
+              {/* Holographic GHOST // PROTOCOL Callsign Banner Centered on the Circular Core */}
+              <rect
+                x="265"
+                y="602"
+                width="411"
+                height="48"
+                rx="10"
+                fill="#030712"
+                fillOpacity="0.92"
+                stroke="#FF1E27"
+                strokeWidth="2"
+              />
+              <text
+                x="470.5"
+                y="633"
+                textAnchor="middle"
+                fill="#FFFFFF"
+                fontSize="24"
+                fontWeight="900"
+                fontStyle="italic"
+                letterSpacing="7"
+                fontFamily="sans-serif"
+              >
+                GHOST PROTOCOL
+              </text>
 
-                  <button
-                    type="button"
-                    data-testid="cockpit-selected-page-open-btn"
-                    onClick={() => {
-                      if (selectedDestination) {
-                        activateDestination(selectedDestination);
-                      }
-                    }}
-                    aria-label={`Open Module: ${selectedDestination?.label}`}
-                    className={`px-2 sm:px-2.5 py-1 rounded border font-mono font-semibold text-[7.5px] sm:text-[8.5px] tracking-[0.08em] uppercase transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 whitespace-nowrap ${openBtnStyle}`}
-                  >
-                    OPEN MODULE
-                  </button>
-                </div>
-              </div>
-            );
-          })()}
+              <rect
+                x="305"
+                y="972"
+                width="331"
+                height="34"
+                rx="8"
+                fill="#030712"
+                fillOpacity="0.9"
+                stroke="#38BDF8"
+                strokeWidth="1.5"
+              />
+              <text
+                x="470.5"
+                y="994"
+                textAnchor="middle"
+                fill="#38BDF8"
+                fontSize="14"
+                fontWeight="700"
+                letterSpacing="4"
+                fontFamily="monospace"
+              >
+                {bootPhase === 'core_logo'
+                  ? 'AVIONICS CORE IGNITION'
+                  : 'EXPANDING TACTICAL SYSTEMS'}
+              </text>
+            </g>
+          </svg>
+        )}
 
-          {/* =================================================================
-              Layer 5: BOTTOM-CENTER ALL SYSTEM CONTROLS PANEL
-              Positioned over the exact reference panel (x=160..688, y=1502..1636)
-              left=18.87%, top=80.97%, width=62.26%, height=7.22%
-              ================================================================= */}
+        {/* Top Header Left: GHOST PROTOCOL Logo → Home Dashboard / Replay Transforming Animation */}
+        <button
+          type="button"
+          data-testid="cockpit-hotspot-logo"
+          data-zone-id="header_logo"
+          onPointerDown={() => activateCockpitZone('header_logo')}
+          onMouseEnter={() => activateCockpitZone('header_logo')}
+          onFocus={() => activateCockpitZone('header_logo')}
+          onClick={() => triggerCockpitNavigation('header_logo', 'dashboard')}
+          aria-label="GHOST PROTOCOL Home Dashboard"
+          style={{
+            left: '4.5%',
+            top: '4.2%',
+            width: '41.5%',
+            height: '6.5%'
+          }}
+          className="absolute z-20 bg-transparent border-0 outline-none focus:outline-none cursor-pointer p-0 m-0"
+        >
+          <span className="sr-only">GHOST PROTOCOL Home Dashboard</span>
+        </button>
+
+        {/* Top Header Right: Search Button → Global Search */}
+        <button
+          type="button"
+          data-testid="cockpit-hotspot-search"
+          data-zone-id="header_search"
+          onPointerDown={() => activateCockpitZone('header_search')}
+          onMouseEnter={() => activateCockpitZone('header_search')}
+          onFocus={() => activateCockpitZone('header_search')}
+          onClick={() => {
+            activateCockpitZone('header_search', false);
+            playTacticalClick();
+            openSearch?.();
+          }}
+          aria-label="Global Search"
+          style={{
+            left: '52.8%',
+            top: '5.5%',
+            width: '7.4%',
+            height: '4.3%'
+          }}
+          className="absolute z-20 bg-transparent border-0 outline-none focus:outline-none cursor-pointer p-0 m-0"
+        >
+          <span className="sr-only">Search</span>
+        </button>
+
+        {/* Top Header Right: Notification Bell → Existing Notifications */}
+        <div
+          ref={notificationsRef}
+          style={{
+            left: '61.6%',
+            top: '5.5%',
+            width: '7.4%',
+            height: '4.3%'
+          }}
+          className="absolute z-30"
+        >
           <button
             type="button"
-            data-testid="cockpit-hotspot-panel_all_system_controls"
-            onClick={() =>
-              triggerCockpitNavigation('panel_all_system_controls', 'system_controls')
-            }
-            aria-label="ALL SYSTEM CONTROLS"
-            style={{
-              left: '18.87%',
-              top: '80.97%',
-              width: '62.26%',
-              height: '7.22%',
-              transform:
-                pressedControlId === 'panel_all_system_controls'
-                  ? 'scale(0.985)'
-                  : 'scale(1)'
+            data-testid="cockpit-hotspot-notifications"
+            data-zone-id="header_notifications"
+            onPointerDown={() => activateCockpitZone('header_notifications')}
+            onMouseEnter={() => activateCockpitZone('header_notifications')}
+            onFocus={() => activateCockpitZone('header_notifications')}
+            onClick={() => {
+              activateCockpitZone('header_notifications', false);
+              playTacticalClick();
+              setShowNotifications(prev => !prev);
+              setShowPersonaMenu(false);
             }}
-            className="absolute z-20 rounded-xl transition-all duration-150 cursor-pointer bg-[#02050B]/92 hover:bg-[#060D1A]/95 border border-[#1E2D42]/80 hover:border-[#38BDF8]/60 hover:shadow-[0_0_28px_rgba(56,189,248,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] flex items-center justify-between px-[7%] group"
+            aria-label="Notifications"
+            className="w-full h-full bg-transparent border-0 outline-none focus:outline-none cursor-pointer p-0 m-0"
           >
-            <div className="flex items-center gap-2.5 sm:gap-3">
-              <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5 text-[#CBD5E1] group-hover:text-[#38BDF8] transition-colors shrink-0" />
-              <span className="font-sans font-semibold text-[10.5px] sm:text-xs tracking-[0.1em] text-[#F8FAFC] uppercase whitespace-nowrap">
-                ALL SYSTEM CONTROLS
-              </span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-[#94A3B8] group-hover:text-[#38BDF8] transition-colors shrink-0" />
+            <span className="sr-only">Notifications</span>
           </button>
+          {showNotifications && renderNotificationsPopover()}
+        </div>
+
+        {/* Top Header Right: Profile → Existing Profile / Account */}
+        <div
+          ref={personaRef}
+          style={{
+            left: '70.0%',
+            top: '5.2%',
+            width: '26.0%',
+            height: '4.7%'
+          }}
+          className="absolute z-30"
+        >
+          <button
+            type="button"
+            data-testid="cockpit-hotspot-profile"
+            data-zone-id="header_profile"
+            onPointerDown={() => activateCockpitZone('header_profile')}
+            onMouseEnter={() => activateCockpitZone('header_profile')}
+            onFocus={() => activateCockpitZone('header_profile')}
+            onClick={() => {
+              activateCockpitZone('header_profile', false);
+              playTacticalClick();
+              setShowPersonaMenu(prev => !prev);
+              setShowNotifications(false);
+            }}
+            aria-label="Operator Profile"
+            className="w-full h-full bg-transparent border-0 outline-none focus:outline-none cursor-pointer p-0 m-0"
+          >
+            <span className="sr-only">Profile</span>
+          </button>
+          {showPersonaMenu && renderPersonaPopover()}
+        </div>
+
+        {/* Status Panel Left: ONLINE / OFFLINE Mode Indicator & Interactive Toggle */}
+        <button
+          type="button"
+          data-testid="cockpit-hotspot-online-status"
+          data-zone-id="status_online"
+          data-network-mode={effectiveOffline ? 'offline' : 'online'}
+          data-active-glow={activeZoneId === 'status_online' ? 'true' : 'false'}
+          aria-pressed={effectiveOffline}
+          onPointerDown={() => activateCockpitZone('status_online')}
+          onMouseEnter={() => activateCockpitZone('status_online')}
+          onPointerEnter={e => {
+            if (e.pointerType !== 'touch') {
+              activateCockpitZone('status_online');
+            }
+          }}
+          onTouchStart={() => activateCockpitZone('status_online')}
+          onFocus={() => activateCockpitZone('status_online')}
+          onClick={() => {
+            activateCockpitZone('status_online', false);
+            playTacticalClick();
+            onToggleSimulateOffline?.();
+            triggerNetworkStatusToast();
+          }}
+          aria-label={effectiveOffline ? 'Offline Mode' : 'Online Status'}
+          title={
+            effectiveOffline
+              ? `OFFLINE MODE (${isOffline ? 'Network Disconnected' : 'Simulated Offline'}) • Cache: ${cacheAge} • Tap to go Online`
+              : `ONLINE MODE (Live Telemetry) • Sync: ${cacheAge} • Tap to toggle Offline Mode`
+          }
+          style={{
+            left: '2.4%',
+            top: '18.2%',
+            width: '25.5%',
+            height: '5.0%'
+          }}
+          className="absolute z-20 bg-transparent border-0 outline-none focus:outline-none cursor-pointer p-0 m-0"
+        >
+          <span className="sr-only">
+            {effectiveOffline ? 'Offline Mode' : 'Online Status'}
+          </span>
+        </button>
+
+        {/* Tactical HUD Telemetry Micro-Banner below ONLINE/OFFLINE Capsule when Toggled */}
+        {networkToast && (
+          <div
+            data-testid="cockpit-network-status-banner"
+            style={{
+              left: '2.4%',
+              top: '23.4%'
+            }}
+            className={`absolute z-30 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full border backdrop-blur-md text-[9px] font-mono font-bold tracking-wider uppercase shadow-lg transition-all duration-300 ${
+              effectiveOffline
+                ? 'bg-[#090D16]/95 border-amber-500/70 text-amber-300 shadow-[0_0_14px_rgba(245,158,11,0.35)]'
+                : 'bg-[#090D16]/95 border-emerald-500/70 text-emerald-300 shadow-[0_0_14px_rgba(34,197,94,0.35)]'
+            }`}
+          >
+            {effectiveOffline ? (
+              <WifiOff className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+            ) : (
+              <Wifi className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+            )}
+            <span>
+              {effectiveOffline
+                ? isSimulatedOffline
+                  ? 'OFFLINE MODE • CACHED'
+                  : 'NO SIGNAL • LOCAL CACHE'
+                : 'ONLINE • LIVE TELEMETRY'}
+            </span>
+            <span className="opacity-75">• {cacheAge}</span>
+            {queuedActionCount > 0 && (
+              <span className="px-1 py-0.2 rounded bg-red-500/25 border border-red-500/50 text-red-300">
+                {queuedActionCount} Q
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Transparent Clickable Hotspots across Navigation Bar, Contribute, 8 Sectors, Reticle, and ALL SYSTEMS */}
+        {DASHBOARD_TRANSPARENT_HOTSPOTS.map(hotspot => (
+          <button
+            key={hotspot.id}
+            type="button"
+            data-testid={hotspot.testId}
+            data-zone-id={hotspot.id}
+            data-active-glow={activeZoneId === hotspot.id ? 'true' : 'false'}
+            onPointerDown={() => activateCockpitZone(hotspot.id)}
+            onMouseEnter={() => activateCockpitZone(hotspot.id)}
+            onPointerEnter={e => {
+              if (e.pointerType !== 'touch') {
+                activateCockpitZone(hotspot.id);
+              }
+            }}
+            onTouchStart={() => activateCockpitZone(hotspot.id)}
+            onFocus={() => activateCockpitZone(hotspot.id)}
+            onClick={() => triggerCockpitNavigation(hotspot.id, hotspot.routeId)}
+            aria-label={hotspot.ariaLabel}
+            style={{
+              left: `${hotspot.leftPct}%`,
+              top: `${hotspot.topPct}%`,
+              width: `${hotspot.widthPct}%`,
+              height: `${hotspot.heightPct}%`,
+              ...(hotspot.clipPolygon ? { clipPath: hotspot.clipPolygon } : {})
+            }}
+            className="absolute z-20 bg-transparent border-0 outline-none focus:outline-none cursor-pointer p-0 m-0"
+          >
+            <span className="sr-only">{hotspot.ariaLabel}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* =====================================================================
+          CONTINUOUS COCKPIT AVIONICS LOWER CHASSIS EXTENSION
+          Seamlessly extends the cockpit body armor to the bottom of the screen.
+          Transforms in sync with the initial app boot sequence (and skips on Back).
+          ===================================================================== */}
+      <div
+        data-testid="cockpit-community-disclaimer"
+        data-boot-phase={bootPhase}
+        style={{
+          opacity: bootSpec.lowerChassisOpacity,
+          clipPath: bootSpec.lowerChassisClipPathCss,
+          transformOrigin: '50% 0%',
+          transform:
+            bootPhase === 'ready'
+              ? 'none'
+              : `translateY(${bootSpec.lowerChassisTranslateYPx}px) scale(${bootSpec.lowerChassisScale})`,
+          transition: reducedMotion
+            ? 'none'
+            : 'opacity 680ms cubic-bezier(0.16, 1, 0.3, 1), transform 760ms cubic-bezier(0.16, 1, 0.3, 1), clip-path 760ms cubic-bezier(0.16, 1, 0.3, 1)'
+        }}
+        className="relative w-full max-w-[460px] flex-1 flex flex-col justify-between items-center px-3.5 -mt-2 pt-0 pb-[max(env(safe-area-inset-bottom,6px),6px)] select-none z-10"
+      >
+        {/* Continuous Cockpit Armor & Cyber Conduits Extension */}
+        <div className="relative w-full flex-1 flex flex-col items-center justify-center min-h-[44px] overflow-hidden">
+          <svg
+            viewBox="0 0 412 110"
+            className="w-full h-full max-h-[120px] pointer-events-none select-none"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <linearGradient id="gp-ext-armor-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#0B132B" stopOpacity="0.9" />
+                <stop offset="45%" stopColor="#050814" stopOpacity="0.98" />
+                <stop offset="100%" stopColor="#020308" stopOpacity="0.95" />
+              </linearGradient>
+              <linearGradient id="gp-ext-rail-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#1E293B" stopOpacity="0.75" />
+                <stop offset="50%" stopColor="#0D1527" stopOpacity="0.95" />
+                <stop offset="100%" stopColor="#030712" stopOpacity="0.9" />
+              </linearGradient>
+            </defs>
+
+            {/* Left Outer Structural Armor Rail */}
+            <path
+              d="M 12 0 L 100 18 L 100 90 L 12 70 Z"
+              fill="url(#gp-ext-rail-grad)"
+              stroke="#1E293B"
+              strokeWidth="1.2"
+            />
+            {/* Left Inner Chamfer Line */}
+            <path
+              d="M 18 6 L 94 22 L 94 84 L 18 66 Z"
+              fill="#030610"
+              stroke="#0F172A"
+              strokeWidth="0.8"
+            />
+
+            {/* Right Outer Structural Armor Rail */}
+            <path
+              d="M 400 0 L 312 18 L 312 90 L 400 70 Z"
+              fill="url(#gp-ext-rail-grad)"
+              stroke="#1E293B"
+              strokeWidth="1.2"
+            />
+            {/* Right Inner Chamfer Line */}
+            <path
+              d="M 394 6 L 318 22 L 318 84 L 394 66 Z"
+              fill="#030610"
+              stroke="#0F172A"
+              strokeWidth="0.8"
+            />
+
+            {/* Center Angular Cockpit Sub-Plate (Double Beveled) */}
+            <polygon
+              points="150,8 262,8 290,75 206,102 122,75"
+              fill="url(#gp-ext-armor-grad)"
+              stroke="#1E293B"
+              strokeWidth="1.4"
+            />
+            <polygon
+              points="154,12 258,12 284,72 206,97 128,72"
+              fill="#020409"
+              stroke="#0F172A"
+              strokeWidth="0.8"
+            />
+
+            {/* Boot Stage 3 Perimeter Ignition Trace across Lower Sub-Chassis Armor */}
+            {bootPhase === 'full_deploy' && (
+              <g data-testid="cockpit-lower-chassis-boot-trace">
+                <polygon
+                  points="150,8 262,8 290,75 206,102 122,75"
+                  fill="none"
+                  stroke="#38BDF8"
+                  strokeWidth="2.4"
+                  strokeDasharray="480"
+                  style={{ animation: 'gpBootPerimeterFlash 720ms ease-out forwards' }}
+                />
+                <path
+                  d="M 12 0 L 100 18 L 100 90 L 12 70 Z"
+                  fill="none"
+                  stroke="#FF1E27"
+                  strokeWidth="2.2"
+                  strokeDasharray="360"
+                  style={{ animation: 'gpBootPerimeterFlash 720ms ease-out forwards' }}
+                />
+                <path
+                  d="M 400 0 L 312 18 L 312 90 L 400 70 Z"
+                  fill="none"
+                  stroke="#FF1E27"
+                  strokeWidth="2.2"
+                  strokeDasharray="360"
+                  style={{ animation: 'gpBootPerimeterFlash 720ms ease-out forwards' }}
+                />
+              </g>
+            )}
+
+            {/* Center Downward Cyan Conduit connecting from Cockpit Chin */}
+            <path
+              d="M 166 0 L 206 18 L 246 0"
+              fill="none"
+              stroke="#38BDF8"
+              strokeWidth="2.4"
+              style={{ filter: 'drop-shadow(0 0 6px #38BDF8)' }}
+            />
+            {/* Upper Delta Tip */}
+            <polygon
+              points="206,24 200,16 212,16"
+              fill="#38BDF8"
+              style={{ filter: 'drop-shadow(0 0 5px #38BDF8)' }}
+            />
+
+            {/* Lower Cyber Conduits branching down the sub-chassis */}
+            <path
+              d="M 206 28 L 206 58"
+              stroke="#38BDF8"
+              strokeWidth="1.6"
+              strokeDasharray="4 2"
+              style={{ filter: 'drop-shadow(0 0 4px #38BDF8)' }}
+            />
+            <path
+              d="M 172 45 L 206 65 L 240 45"
+              fill="none"
+              stroke="#38BDF8"
+              strokeWidth="1.4"
+              opacity="0.85"
+            />
+            <polygon
+              points="206,72 201,65 211,65"
+              fill="#38BDF8"
+              opacity="0.9"
+            />
+
+            {/* Upper Crimson Laser Vents (Left & Right) with Hardware-Glow */}
+            <rect
+              x="22"
+              y="10"
+              width="66"
+              height="3.2"
+              rx="1.6"
+              fill="#FF1E27"
+              style={{ filter: 'drop-shadow(0 0 6px #FF1E27)' }}
+            />
+            <rect
+              x="324"
+              y="10"
+              width="66"
+              height="3.2"
+              rx="1.6"
+              fill="#FF1E27"
+              style={{ filter: 'drop-shadow(0 0 6px #FF1E27)' }}
+            />
+
+            {/* Mid Crimson Laser Vents (Left & Right) with Hardware-Glow */}
+            <rect
+              x="30"
+              y="40"
+              width="52"
+              height="2.6"
+              rx="1.3"
+              fill="#FF1E27"
+              style={{ filter: 'drop-shadow(0 0 5px #FF1E27)' }}
+            />
+            <rect
+              x="330"
+              y="40"
+              width="52"
+              height="2.6"
+              rx="1.3"
+              fill="#FF1E27"
+              style={{ filter: 'drop-shadow(0 0 5px #FF1E27)' }}
+            />
+          </svg>
+        </div>
+
+        {/* Bottom End: Small, clean community message cleanly integrated at the bottom of the screen */}
+        <div className="w-full flex flex-col items-center justify-end shrink-0 pt-0.5 pb-0.5">
+          <p
+            data-testid="cockpit-community-disclaimer-text"
+            className="font-sans text-[10px] sm:text-[10.5px] leading-relaxed text-[#94A3B8]/90 text-center max-w-[340px] px-2 select-none"
+          >
+            {COCKPIT_COMMUNITY_DISCLAIMER_TEXT}
+          </p>
+
+          {/* Bottom Grounding Titanium Chin Bezel */}
+          <svg
+            viewBox="0 0 412 12"
+            className="w-full h-3 shrink-0 pointer-events-none select-none mt-1"
+            preserveAspectRatio="none"
+          >
+            <path
+              d="M 36 2 L 155 2 L 182 9 L 230 9 L 257 2 L 376 2"
+              fill="none"
+              stroke="#1E293B"
+              strokeWidth="1.5"
+            />
+            <polygon points="206,8 202,3 210,3" fill="#38BDF8" opacity="0.85" />
+          </svg>
         </div>
       </div>
 
       {/* =====================================================================
-          ALL SYSTEM CONTROLS — TACTICAL FEATURE DIRECTORY MODAL (COOL BLACK)
+          ALL SYSTEMS DIRECTORY MODAL (OPENS WHEN CLICKING "ALL SYSTEMS")
           ===================================================================== */}
       {showSystemControls && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="All System Controls Directory"
-          className="fixed inset-0 z-50 bg-[#010204]/90 backdrop-blur-xl flex items-center justify-center p-4"
-          onClick={() => setShowSystemControls(false)}
+          aria-label="ALL SYSTEMS"
+          data-testid="all-system-controls-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+          onClick={() => {
+            setShowSystemControls(false);
+            try {
+              if (typeof window !== 'undefined' && window.history.state?.overlay === 'system_controls') {
+                window.history.back();
+              }
+            } catch {}
+          }}
         >
           <div
-            className="w-full max-w-4xl bg-[#03050A] border border-[#1E2D42] rounded-xl shadow-[0_24px_90px_rgba(0,0,0,1)] overflow-hidden text-[#F8FAFC]"
+            className="relative w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-xl bg-[#040914] border border-[#38BDF8]/50 shadow-[0_24px_80px_rgba(0,0,0,0.98)] p-5 text-[#F8FAFC]"
             onClick={e => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-[#141E2E] flex flex-wrap items-center justify-between gap-3 bg-[#050811]">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-[#080E1A] border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8]">
-                  <LayoutGrid className="w-5 h-5" />
-                </div>
-                <h2 className="font-sans font-bold text-base tracking-wider uppercase text-[#F8FAFC]">
-                  ALL SYSTEM CONTROLS
+            <div className="flex items-center justify-between border-b border-[#1E3A5F] pb-3.5 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-[#EF4444] shadow-[0_0_8px_#EF4444]" />
+                <h2 className="font-sans font-extrabold text-base sm:text-lg tracking-[0.14em] uppercase text-[#FFFFFF]">
+                  ALL SYSTEMS
                 </h2>
               </div>
-
-              {/* Jet Engineer Platform Selector inside System Controls */}
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-[#94A3B8]">
-                  Platform:
-                </span>
-                <div className="inline-flex rounded-md bg-[#020408] border border-[#1E2D42] p-0.5">
-                  {(['F77', 'X47', 'Both'] as const).map(model => (
-                    <button
-                      key={model}
-                      type="button"
-                      onClick={() => handleModelSelect(model)}
-                      className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer ${
-                        jetModel === model
-                          ? 'bg-[#38BDF8] text-[#020408]'
-                          : 'text-[#94A3B8] hover:text-[#F8FAFC]'
-                      }`}
-                    >
-                      {model}
-                    </button>
-                  ))}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    playTacticalClick();
-                    setShowSystemControls(false);
-                  }}
-                  aria-label="Close All System Controls"
-                  className="ml-2 p-1.5 rounded-lg bg-[#080E1A] hover:bg-[#101A2C] border border-[#1E2D42] text-[#CBD5E1] cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  playTacticalClick();
+                  setShowSystemControls(false);
+                  try {
+                    if (typeof window !== 'undefined' && window.history.state?.overlay === 'system_controls') {
+                      window.history.back();
+                    }
+                  } catch {}
+                }}
+                aria-label="Close All Systems"
+                className="p-1.5 rounded-lg bg-[#0B1528] border border-[#1E3A5F] text-[#94A3B8] hover:text-white hover:border-[#38BDF8]"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Directory Grid (Minimal Icon + Page Name Only) */}
-            <div className="p-5 max-h-[75vh] overflow-y-auto space-y-5">
-              <div>
-                <div className="text-[11px] font-mono uppercase tracking-wider text-[#38BDF8] mb-2.5">
-                  Primary Flight & Engineering Modules
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {visibleDirectoryItems
-                    .filter(item => item.category === 'primary')
-                    .map(item => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setShowSystemControls(false);
-                          triggerCockpitNavigation(item.id, item.routeId, {
-                            jetMode: item.jetMode,
-                            jetModel,
-                            chargingMode: item.chargingMode
-                          });
-                        }}
-                        className={`text-left p-3.5 rounded-lg bg-[#060A12] hover:bg-[#0B1220] border transition-all group cursor-pointer flex items-center justify-between gap-2 ${
-                          item.routeId === 'emergency'
-                            ? 'border-[#EF4444]/40 hover:border-[#EF4444] hover:shadow-[0_0_16px_rgba(239,68,68,0.25)]'
-                            : 'border-[#162234] hover:border-[#38BDF8]/60'
+            {/* Complete Directory Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {visibleDirectoryItems.map(item => {
+                const isShowdown = item.id === 'dir_squadron_showdown';
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    data-testid={`directory-item-${item.id}`}
+                    onClick={() => {
+                      playTacticalClick();
+                      setShowSystemControls(false);
+                      if (item.routeId === 'jet_engineer') {
+                        onNavigate('jet_engineer', {
+                          jetMode: item.jetMode || 'ask',
+                          jetModel
+                        });
+                      } else if (item.routeId === 'charging') {
+                        onNavigate('charging', {
+                          chargingMode: item.chargingMode || 'map'
+                        });
+                      } else {
+                        onNavigate(item.routeId);
+                      }
+                    }}
+                    className={`flex items-center justify-between p-3.5 rounded-lg transition-all text-left group ${
+                      isShowdown
+                        ? 'bg-gradient-to-r from-[#1A0812] via-[#0C1830] to-[#091326] hover:from-[#280B1A] hover:to-[#12264A] border border-[#EF4444]/70 hover:border-[#EF4444] shadow-[0_0_18px_rgba(239,68,68,0.22)]'
+                        : 'bg-[#091326]/90 hover:bg-[#102244] border border-[#1E3A5F] hover:border-[#38BDF8]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`p-2 rounded-md bg-[#040914] border shrink-0 ${
+                          isShowdown
+                            ? 'border-[#EF4444]/60 group-hover:border-[#EF4444]'
+                            : 'border-[#1E3A5F] group-hover:border-[#38BDF8]/60'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {getDirectoryIcon(item.id)}
-                          <span
-                            className={`font-sans font-semibold text-xs tracking-wide uppercase transition-colors truncate ${
-                              item.routeId === 'emergency'
-                                ? 'text-[#FCA5A5] group-hover:text-[#EF4444]'
-                                : 'text-[#F8FAFC] group-hover:text-[#38BDF8]'
-                            }`}
-                          >
-                            {item.label}
+                        {getDirectoryIcon(item.id)}
+                      </div>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-sans font-bold text-xs sm:text-sm tracking-[0.08em] text-[#F8FAFC] uppercase truncate">
+                          {item.label}
+                        </span>
+                        {isShowdown && (
+                          <span className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-[#EF4444]/20 border border-[#EF4444]/50 text-[#FCA5A5] font-mono text-[9px] font-bold uppercase tracking-wider shrink-0">
+                            ARCADE 1V1
                           </span>
-                        </div>
-                        <ChevronRight
-                          className={`w-3.5 h-3.5 shrink-0 transition-colors ${
-                            item.routeId === 'emergency'
-                              ? 'text-[#EF4444]/70 group-hover:text-[#EF4444]'
-                              : 'text-[#64748B] group-hover:text-[#38BDF8]'
-                          }`}
-                        />
-                      </button>
-                    ))}
-                </div>
-              </div>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight
+                      className={`w-4 h-4 group-hover:translate-x-0.5 transition-all shrink-0 ${
+                        isShowdown
+                          ? 'text-[#EF4444] group-hover:text-[#FCA5A5]'
+                          : 'text-[#64748B] group-hover:text-[#38BDF8]'
+                      }`}
+                    />
+                  </button>
+                );
+              })}
 
-              <div>
-                <div className="text-[11px] font-mono uppercase tracking-wider text-[#F59E0B] mb-2.5">
-                  Fleet Systems, Diagnostics & Community Modules
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {visibleDirectoryItems
-                    .filter(item => item.category !== 'primary')
-                    .map(item => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setShowSystemControls(false);
-                          triggerCockpitNavigation(item.id, item.routeId, {
-                            jetMode: item.jetMode,
-                            jetModel,
-                            chargingMode: item.chargingMode
-                          });
-                        }}
-                        className={`text-left p-3.5 rounded-lg bg-[#060A12] hover:bg-[#0B1220] border transition-all group cursor-pointer flex items-center justify-between gap-2 ${
-                          item.routeId === 'emergency'
-                            ? 'border-[#EF4444]/40 hover:border-[#EF4444] hover:shadow-[0_0_16px_rgba(239,68,68,0.25)]'
-                            : 'border-[#162234] hover:border-[#F59E0B]/60'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {getDirectoryIcon(item.id)}
-                          <span
-                            className={`font-sans font-semibold text-xs tracking-wide uppercase transition-colors truncate ${
-                              item.routeId === 'emergency'
-                                ? 'text-[#FCA5A5] group-hover:text-[#EF4444]'
-                                : 'text-[#F8FAFC] group-hover:text-[#F59E0B]'
-                            }`}
-                          >
-                            {item.label}
-                          </span>
-                        </div>
-                        <ChevronRight
-                          className={`w-3.5 h-3.5 shrink-0 transition-colors ${
-                            item.routeId === 'emergency'
-                              ? 'text-[#EF4444]/70 group-hover:text-[#EF4444]'
-                              : 'text-[#64748B] group-hover:text-[#F59E0B]'
-                          }`}
-                        />
-                      </button>
-                    ))}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] font-mono uppercase tracking-wider text-[#38BDF8] mb-2.5">
-                  Squadron Arcade Arena (Offline 2D Combat)
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSystemControls(false);
-                    onNavigate('squadron-showdown');
-                  }}
-                  className="w-full text-left p-3.5 rounded-lg bg-[#060A12] hover:bg-[#0B1220] border border-[#38BDF8]/50 hover:border-[#38BDF8] transition-all group cursor-pointer flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="font-sans font-bold text-xs tracking-wide uppercase text-[#38BDF8]">
-                      SQUADRON SHOWDOWN — FIGHT. RIDE. DOMINATE.
-                    </span>
+              {/* Contribution Portal Entry */}
+              <button
+                type="button"
+                data-testid="directory-item-contribute"
+                onClick={() => {
+                  playTacticalClick();
+                  setShowSystemControls(false);
+                  onNavigate('contribute');
+                }}
+                className="flex items-center justify-between p-3.5 rounded-lg bg-[#091326]/90 hover:bg-[#102244] border border-[#1E3A5F] hover:border-[#38BDF8] transition-all text-left group"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2 rounded-md bg-[#040914] border border-[#1E3A5F] group-hover:border-[#38BDF8]/60 shrink-0">
+                    <Shield className="w-4 h-4 text-[#38BDF8]" />
                   </div>
-                  <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[#38BDF8]" />
-                </button>
+                  <span className="font-sans font-bold text-xs sm:text-sm tracking-[0.08em] text-[#F8FAFC] uppercase truncate">
+                    SUPPORT APP • CONTRIBUTE
+                  </span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-[#EF4444] group-hover:translate-x-0.5 transition-all shrink-0" />
+              </button>
+            </div>
+
+            {/* Modal Footer: Quick Model Filter & Account Controls */}
+            <div className="mt-5 pt-3.5 border-t border-[#1E3A5F] flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[#8E98A4] uppercase text-[10px]">Telemetry Filter:</span>
+                {(['F77', 'X47', 'Both'] as const).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => handleModelSelect(m)}
+                    className={`px-2.5 py-1 rounded border text-[11px] font-bold ${
+                      jetModel === m
+                        ? 'bg-[#38BDF8]/20 border-[#38BDF8] text-white'
+                        : 'bg-[#081020] border-[#1E3A5F] text-[#8E98A4]'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {currentUser ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTacticalClick();
+                      setShowSystemControls(false);
+                      onNavigate('garage');
+                    }}
+                    className="px-3 py-1.5 rounded bg-[#0C1930] border border-[#38BDF8]/50 text-[#F8FAFC] hover:border-[#38BDF8] text-[11px] flex items-center gap-1.5"
+                  >
+                    <UserIcon className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    <span>{currentUser.fullName}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTacticalClick();
+                      setShowSystemControls(false);
+                      openAuthModal('login');
+                    }}
+                    className="px-3 py-1.5 rounded bg-[#38BDF8]/20 border border-[#38BDF8] text-white font-bold text-[11px]"
+                  >
+                    SIGN IN
+                  </button>
+                )}
               </div>
             </div>
           </div>

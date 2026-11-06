@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Zap,
   Plus,
@@ -30,7 +30,9 @@ import {
   IndianRupee,
   Bell,
   BarChart3,
-  Layers
+  Layers,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
@@ -57,6 +59,10 @@ import {
   canManageChargerReservation,
   updateChargerReservationStatus,
   buildChargerReservationOwnerNotification,
+  parseMinimalChargingStationsDatabase,
+  formatMinimalChargerType,
+  searchAndFilterChargingStations,
+  type SkippedMinimalStationRecord,
   type ChargerReservation,
   type CommunityChargerCostUnit,
   type ChargerReservationStatus,
@@ -163,6 +169,21 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
   const [filterType, setFilterType] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [submissionNotice, setSubmissionNotice] = useState<string | null>(null);
+  const [isBreakdownSyncExpanded, setIsBreakdownSyncExpanded] = useState<boolean>(false);
+  const [isSkippedDrawerOpen, setIsSkippedDrawerOpen] = useState<boolean>(false);
+  const [skippedMinimalRecords, setSkippedMinimalRecords] = useState<SkippedMinimalStationRecord[]>([]);
+  const [minimalDbStats, setMinimalDbStats] = useState<{
+    totalRecordsLoaded: number;
+    recordsWithValidCoordinatesCount: number;
+    validMapMarkersCount: number;
+    skippedRecordsCount: number;
+  }>({
+    totalRecordsLoaded: 182,
+    recordsWithValidCoordinatesCount: 29,
+    validMapMarkersCount: 76,
+    skippedRecordsCount: 153
+  });
+  const minimalValidStationsRef = useRef<ChargingStation[]>([]);
 
   const composition: NetworkCompositionResult = useMemo(
     () => calculateChargingNetworkComposition(stations),
@@ -254,6 +275,21 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
 
   const isAdmin = isAdminOrOwnerAccount(currentUser);
 
+  const mergeWithMinimalStations = useCallback((list: ChargingStation[]): ChargingStation[] => {
+    const map = new Map<string, ChargingStation>();
+    for (const s of list) {
+      if (s && s.id) {
+        map.set(s.id, s);
+      }
+    }
+    for (const ms of minimalValidStationsRef.current) {
+      if (ms && ms.id && !map.has(ms.id)) {
+        map.set(ms.id, ms);
+      }
+    }
+    return Array.from(map.values()).filter(s => s.approvalStatus !== 'deleted');
+  }, []);
+
   const applyStationPayload = useCallback(
     (
       loadedPublic: ChargingStation[],
@@ -261,11 +297,12 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
       planningText?: string,
       loadedReports?: ChargerCommunityReport[]
     ) => {
-      const mergedAll = reconcileCollectionWithCache<ChargingStation>(
+      const reconciled = reconcileCollectionWithCache<ChargingStation>(
         CACHE_KEYS.CHARGING,
         loadedAll || loadedPublic,
         { appendMissing: true }
       ).filter(s => s.approvalStatus !== 'deleted');
+      const mergedAll = mergeWithMinimalStations(reconciled);
       const pub = mergedAll.filter(s => isPubliclyPublishedCharger(s));
       setStations(pub);
       setAllStations(mergedAll);
@@ -295,8 +332,42 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
         saveToCache(CACHE_KEYS.CHARGING_PLANNING, resolvedPlanning);
       }
     },
-    []
+    [mergeWithMinimalStations]
   );
+
+  // Load /data/charging_stations_minimal.json directly on mount so all 182 records & 76 valid markers are guaranteed present
+  useEffect(() => {
+    let active = true;
+    async function loadMinimalChargingDatabaseJson() {
+      try {
+        const res = await fetch('/data/charging_stations_minimal.json');
+        if (!res.ok) return;
+        const rawJson = await res.json();
+        if (!active || !Array.isArray(rawJson)) return;
+        const parsedDb = parseMinimalChargingStationsDatabase(rawJson);
+        minimalValidStationsRef.current = parsedDb.validStations as unknown as ChargingStation[];
+        setSkippedMinimalRecords(parsedDb.skippedRecords);
+        setMinimalDbStats({
+          totalRecordsLoaded: parsedDb.totalRecordsLoaded,
+          recordsWithValidCoordinatesCount: parsedDb.recordsWithValidCoordinatesCount,
+          validMapMarkersCount: parsedDb.validMapMarkersCount,
+          skippedRecordsCount: parsedDb.skippedRecordsCount
+        });
+        setAllStations(prev => {
+          const merged = mergeWithMinimalStations(prev);
+          saveToCache(CACHE_KEYS.CHARGING, merged, { silent: true });
+          setStations(merged.filter(s => isPubliclyPublishedCharger(s)));
+          return merged;
+        });
+      } catch {
+        // Ignore if fetch fails offline
+      }
+    }
+    void loadMinimalChargingDatabaseJson();
+    return () => {
+      active = false;
+    };
+  }, [mergeWithMinimalStations]);
 
   const fetchStationsAndPlanning = useCallback(async () => {
     try {
@@ -305,6 +376,12 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
         const data = await res.json();
         const loadedStations: ChargingStation[] = data.stations || [];
         const loadedAll: ChargingStation[] = data.allStations || loadedStations;
+        if (data.minimalDatabaseStats) {
+          setMinimalDbStats(data.minimalDatabaseStats);
+        }
+        if (Array.isArray(data.skippedMinimalRecords) && data.skippedMinimalRecords.length > 0) {
+          setSkippedMinimalRecords(data.skippedMinimalRecords);
+        }
         const configuredText =
           typeof data.longRidePlanningText === 'string' ? data.longRidePlanningText : '';
         applyStationPayload(
@@ -316,9 +393,11 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
         setPlanningDraft(prev => (prev === '' ? configuredText : prev));
       }
     } catch (err) {
-      const cached = loadFromCache<ChargingStation[]>(
-        CACHE_KEYS.CHARGING,
-        OFFLINE_FALLBACK_CHARGING_STATIONS
+      const cached = mergeWithMinimalStations(
+        loadFromCache<ChargingStation[]>(
+          CACHE_KEYS.CHARGING,
+          OFFLINE_FALLBACK_CHARGING_STATIONS
+        )
       );
       if (cached.length > 0) {
         setAllStations(cached);
@@ -332,7 +411,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
         setChargerReports(cachedReports);
       }
     }
-  }, [applyStationPayload]);
+  }, [applyStationPayload, mergeWithMinimalStations]);
 
   const refreshDeviceStorageStatus = useCallback(async () => {
     const status = await getDeviceOfflineStorageStatus();
@@ -349,11 +428,12 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
       ]);
       if (!active) return;
       if (idbStations && Array.isArray(idbStations.data) && idbStations.data.length > 0) {
-        setAllStations(idbStations.data);
-        setStations(idbStations.data.filter(s => isPubliclyPublishedCharger(s)));
+        const merged = mergeWithMinimalStations(idbStations.data);
+        setAllStations(merged);
+        setStations(merged.filter(s => isPubliclyPublishedCharger(s)));
       } else {
-        // Ensure baseline India stations are persisted to phone storage immediately
-        saveToCache(CACHE_KEYS.CHARGING, OFFLINE_FALLBACK_CHARGING_STATIONS, { silent: true });
+        const baseline = mergeWithMinimalStations(OFFLINE_FALLBACK_CHARGING_STATIONS);
+        saveToCache(CACHE_KEYS.CHARGING, baseline, { silent: true });
       }
       if (idbReports && Array.isArray(idbReports.data) && idbReports.data.length > 0) {
         setChargerReports(idbReports.data);
@@ -374,7 +454,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
       window.removeEventListener(OFFLINE_SYNC_EVENT, handleStorageEvents);
       window.removeEventListener(DATA_UPDATED_EVENT, handleStorageEvents);
     };
-  }, [refreshDeviceStorageStatus]);
+  }, [refreshDeviceStorageStatus, mergeWithMinimalStations]);
 
   const handleDownloadOfflinePack = async () => {
     playTacticalClick();
@@ -1094,23 +1174,10 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
   };
 
   // Filtered published stations for Map and Directory
-  const filteredStations = stations.filter(s => {
-    if (!matchesChargingStationFilter(s, filterType)) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      const subInfo = resolveChargerSubmitterInfo(s);
-      if (
-        !s.name.toLowerCase().includes(q) &&
-        !s.location.toLowerCase().includes(q) &&
-        !(s.chargerType || '').toLowerCase().includes(q) &&
-        !subInfo.submitterName.toLowerCase().includes(q) &&
-        !subInfo.submitterPhone.toLowerCase().includes(q)
-      ) {
-        return false;
-      }
-    }
-    return true;
-  });
+  const filteredStations = useMemo(
+    () => searchAndFilterChargingStations(stations, searchQuery, filterType),
+    [stations, searchQuery, filterType]
+  );
 
   useEffect(() => {
     if (selectedStation) {
@@ -1152,32 +1219,42 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header with Prominent Map Option / Tab and + Submit Charging Plug */}
-      <div className="bg-[#13161A] border border-[#282D34] rounded-lg p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-10 h-10 rounded bg-[#191D22] border border-[#414851] flex items-center justify-center text-[#D4D8DE]">
-            <Zap className="w-5 h-5 text-[#42B883]" />
-          </div>
-          <div>
-            <div className="text-sm font-mono font-bold text-[#F1F3F5] tracking-wider flex flex-wrap items-center gap-2">
-              <span>CHARGING NETWORK</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#252A30] text-[#42B883] border border-[#42B883]/30">
-                SUPERNOVA • TYPE 6 • TYPE 2 • SOCKET
-              </span>
+    <div className="space-y-4">
+      {/* Clean Mobile-First Header */}
+      <div className="bg-[#13161A] border border-[#282D34] rounded-xl p-3.5 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-9 h-9 rounded-lg bg-[#0D1015] border border-[#282D34] flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 text-[#42B883]" />
             </div>
-            <div className="text-xs text-[#A0A7B0] mt-0.5">
-              Verified India Charging Map • Supernova Pods • 3rd Party Stations • Community Chargers
+            <div>
+              <div className="text-base sm:text-lg font-mono font-bold text-[#F1F3F5] tracking-wider flex flex-wrap items-center gap-2">
+                <span>CHARGING NETWORK</span>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[#42B883]/15 text-[#42B883] border border-[#42B883]/30 whitespace-nowrap shrink-0">
+                  {stations.length} Active
+                </span>
+              </div>
+              <div className="text-xs text-[#A0A7B0] mt-0.5">
+                Supernova • Community • Type 2 &amp; 6 • Sockets
+              </div>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={handleOpenAddModal}
+            className="sm:hidden flex items-center space-x-1 px-3 py-2 rounded-lg bg-[#252A30] hover:bg-[#414851] text-xs font-mono font-bold text-[#F1F3F5] border border-[#414851] transition-colors cursor-pointer shrink-0"
+          >
+            <span>+ Add</span>
+          </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs">
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 font-mono text-xs sm:text-sm">
           {/* Primary Mode Switch: CHARGING MAP vs AUTO PILOT */}
           <div
             role="tablist"
             aria-label="Charging Network Mode"
-            className="flex items-center bg-[#090B0E] border border-[#2D343E] rounded-lg p-1"
+            className="flex items-center bg-[#090B0E] border border-[#2D343E] rounded-lg p-1 w-full sm:w-auto"
           >
             <button
               type="button"
@@ -1187,7 +1264,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 playTacticalClick();
                 setChargingPageMode('map');
               }}
-              className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-md transition-colors cursor-pointer ${
+              className={`relative flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-md whitespace-nowrap transition-colors cursor-pointer ${
                 chargingPageMode === 'map'
                   ? 'text-[#08090B] font-bold'
                   : 'text-[#A0A7B0] hover:text-[#F1F3F5]'
@@ -1200,7 +1277,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                   className="pointer-events-none absolute inset-0 rounded-md bg-[#E8AA45] shadow shadow-[#E8AA45]/30"
                 />
               )}
-              <MapIcon className="relative z-10 w-3.5 h-3.5" />
+              <MapIcon className="relative z-10 w-4 h-4 shrink-0" />
               <span className="relative z-10">CHARGING MAP</span>
             </button>
             <button
@@ -1212,7 +1289,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 playTacticalClick();
                 setChargingPageMode('autopilot');
               }}
-              className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-md transition-colors cursor-pointer ${
+              className={`relative flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2 rounded-md whitespace-nowrap transition-colors cursor-pointer ${
                 chargingPageMode === 'autopilot'
                   ? 'text-white font-bold'
                   : 'text-[#A0A7B0] hover:text-[#F1F3F5]'
@@ -1225,178 +1302,321 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                   className="pointer-events-none absolute inset-0 rounded-md bg-[#FF5500] shadow shadow-[#FF5500]/35"
                 />
               )}
-              <Compass className="relative z-10 w-3.5 h-3.5" />
+              <Compass className="relative z-10 w-4 h-4 shrink-0" />
               <span className="relative z-10">AUTO PILOT</span>
             </button>
           </div>
 
-          <AnimatePresence initial={false}>
-            {chargingPageMode === 'map' && (
-              <motion.div
-                key="charging-map-layout-toggle"
-                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94, x: -10 }}
-                animate={{ opacity: 1, scale: 1, x: 0 }}
-                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94, x: -10 }}
-                transition={{ duration: reducedMotion ? 0.1 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-                role="tablist"
-                aria-label="Charging map display layout"
-                className="flex items-center bg-[#0D0F12] border border-[#282D34] rounded p-1"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeViewTab === 'map'}
-                  onClick={() => {
-                    playTacticalClick();
-                    setActiveViewTab('map');
-                  }}
-                  className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors cursor-pointer ${
-                    activeViewTab === 'map'
-                      ? 'text-[#F1F3F5] font-bold'
-                      : 'text-[#A0A7B0] hover:text-[#F1F3F5]'
-                  }`}
-                >
-                  {activeViewTab === 'map' && (
-                    <motion.span
-                      layoutId="charging-layout-view-pill"
-                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                      className="pointer-events-none absolute inset-0 rounded bg-[#252A30] border border-[#414851]"
-                    />
-                  )}
-                  <MapIcon className="relative z-10 w-3.5 h-3.5" />
-                  <span className="relative z-10">Map</span>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeViewTab === 'list'}
-                  onClick={() => {
-                    playTacticalClick();
-                    setActiveViewTab('list');
-                  }}
-                  className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors cursor-pointer ${
-                    activeViewTab === 'list'
-                      ? 'text-[#F1F3F5] font-bold'
-                      : 'text-[#A0A7B0] hover:text-[#F1F3F5]'
-                  }`}
-                >
-                  {activeViewTab === 'list' && (
-                    <motion.span
-                      layoutId="charging-layout-view-pill"
-                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                      className="pointer-events-none absolute inset-0 rounded bg-[#252A30] border border-[#414851]"
-                    />
-                  )}
-                  <List className="relative z-10 w-3.5 h-3.5" />
-                  <span className="relative z-10">Directory List</span>
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           <button
             type="button"
             onClick={handleOpenAddModal}
-            className="flex items-center space-x-1.5 px-3.5 py-2 rounded bg-[#252A30] hover:bg-[#414851] text-xs font-mono font-bold text-[#F1F3F5] border border-[#414851] transition-colors cursor-pointer"
+            className="hidden sm:flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-[#252A30] hover:bg-[#414851] text-xs font-mono font-bold text-[#F1F3F5] border border-[#414851] transition-colors cursor-pointer"
           >
-            <span>+ Submit Charging Plug</span>
+            <span>+ Add Charger</span>
           </button>
         </div>
       </div>
 
-      {/* Phone Offline Storage & Live Auto-Sync Control Bar */}
-      <div
-        data-testid="charging-offline-storage-hud"
-        className={`rounded-lg border px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 font-mono text-xs transition-colors ${
-          isNetworkOffline
-            ? 'bg-[#19150E] border-[#E8AA45]/50 text-[#F1F3F5]'
-            : 'bg-[#0D1117] border-[#282D34] text-[#D4D8DE]'
-        }`}
+      {/* ========================================================= */}
+      {/* EXPANDABLE & COLLAPSIBLE NETWORK BREAKDOWN & SYNC         */}
+      {/* ========================================================= */}
+      <section
+        data-testid="charging-network-composition-graph"
+        aria-label="Network Breakdown and Sync"
+        className="bg-[#0D1015] border border-[#282D34] rounded-xl overflow-hidden font-mono transition-all"
       >
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span
-            data-testid="charging-connection-badge"
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold border ${
-              isNetworkOffline
-                ? 'bg-[#E8AA45]/20 border-[#E8AA45]/50 text-[#E8AA45]'
-                : 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
-            }`}
-          >
-            {isNetworkOffline ? (
-              <>
-                <WifiOff className="w-3.5 h-3.5" />
-                <span>OFFLINE MODE • RUNNING FROM PHONE STORAGE</span>
-              </>
-            ) : (
-              <>
-                <Wifi className="w-3.5 h-3.5" />
-                <span>ONLINE • AUTO-SYNC ACTIVE</span>
-              </>
-            )}
-          </span>
-
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#A0A7B0]">
-            <span className="inline-flex items-center gap-1 text-[#F1F3F5] font-semibold">
-              <HardDrive className="w-3.5 h-3.5 text-[#38BDF8]" />
-              <span>Saved on Phone:</span>
+        <button
+          type="button"
+          data-testid="network-breakdown-sync-toggle"
+          aria-expanded={isBreakdownSyncExpanded}
+          onClick={() => {
+            playTacticalClick();
+            setIsBreakdownSyncExpanded(prev => !prev);
+          }}
+          className="w-full px-3.5 py-3 flex items-center justify-between gap-2 text-left hover:bg-[#13171F] transition-colors cursor-pointer"
+        >
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <BarChart3 className="w-4 h-4 text-[#42B883] shrink-0" />
+            <span className="text-xs font-bold text-[#F1F3F5] tracking-wider uppercase">
+              NETWORK BREAKDOWN &amp; SYNC
             </span>
-            <span data-testid="phone-saved-chargers-count">
-              {storageStatus?.savedChargersCount ?? allStations.length} Chargers
+            <span
+              data-testid="charging-connection-badge"
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
+                isNetworkOffline
+                  ? 'bg-[#E8AA45]/20 border-[#E8AA45]/50 text-[#E8AA45]'
+                  : 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
+              }`}
+            >
+              {isNetworkOffline ? (
+                <>
+                  <WifiOff className="w-2.5 h-2.5" />
+                  <span>OFFLINE</span>
+                </>
+              ) : (
+                <>
+                  <Wifi className="w-2.5 h-2.5" />
+                  <span>ONLINE</span>
+                </>
+              )}
             </span>
-            <span>•</span>
-            <span>{storageStatus?.savedReportsCount ?? chargerReports.length} Reports</span>
-            <span>•</span>
-            <span data-testid="phone-saved-routes-count">
-              {storageStatus?.savedRoutesCount ?? 0} Corridors
+            <span className="text-[11px] text-[#A0A7B0] hidden sm:inline">
+              {composition.totalCount} Stations • {composition.totalCapacityKw} kW
             </span>
-            <span>•</span>
-            <span>{storageStatus?.cachedTilesCount ?? 0} Map Tiles</span>
-            {storageStatus && storageStatus.queuedActionsCount > 0 && (
-              <span
-                data-testid="charging-queued-actions-badge"
-                className="px-2 py-0.5 rounded bg-[#E8AA45]/20 border border-[#E8AA45]/50 text-[#E8AA45] text-[10px] font-bold"
-              >
-                {storageStatus.queuedActionsCount} Pending Sync
-              </span>
-            )}
           </div>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {offlinePackProgressLabel && (
-            <span className="text-[11px] text-[#38BDF8] animate-pulse">
-              {offlinePackProgressLabel}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] text-[#A0A7B0] sm:hidden">
+              {composition.totalCount} • {composition.totalCapacityKw}kW
             </span>
-          )}
-          <button
-            type="button"
-            data-testid="save-offline-pack-btn"
-            disabled={savingOfflinePack}
-            onClick={handleDownloadOfflinePack}
-            className="px-3 py-1.5 rounded bg-[#192330] hover:bg-[#223042] border border-[#38BDF8]/40 text-[#38BDF8] font-bold text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>
-              {savingOfflinePack
-                ? 'Saving to Phone...'
-                : storageStatus?.lastOfflinePackSavedAt
-                ? 'Update Offline Pack on Phone'
-                : 'Save Offline Pack to Phone'}
+            <span className="p-1 rounded-md bg-[#191D22] border border-[#282D34] text-[#E8AA45] flex items-center gap-1 text-[10px] font-bold px-2">
+              <span>{isBreakdownSyncExpanded ? 'Hide' : 'View'}</span>
+              {isBreakdownSyncExpanded ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
             </span>
-          </button>
+          </div>
+        </button>
 
-          <button
-            type="button"
-            data-testid="charging-sync-now-btn"
-            disabled={syncingNow}
-            onClick={handleManualSyncNow}
-            className="px-3 py-1.5 rounded bg-[#191D22] hover:bg-[#252A30] border border-[#414851] text-[#F1F3F5] font-bold text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-[#42B883] ${syncingNow ? 'animate-spin' : ''}`} />
-            <span>{syncingNow ? 'Syncing...' : 'Sync Now'}</span>
-          </button>
-        </div>
-      </div>
+        {isBreakdownSyncExpanded && (
+          <div className="px-3.5 pb-3.5 pt-2 border-t border-[#282D34] space-y-3">
+            {/* Offline Cache & Manual Sync Controls */}
+            <div
+              data-testid="charging-offline-storage-hud"
+              className={`rounded-lg border px-3 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] transition-colors ${
+                isNetworkOffline
+                  ? 'bg-[#19150E] border-[#E8AA45]/50 text-[#F1F3F5]'
+                  : 'bg-[#13161A] border-[#282D34] text-[#D4D8DE]'
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#A0A7B0]">
+                <HardDrive className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
+                <span data-testid="phone-saved-chargers-count" className="text-[#F1F3F5] font-semibold">
+                  {storageStatus?.savedChargersCount ?? allStations.length} Saved Chargers
+                </span>
+                <span>•</span>
+                <span data-testid="phone-saved-routes-count">
+                  {storageStatus?.savedRoutesCount ?? 0} Corridors
+                </span>
+                {storageStatus && storageStatus.queuedActionsCount > 0 && (
+                  <span
+                    data-testid="charging-queued-actions-badge"
+                    className="px-1.5 py-0.5 rounded bg-[#E8AA45]/20 border border-[#E8AA45]/50 text-[#E8AA45] text-[10px] font-bold"
+                  >
+                    {storageStatus.queuedActionsCount} Pending
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {offlinePackProgressLabel && (
+                  <span className="text-[10px] text-[#38BDF8] animate-pulse">
+                    {offlinePackProgressLabel}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  data-testid="save-offline-pack-btn"
+                  disabled={savingOfflinePack}
+                  onClick={handleDownloadOfflinePack}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#192330] hover:bg-[#223042] border border-[#38BDF8]/40 text-[#38BDF8] font-bold text-[10px] flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>{savingOfflinePack ? 'Saving...' : 'Save Offline'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="charging-sync-now-btn"
+                  disabled={syncingNow}
+                  onClick={handleManualSyncNow}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#191D22] hover:bg-[#252A30] border border-[#414851] text-[#F1F3F5] font-bold text-[10px] flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 text-[#42B883] ${syncingNow ? 'animate-spin' : ''}`} />
+                  <span>{syncingNow ? 'Syncing...' : 'Sync Now'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Breakdown Header & 24h Filter */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] text-[#A0A7B0]">
+                Total Capacity: <strong className="text-[#F1F3F5]">{composition.totalCapacityKw} kW</strong> across {composition.totalCount} verified stations
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-testid="filter-last-24h-btn"
+                  onClick={() => {
+                    playTacticalClick();
+                    setFilterType(prev => (prev === 'LAST_24H' ? 'ALL' : 'LAST_24H'));
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+                    filterType === 'LAST_24H'
+                      ? 'bg-[#42B883] text-[#08090B] border-[#42B883]'
+                      : 'bg-[#13161A] hover:bg-[#1E232B] text-[#42B883] border-[#42B883]/40'
+                  }`}
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>NEW (24H)</span>
+                  <span
+                    data-testid="composition-last-24h-count"
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                      filterType === 'LAST_24H'
+                        ? 'bg-[#08090B] text-[#42B883]'
+                        : 'bg-[#42B883]/20 text-[#42B883]'
+                    }`}
+                  >
+                    {composition.last24HoursCount}
+                  </span>
+                </button>
+
+                {filterType !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTacticalClick();
+                      setFilterType('ALL');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-[#191D22] hover:bg-[#252A30] text-[10px] text-[#A0A7B0] hover:text-[#F1F3F5] border border-[#282D34] cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Stacked Progress Bar */}
+            <div
+              role="progressbar"
+              aria-label="Charging infrastructure distribution graph"
+              className="w-full h-2.5 rounded-full bg-[#13171F] border border-[#282D34] overflow-hidden flex p-0.5 gap-0.5"
+            >
+              <div
+                style={{ width: `${Math.max(8, composition.segments.uvSupernova.percentage)}%` }}
+                className="h-full rounded-l-full bg-[#42B883] hover:opacity-90 transition-all duration-500 cursor-pointer"
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType(prev => (prev === 'SUPERNOVA' ? 'ALL' : 'SUPERNOVA'));
+                }}
+              />
+              <div
+                style={{ width: `${Math.max(8, composition.segments.ownersChargers.percentage)}%` }}
+                className="h-full bg-[#E8AA45] hover:opacity-90 transition-all duration-500 cursor-pointer"
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType(prev =>
+                    prev === 'Community Provided Chargers' ? 'ALL' : 'Community Provided Chargers'
+                  );
+                }}
+              />
+              <div
+                style={{ width: `${Math.max(8, composition.segments.boltType6.percentage)}%` }}
+                className="h-full rounded-r-full bg-[#729BCB] hover:opacity-90 transition-all duration-500 cursor-pointer"
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType(prev => (prev === 'BOLT_TYPE_6' ? 'ALL' : 'BOLT_TYPE_6'));
+                }}
+              />
+            </div>
+
+            {/* 3-Column Compact Metric Cards */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              {/* Card 1: UV Supernova */}
+              <div
+                data-testid="composition-card-uv-supernova"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType(prev => (prev === 'SUPERNOVA' ? 'ALL' : 'SUPERNOVA'));
+                }}
+                className={`p-2.5 sm:p-3 rounded-lg border transition-all cursor-pointer ${
+                  filterType === 'SUPERNOVA'
+                    ? 'bg-[#42B883]/15 border-[#42B883] ring-1 ring-[#42B883]'
+                    : 'bg-[#11151C] border-[#282D34] hover:border-[#42B883]/60'
+                }`}
+              >
+                <div className="flex items-center justify-between text-[10px] mb-1">
+                  <span className="text-[#42B883] font-bold truncate">SUPERNOVA</span>
+                  <span className="text-[#42B883] font-bold hidden sm:inline">
+                    {composition.segments.uvSupernova.percentage}%
+                  </span>
+                </div>
+                <div className="text-lg sm:text-xl font-bold text-[#F1F3F5] leading-tight">
+                  {composition.segments.uvSupernova.count}
+                </div>
+                <div className="text-[10px] text-[#707883] mt-0.5 truncate">
+                  {composition.segments.uvSupernova.totalKw} kW total
+                </div>
+              </div>
+
+              {/* Card 2: Owners Chargers */}
+              <div
+                data-testid="composition-card-owners-chargers"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType(prev =>
+                    prev === 'Community Provided Chargers' ? 'ALL' : 'Community Provided Chargers'
+                  );
+                }}
+                className={`p-2.5 sm:p-3 rounded-lg border transition-all cursor-pointer ${
+                  filterType === 'Community Provided Chargers'
+                    ? 'bg-[#E8AA45]/15 border-[#E8AA45] ring-1 ring-[#E8AA45]'
+                    : 'bg-[#11151C] border-[#282D34] hover:border-[#E8AA45]/60'
+                }`}
+              >
+                <div className="flex items-center justify-between text-[10px] mb-1">
+                  <span className="text-[#E8AA45] font-bold truncate">COMMUNITY</span>
+                  <span className="text-[#E8AA45] font-bold hidden sm:inline">
+                    {composition.segments.ownersChargers.percentage}%
+                  </span>
+                </div>
+                <div className="text-lg sm:text-xl font-bold text-[#F1F3F5] leading-tight">
+                  {composition.segments.ownersChargers.count}
+                </div>
+                <div className="text-[10px] text-[#707883] mt-0.5 truncate">
+                  {composition.segments.ownersChargers.totalKw} kW total
+                </div>
+              </div>
+
+              {/* Card 3: Bolt Type 6 */}
+              <div
+                data-testid="composition-card-bolt-type6"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  playTacticalClick();
+                  setFilterType(prev => (prev === 'BOLT_TYPE_6' ? 'ALL' : 'BOLT_TYPE_6'));
+                }}
+                className={`p-2.5 sm:p-3 rounded-lg border transition-all cursor-pointer ${
+                  filterType === 'BOLT_TYPE_6'
+                    ? 'bg-[#729BCB]/15 border-[#729BCB] ring-1 ring-[#729BCB]'
+                    : 'bg-[#11151C] border-[#282D34] hover:border-[#729BCB]/60'
+                }`}
+              >
+                <div className="flex items-center justify-between text-[10px] mb-1">
+                  <span className="text-[#729BCB] font-bold truncate">TYPE 6</span>
+                  <span className="text-[#729BCB] font-bold hidden sm:inline">
+                    {composition.segments.boltType6.percentage}%
+                  </span>
+                </div>
+                <div className="text-lg sm:text-xl font-bold text-[#F1F3F5] leading-tight">
+                  {composition.segments.boltType6.count}
+                </div>
+                <div className="text-[10px] text-[#707883] mt-0.5 truncate">
+                  {composition.segments.boltType6.totalKw} kW total
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* Feedback Banner */}
       {submissionNotice && (
@@ -1428,11 +1648,11 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
             <div className="flex items-center gap-2 text-[#E8AA45] font-bold">
               <ShieldCheck className="w-4 h-4" />
               <span>
-                ADMIN APPROVAL QUEUE — {pendingStations.length} UNVERIFIED CHARGER SUBMISSION(S)
+                ADMIN APPROVAL QUEUE ({pendingStations.length})
               </span>
             </div>
             <span className="text-[10px] text-[#A0A7B0]">
-              Hidden from public map until approved
+              Hidden until approved
             </span>
           </div>
 
@@ -1448,38 +1668,8 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                     <span className="px-2 py-0.5 rounded bg-[#E8AA45]/15 text-[#E8AA45] border border-[#E8AA45]/40 text-[10px] font-bold">
                       {ps.chargerType || 'Socket'}
                     </span>
-                    <span className="text-[10px] text-[#707883]">
-                      ({ps.latitude.toFixed(4)}°N, {ps.longitude.toFixed(4)}°E)
-                    </span>
                   </div>
                   <div className="text-[11px] text-[#A0A7B0] font-sans">{ps.location}</div>
-                  {ps.chargerDetails && (
-                    <div className="text-[11px] text-[#D4D8DE] font-sans">
-                      Requirement: {ps.chargerDetails}
-                    </div>
-                  )}
-                  {(() => {
-                    const pendingSubmitter = resolveChargerSubmitterInfo(ps);
-                    return (
-                      <div className="text-[11px] text-[#E8AA45] flex flex-wrap items-center gap-2">
-                        <span>
-                          Submitted by: <strong className="text-[#F1F3F5]">{pendingSubmitter.submitterName}</strong>
-                        </span>
-                        {pendingSubmitter.isCommunityProvided && pendingSubmitter.submitterPhone && (
-                          <>
-                            <span>•</span>
-                            <a
-                              href={pendingSubmitter.telHref}
-                              className="inline-flex items-center gap-1 text-[#42B883] hover:underline font-bold"
-                            >
-                              <Phone className="w-3 h-3" />
-                              <span>{pendingSubmitter.submitterPhone}</span>
-                            </a>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
@@ -1488,7 +1678,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                     onClick={() => handleAdminApproval(ps.id, 'approved')}
                     className="px-3 py-1.5 rounded bg-[#42B883] hover:bg-[#389d6f] text-[#08090B] font-bold text-[11px]"
                   >
-                    Approve & Publish
+                    Approve
                   </button>
                   <button
                     type="button"
@@ -1506,9 +1696,9 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
 
       {/* Non-admin user's own pending submissions notice */}
       {!isAdmin && myPendingStations.length > 0 && (
-        <div className="bg-[#13161A] border border-[#E8AA45]/40 rounded-lg p-3.5 text-xs font-mono text-[#E8AA45] flex items-center justify-between">
+        <div className="bg-[#13161A] border border-[#E8AA45]/40 rounded-lg p-3 text-xs font-mono text-[#E8AA45] flex items-center justify-between">
           <span>
-            You have {myPendingStations.length} submitted charger(s) pending administrator verification before appearing on the public map.
+            {myPendingStations.length} submitted charger(s) pending administrator verification.
           </span>
         </div>
       )}
@@ -1518,7 +1708,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
         orderedKeys={['map', 'autopilot']}
         accentColor={chargingPageMode === 'autopilot' ? 'orange' : 'amber'}
         reducedMotion={reducedMotion}
-        className="space-y-6"
+        className="space-y-4"
       >
       {chargingPageMode === 'autopilot' ? (
         <AutoPilotPlanner
@@ -1530,351 +1720,36 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
           onReportSubmitted={updatedReports => setChargerReports(updatedReports)}
         />
       ) : (
-        <div className="space-y-6">
-          {/* ========================================================= */}
-          {/* CHARGING INFRASTRUCTURE COMPOSITION GRAPH */}
-          {/* UV Supernova vs Owners Chargers vs Bolt Type 6 */}
-          {/* ========================================================= */}
-          <section
-            data-testid="charging-network-composition-graph"
-            aria-label="Charging Network Infrastructure Composition"
-            className="bg-[#0D1015] border border-[#282D34] rounded-lg p-4 sm:p-5 space-y-4 font-mono"
-          >
-            {/* Header with Title and Telemetry Totals */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#282D34]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded bg-[#13171F] border border-[#42B883]/40 flex items-center justify-center text-[#42B883]">
-                  <BarChart3 className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-[#F1F3F5] tracking-wider flex items-center gap-2">
-                    <span>CHARGING INFRASTRUCTURE COMPOSITION</span>
-                    <span className="text-[10px] text-[#A0A7B0] font-normal hidden md:inline">
-                      • Real-Time Fleet Telemetry
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-[#707883] font-sans">
-                    Total verified chargers breakdown: UV Supernova vs Pilot Owners vs Bolt Type 6
-                  </div>
-                </div>
-              </div>
-
-              {/* Dedicated Option for New Chargers in Last 24hr */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  data-testid="filter-last-24h-btn"
-                  onClick={() => {
-                    playTacticalClick();
-                    setFilterType(prev => (prev === 'LAST_24H' ? 'ALL' : 'LAST_24H'));
-                  }}
-                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
-                    filterType === 'LAST_24H'
-                      ? 'bg-[#42B883] text-[#08090B] border-[#42B883] shadow-md shadow-[#42B883]/20'
-                      : 'bg-[#13161A] hover:bg-[#1E232B] text-[#42B883] border-[#42B883]/40'
-                  }`}
-                >
-                  <Clock className={`w-3.5 h-3.5 ${filterType === 'LAST_24H' ? 'animate-spin' : ''}`} />
-                  <span>NEW IN LAST 24HR</span>
-                  <span
-                    data-testid="composition-last-24h-count"
-                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      filterType === 'LAST_24H'
-                        ? 'bg-[#08090B] text-[#42B883]'
-                        : 'bg-[#42B883]/20 text-[#42B883]'
-                    }`}
-                  >
-                    {composition.last24HoursCount}
-                  </span>
-                </button>
-
-                {filterType !== 'ALL' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playTacticalClick();
-                      setFilterType('ALL');
-                    }}
-                    className="px-2.5 py-1.5 rounded bg-[#191D22] hover:bg-[#252A30] text-[11px] text-[#A0A7B0] hover:text-[#F1F3F5] border border-[#282D34] cursor-pointer"
-                  >
-                    Reset Filter
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Proportional Segmented Stacked Graph Bar */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-[#A0A7B0]">
-                <span className="font-bold text-[#D4D8DE] flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-[#38BDF8]" />
-                  <span>
-                    FLEET SHARE GRAPH ({composition.totalCount} STATIONS • {composition.totalCapacityKw} kW TOTAL CAPACITY)
-                  </span>
-                </span>
-                <span className="text-[10px] text-[#707883]">CLICK ANY METRIC TO FILTER</span>
-              </div>
-
-              {/* The Stacked Bar Graph */}
-              <div
-                role="progressbar"
-                aria-label="Charging infrastructure distribution graph"
-                className="w-full h-4 rounded-full bg-[#13171F] border border-[#282D34] overflow-hidden flex p-0.5 gap-0.5"
-              >
-                <div
-                  style={{ width: `${Math.max(8, composition.segments.uvSupernova.percentage)}%` }}
-                  className="h-full rounded-l-full bg-[#42B883] hover:opacity-90 transition-all duration-500 relative cursor-pointer"
-                  title={`UV Supernova: ${composition.segments.uvSupernova.count} stations (${composition.segments.uvSupernova.percentage}%)`}
-                  onClick={() => {
-                    playTacticalClick();
-                    setFilterType(prev => (prev === 'SUPERNOVA' ? 'ALL' : 'SUPERNOVA'));
-                  }}
-                />
-                <div
-                  style={{ width: `${Math.max(8, composition.segments.ownersChargers.percentage)}%` }}
-                  className="h-full bg-[#E8AA45] hover:opacity-90 transition-all duration-500 relative cursor-pointer"
-                  title={`Owners Chargers: ${composition.segments.ownersChargers.count} stations (${composition.segments.ownersChargers.percentage}%)`}
-                  onClick={() => {
-                    playTacticalClick();
-                    setFilterType(prev =>
-                      prev === 'Community Provided Chargers' ? 'ALL' : 'Community Provided Chargers'
-                    );
-                  }}
-                />
-                <div
-                  style={{ width: `${Math.max(8, composition.segments.boltType6.percentage)}%` }}
-                  className="h-full rounded-r-full bg-[#729BCB] hover:opacity-90 transition-all duration-500 relative cursor-pointer"
-                  title={`Bolt Type 6: ${composition.segments.boltType6.count} stations (${composition.segments.boltType6.percentage}%)`}
-                  onClick={() => {
-                    playTacticalClick();
-                    setFilterType(prev => (prev === 'BOLT_TYPE_6' ? 'ALL' : 'BOLT_TYPE_6'));
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* 3 Interactive Comparison Metric Cards: UV Supernova vs Owners Chargers vs Bolt Type 6 */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Card 1: UV Supernova */}
-              <div
-                data-testid="composition-card-uv-supernova"
-                role="button"
-                tabIndex={0}
-                onClick={() => {
-                  playTacticalClick();
-                  setFilterType(prev => (prev === 'SUPERNOVA' ? 'ALL' : 'SUPERNOVA'));
-                }}
-                className={`p-3.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
-                  filterType === 'SUPERNOVA'
-                    ? 'bg-[#42B883]/15 border-[#42B883] shadow-lg shadow-[#42B883]/10 ring-1 ring-[#42B883]'
-                    : 'bg-[#11151C] border-[#282D34] hover:border-[#42B883]/60'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between text-[10px] mb-2">
-                    <span className="px-2 py-0.5 rounded bg-[#42B883]/20 text-[#42B883] border border-[#42B883]/40 font-bold inline-flex items-center gap-1.5">
-                      <Zap className="w-3 h-3 text-[#42B883]" />
-                      <span>UV SUPERNOVA</span>
-                    </span>
-                    <span className="font-bold text-[#42B883]">
-                      {composition.segments.uvSupernova.percentage}%
-                    </span>
-                  </div>
-                  <div className="text-2xl font-bold text-[#F1F3F5] tracking-tight">
-                    {composition.segments.uvSupernova.count}{' '}
-                    <span className="text-xs text-[#A0A7B0] font-normal">STATIONS</span>
-                  </div>
-                  <div className="text-[11px] text-[#A0A7B0] font-sans mt-1">
-                    {composition.segments.uvSupernova.description}
-                  </div>
-                </div>
-                <div className="pt-2.5 mt-2.5 border-t border-[#282D34] flex items-center justify-between text-[11px]">
-                  <span className="text-[#707883]">Total Capacity:</span>
-                  <span className="font-bold text-[#42B883]">
-                    {composition.segments.uvSupernova.totalKw} kW
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 2: Owners Chargers */}
-              <div
-                data-testid="composition-card-owners-chargers"
-                role="button"
-                tabIndex={0}
-                onClick={() => {
-                  playTacticalClick();
-                  setFilterType(prev =>
-                    prev === 'Community Provided Chargers' ? 'ALL' : 'Community Provided Chargers'
-                  );
-                }}
-                className={`p-3.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
-                  filterType === 'Community Provided Chargers'
-                    ? 'bg-[#E8AA45]/15 border-[#E8AA45] shadow-lg shadow-[#E8AA45]/10 ring-1 ring-[#E8AA45]'
-                    : 'bg-[#11151C] border-[#282D34] hover:border-[#E8AA45]/60'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between text-[10px] mb-2">
-                    <span className="px-2 py-0.5 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40 font-bold inline-flex items-center gap-1.5">
-                      <img
-                        src="/assets/aistudio/batman_icon.svg"
-                        alt="Batman"
-                        className="w-3 h-3 object-contain shrink-0"
-                      />
-                      <span>OWNERS CHARGERS</span>
-                    </span>
-                    <span className="font-bold text-[#E8AA45]">
-                      {composition.segments.ownersChargers.percentage}%
-                    </span>
-                  </div>
-                  <div className="text-2xl font-bold text-[#F1F3F5] tracking-tight">
-                    {composition.segments.ownersChargers.count}{' '}
-                    <span className="text-xs text-[#A0A7B0] font-normal">STATIONS</span>
-                  </div>
-                  <div className="text-[11px] text-[#A0A7B0] font-sans mt-1">
-                    {composition.segments.ownersChargers.description}
-                  </div>
-                </div>
-                <div className="pt-2.5 mt-2.5 border-t border-[#282D34] flex items-center justify-between text-[11px]">
-                  <span className="text-[#707883]">Total Capacity:</span>
-                  <span className="font-bold text-[#E8AA45]">
-                    {composition.segments.ownersChargers.totalKw} kW
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 3: Bolt Type 6 Chargers */}
-              <div
-                data-testid="composition-card-bolt-type6"
-                role="button"
-                tabIndex={0}
-                onClick={() => {
-                  playTacticalClick();
-                  setFilterType(prev => (prev === 'BOLT_TYPE_6' ? 'ALL' : 'BOLT_TYPE_6'));
-                }}
-                className={`p-3.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${
-                  filterType === 'BOLT_TYPE_6'
-                    ? 'bg-[#729BCB]/15 border-[#729BCB] shadow-lg shadow-[#729BCB]/10 ring-1 ring-[#729BCB]'
-                    : 'bg-[#11151C] border-[#282D34] hover:border-[#729BCB]/60'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between text-[10px] mb-2">
-                    <span className="px-2 py-0.5 rounded bg-[#729BCB]/20 text-[#729BCB] border border-[#729BCB]/40 font-bold inline-flex items-center gap-1.5">
-                      <Zap className="w-3 h-3 text-[#729BCB]" />
-                      <span>BOLT TYPE 6</span>
-                    </span>
-                    <span className="font-bold text-[#729BCB]">
-                      {composition.segments.boltType6.percentage}%
-                    </span>
-                  </div>
-                  <div className="text-2xl font-bold text-[#F1F3F5] tracking-tight">
-                    {composition.segments.boltType6.count}{' '}
-                    <span className="text-xs text-[#A0A7B0] font-normal">STATIONS</span>
-                  </div>
-                  <div className="text-[11px] text-[#A0A7B0] font-sans mt-1">
-                    {composition.segments.boltType6.description}
-                  </div>
-                </div>
-                <div className="pt-2.5 mt-2.5 border-t border-[#282D34] flex items-center justify-between text-[11px]">
-                  <span className="text-[#707883]">Total Capacity:</span>
-                  <span className="font-bold text-[#729BCB]">
-                    {composition.segments.boltType6.totalKw} kW
-                  </span>
-                </div>
-              </div>
-            </div>
-          </section>
-
+        <div className="space-y-4">
           {/* Active 24hr Filter Notification Banner */}
           {filterType === 'LAST_24H' && (
             <div
               data-testid="last-24h-active-banner"
-              className="bg-[#0F1B15] border border-[#42B883]/50 rounded-lg p-3 text-xs font-mono text-[#F1F3F5] flex flex-wrap items-center justify-between gap-2"
+              className="bg-[#0F1B15] border border-[#42B883]/50 rounded-lg px-3 py-2 text-xs font-mono text-[#F1F3F5] flex items-center justify-between gap-2"
             >
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-[#42B883] animate-pulse" />
+                <Clock className="w-3.5 h-3.5 text-[#42B883]" />
                 <span>
-                  FILTER ACTIVE: Showing chargers added to the network in the last 24 hours (
-                  <strong className="text-[#42B883]">{filteredStations.length} station(s)</strong> found).
+                  Showing <strong className="text-[#42B883]">{filteredStations.length}</strong> charger(s) added in last 24h
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  playTacticalClick();
-                  setFilterType('ALL');
-                }}
-                className="text-[11px] underline text-[#42B883] hover:text-[#5ce0a7] font-bold cursor-pointer"
-              >
-                Show All Chargers ({stations.length})
-              </button>
+              {filterType === 'LAST_24H' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTacticalClick();
+                    setFilterType('ALL');
+                  }}
+                  className="text-[11px] underline text-[#42B883] font-bold cursor-pointer"
+                >
+                  Show All
+                </button>
+              )}
             </div>
           )}
 
-          {/* Filter and Search Bar */}
-          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between text-xs font-mono">
-            <div className="flex flex-wrap items-center gap-2">
-              {FILTER_OPTIONS.map(option => (
-                <button
-                  key={option.id}
-                  type="button"
-                  data-testid={`charging-filter-tab-${option.id.toLowerCase().replace(/\s+/g, '-')}`}
-                  onClick={() => {
-                    playTacticalClick();
-                    setFilterType(option.id);
-                  }}
-                  className={`relative px-3 py-1.5 rounded transition-colors cursor-pointer ${
-                    filterType === option.id
-                      ? 'text-[#F1F3F5] font-semibold'
-                      : 'text-[#707883] hover:text-[#AEB5BE] bg-[#0D0F12] border border-[#282D34]'
-                  }`}
-                >
-                  {filterType === option.id && (
-                    <motion.span
-                      layoutId="charging-filter-pill"
-                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                      className="pointer-events-none absolute inset-0 rounded bg-[#191D22] border border-[#414851]"
-                    />
-                  )}
-                  <span className="relative z-10 flex items-center gap-1.5">
-                    {option.id === 'LAST_24H' && (
-                      <Clock className="w-3.5 h-3.5 text-[#42B883]" />
-                    )}
-                    {option.id === 'SUPERNOVA' && (
-                      <img src="/assets/aistudio/supernova_black.png" alt="Supernova" className="w-4 h-4 object-contain shrink-0" />
-                    )}
-                    {option.id === 'BOLT_TYPE_6' && (
-                      <Zap className="w-3.5 h-3.5 text-[#729BCB]" />
-                    )}
-                    {(option.id === 'COMMUNITY' || option.id === 'Community Provided Chargers') && (
-                      <img src="/assets/aistudio/batman_icon.svg" alt="Batman" className="w-4 h-4 object-contain shrink-0" />
-                    )}
-                    <span>{option.label}</span>
-                    {option.id === 'LAST_24H' && (
-                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-[#42B883]/20 text-[#42B883] font-bold">
-                        {composition.last24HoursCount}
-                      </span>
-                    )}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#707883]" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search by city, highway, or hub..."
-                className="bg-[#0D0F12] border border-[#282D34] focus:border-[#414851] rounded pl-8 pr-3 py-1.5 text-[#F1F3F5] text-xs focus:outline-none w-full sm:w-64"
-              />
-            </div>
-          </div>
-
           {/* ========================================================= */}
-          {/* DEDICATED INDIA CHARGING MAP + SELECTED CHARGER DETAILS RIGHT BELOW */}
+          {/* INDIA CHARGING MAP + SELECTED CHARGER DETAILS */}
           {/* ========================================================= */}
           {(() => {
             const renderSelectedChargerReservationAndIntel = () => {
@@ -1904,51 +1779,34 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
               );
 
               return (
-                <div className="space-y-4">
-                  {/* COMMUNITY CHARGER RESERVATION & APPOINTMENT BOOKING SYSTEM (ONLY FOR COMMUNITY PROVIDED CHARGERS) */}
+                <div className="space-y-3">
+                  {/* COMMUNITY CHARGER RESERVATION SYSTEM (ONLY FOR COMMUNITY PROVIDED CHARGERS) */}
                   {submitterInfo.isCommunityProvided && (
                   <div
                     data-testid="community-charger-reservation-panel"
-                    className="p-4 rounded-lg bg-[#11151C] border border-[#E8AA45]/50 space-y-4"
+                    className="p-3.5 rounded-xl bg-[#11151C] border border-[#E8AA45]/40 space-y-3"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#282D34]">
-                      <div className="space-y-0.5">
-                        <div className="text-xs font-bold text-[#E8AA45] flex items-center gap-1.5">
-                          <Calendar className="w-4 h-4" />
-                          <span>
-                            COMMUNITY CHARGER RESERVATION SYSTEM — BOOK APPOINTMENT WITH OWNER
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-[#A0A7B0] font-sans">
-                          Reserve a charging appointment slot with{' '}
-                          <strong className="text-[#F1F3F5]">{submitterInfo.submitterName}</strong>
-                          {submitterInfo.submitterPhone ? ` (${submitterInfo.submitterPhone})` : ''}. When reserved, an instant notification is sent to the charger owner with your appointment time and bike details.
-                        </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#282D34]">
+                      <div className="text-xs font-bold text-[#E8AA45] flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>RESERVE SLOT WITH {submitterInfo.submitterName.toUpperCase()}</span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
-                            selectedTerms.pricingType === 'Free'
-                              ? 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
-                              : 'bg-[#E8AA45]/15 border-[#E8AA45]/40 text-[#E8AA45]'
-                          }`}
-                        >
-                          {selectedTerms.formattedPricingBadge}
-                        </span>
-                        <span className="px-2.5 py-1 rounded bg-[#191D22] border border-[#414851] text-[#F1F3F5] text-[10px] font-bold flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-[#729BCB]" />
-                          <span>{selectedTerms.availabilityTimeText}</span>
-                        </span>
-                      </div>
+                      <span
+                        data-testid="reservation-cost-estimate"
+                        className="text-[11px] font-bold text-[#42B883] flex items-center gap-1"
+                      >
+                        <IndianRupee className="w-3 h-3" />
+                        <span>Est: {costPreview.costBreakdownLabel}</span>
+                      </span>
                     </div>
 
                     {resError && (
                       <div
                         role="alert"
                         data-testid="reservation-error-banner"
-                        className="p-2.5 rounded bg-[#E04F5F]/15 border border-[#E04F5F]/40 text-[#E04F5F] flex items-center gap-2 text-[11px]"
+                        className="p-2 rounded bg-[#E04F5F]/15 border border-[#E04F5F]/40 text-[#E04F5F] flex items-center gap-2 text-[11px]"
                       >
-                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                         <span>{resError}</span>
                       </div>
                     )}
@@ -1957,9 +1815,9 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                       <div
                         role="status"
                         data-testid="reservation-success-banner"
-                        className="p-2.5 rounded bg-[#42B883]/15 border border-[#42B883]/40 text-[#42B883] flex items-center gap-2 text-[11px]"
+                        className="p-2 rounded bg-[#42B883]/15 border border-[#42B883]/40 text-[#42B883] flex items-center gap-2 text-[11px]"
                       >
-                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                         <span>{resSuccess}</span>
                       </div>
                     )}
@@ -1967,50 +1825,32 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                     {lastOwnerNotification && (
                       <div
                         data-testid="owner-reservation-notification-banner"
-                        className="p-3 rounded bg-[#0C1814] border border-[#42B883]/50 space-y-1 text-[11px]"
+                        className="p-2.5 rounded bg-[#0C1814] border border-[#42B883]/50 space-y-1 text-[11px]"
                       >
                         <div className="flex items-center justify-between gap-2 text-[#42B883] font-bold">
                           <span className="flex items-center gap-1.5">
-                            <Bell className="w-3.5 h-3.5" />
-                            <span>
-                              NOTIFICATION DISPATCHED TO CHARGER OWNER: {lastOwnerNotification.ownerName} ({lastOwnerNotification.ownerPhone})
-                            </span>
+                            <Bell className="w-3 h-3" />
+                            <span>Notified Owner: {lastOwnerNotification.ownerName}</span>
                           </span>
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-[#42B883]/20 text-[#42B883]">
-                            DELIVERED
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#42B883]/20 text-[#42B883]">
+                            SENT
                           </span>
                         </div>
-                        <div className="text-[#D4D8DE] font-sans">
+                        <div className="text-[#D4D8DE] font-sans text-[10px]">
                           {lastOwnerNotification.message}
                         </div>
                       </div>
                     )}
 
-                    {/* Reservation Booking Form */}
+                    {/* Compact Reservation Form */}
                     <form
                       onSubmit={handleBookReservation}
-                      className="p-3.5 rounded bg-[#08090B] border border-[#282D34] space-y-3"
+                      className="p-3 rounded-lg bg-[#08090B] border border-[#282D34] space-y-2.5"
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold text-[#F1F3F5]">
-                          BOOK / RESERVE A CHARGING APPOINTMENT SLOT
-                        </span>
-                        <span
-                          data-testid="reservation-cost-estimate"
-                          className="text-[11px] font-bold text-[#E8AA45] flex items-center gap-1"
-                        >
-                          <IndianRupee className="w-3 h-3" />
-                          <span>Est. Cost: {costPreview.costBreakdownLabel}</span>
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div>
-                          <label
-                            htmlFor="reservation-date-input"
-                            className="block text-[10px] text-[#A0A7B0] mb-1"
-                          >
-                            RESERVATION DATE *
+                          <label htmlFor="reservation-date-input" className="block text-[10px] text-[#A0A7B0] mb-1">
+                            DATE *
                           </label>
                           <input
                             id="reservation-date-input"
@@ -2018,15 +1858,12 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                             type="date"
                             value={resDate}
                             onChange={e => setResDate(e.target.value)}
-                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
+                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
                           />
                         </div>
                         <div>
-                          <label
-                            htmlFor="reservation-start-time-input"
-                            className="block text-[10px] text-[#A0A7B0] mb-1"
-                          >
-                            START TIME ({selectedTerms.availabilityStartTime}–{selectedTerms.availabilityEndTime}) *
+                          <label htmlFor="reservation-start-time-input" className="block text-[10px] text-[#A0A7B0] mb-1">
+                            TIME ({selectedTerms.availabilityStartTime}–{selectedTerms.availabilityEndTime}) *
                           </label>
                           <input
                             id="reservation-start-time-input"
@@ -2034,48 +1871,32 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                             type="time"
                             value={resStartTime}
                             onChange={e => setResStartTime(e.target.value)}
-                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
+                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
                           />
                         </div>
                         <div>
-                          <label
-                            htmlFor="reservation-duration-select"
-                            className="block text-[10px] text-[#A0A7B0] mb-1"
-                          >
-                            CHARGING DURATION *
+                          <label htmlFor="reservation-duration-select" className="block text-[10px] text-[#A0A7B0] mb-1">
+                            DURATION *
                           </label>
                           <select
                             id="reservation-duration-select"
                             data-testid="reservation-duration-select"
                             value={resDurationMinutes}
                             onChange={e => setResDurationMinutes(e.target.value)}
-                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
+                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
                           >
-                            <option value="30">
-                              30 mins (~{(selectedStation.powerOutputKw * 0.5).toFixed(1)} kWh)
-                            </option>
-                            <option value="60">
-                              60 mins / 1 hr (~{(selectedStation.powerOutputKw * 1).toFixed(1)} kWh)
-                            </option>
-                            <option value="90">
-                              90 mins / 1.5 hrs (~{(selectedStation.powerOutputKw * 1.5).toFixed(1)} kWh)
-                            </option>
-                            <option value="120">
-                              120 mins / 2 hrs (~{(selectedStation.powerOutputKw * 2).toFixed(1)} kWh)
-                            </option>
-                            <option value="180">
-                              180 mins / 3 hrs (~{(selectedStation.powerOutputKw * 3).toFixed(1)} kWh)
-                            </option>
+                            <option value="30">30 mins</option>
+                            <option value="60">60 mins (1 hr)</option>
+                            <option value="90">90 mins (1.5 hrs)</option>
+                            <option value="120">120 mins (2 hrs)</option>
+                            <option value="180">180 mins (3 hrs)</option>
                           </select>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div>
-                          <label
-                            htmlFor="reservation-rider-name-input"
-                            className="block text-[10px] text-[#A0A7B0] mb-1"
-                          >
+                          <label htmlFor="reservation-rider-name-input" className="block text-[10px] text-[#A0A7B0] mb-1">
                             YOUR NAME *
                           </label>
                           <input
@@ -2085,15 +1906,12 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                             value={resRiderName}
                             onChange={e => setResRiderName(e.target.value)}
                             placeholder="Pilot Name"
-                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
+                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
                           />
                         </div>
                         <div>
-                          <label
-                            htmlFor="reservation-rider-phone-input"
-                            className="block text-[10px] text-[#A0A7B0] mb-1"
-                          >
-                            YOUR CONTACT PHONE *
+                          <label htmlFor="reservation-rider-phone-input" className="block text-[10px] text-[#A0A7B0] mb-1">
+                            PHONE *
                           </label>
                           <input
                             id="reservation-rider-phone-input"
@@ -2102,22 +1920,19 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                             value={resRiderPhone}
                             onChange={e => setResRiderPhone(e.target.value)}
                             placeholder="+91 98450 11099"
-                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
+                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
                           />
                         </div>
                         <div>
-                          <label
-                            htmlFor="reservation-bike-select"
-                            className="block text-[10px] text-[#A0A7B0] mb-1"
-                          >
-                            MOTORCYCLE MODEL
+                          <label htmlFor="reservation-bike-select" className="block text-[10px] text-[#A0A7B0] mb-1">
+                            BIKE
                           </label>
                           <select
                             id="reservation-bike-select"
                             data-testid="reservation-bike-select"
                             value={resBikeModel}
                             onChange={e => setResBikeModel(e.target.value)}
-                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
+                            className="w-full bg-[#13161A] border border-[#282D34] rounded px-2 py-1.5 text-xs text-[#F1F3F5] focus:border-[#E8AA45] focus:outline-none"
                           >
                             <option value="F77">F77</option>
                             <option value="X47">X47</option>
@@ -2125,13 +1940,13 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                         </div>
                       </div>
 
-                      <div className="flex flex-col sm:flex-row gap-2.5">
+                      <div className="flex flex-col sm:flex-row gap-2">
                         <input
                           type="text"
                           data-testid="reservation-notes-input"
                           value={resNotes}
                           onChange={e => setResNotes(e.target.value)}
-                          placeholder="Message for charger owner (e.g., Current SoC 18%, highway ride top-up)..."
+                          placeholder="Optional note for host..."
                           className="flex-1 bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1.5 text-xs text-[#F1F3F5] font-sans focus:border-[#E8AA45] focus:outline-none"
                         />
                         <button
@@ -2140,234 +1955,177 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                           disabled={submittingReservation}
                           className="px-4 py-2 rounded bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold text-xs shrink-0 cursor-pointer disabled:opacity-50"
                         >
-                          {submittingReservation
-                            ? 'Booking Slot...'
-                            : `Book Reservation with ${submitterInfo.submitterName}`}
+                          {submittingReservation ? 'Booking...' : 'Book Slot'}
                         </button>
                       </div>
                     </form>
 
-                    {/* Reservations List & Owner Approval Controls */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-[11px] font-bold text-[#D4D8DE]">
-                        <span>
-                          RESERVATION SCHEDULE ({selectedTerms.reservations.length})
-                        </span>
-                        {ownerAccess.isChargerOwner && (
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-[#42B883]/15 border border-[#42B883]/40 text-[#42B883]">
-                            OWNER / UPLOADER RESERVATION CONTROLS ACTIVE
-                          </span>
-                        )}
-                      </div>
-
-                      {selectedTerms.reservations.length === 0 ? (
-                        <div className="p-3 rounded bg-[#08090B] border border-[#282D34] text-[11px] text-[#707883] text-center">
-                          No reservations booked yet for this charger. Be the first to reserve an appointment slot above.
+                    {/* Existing Reservations List */}
+                    {selectedTerms.reservations.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-[#A0A7B0]">
+                          <span>BOOKED SLOTS ({selectedTerms.reservations.length})</span>
+                          {ownerAccess.isChargerOwner && (
+                            <span className="text-[#42B883]">HOST CONTROLS ACTIVE</span>
+                          )}
                         </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {selectedTerms.reservations.map(resv => {
-                            const perms = canManageChargerReservation(
-                              selectedStation as any,
-                              resv,
-                              {
-                                id: currentUser?.id,
-                                role: currentUser?.role,
-                                isOwner: currentUser?.isOwner,
-                                fullName: currentUser?.fullName
-                              }
-                            );
-                            const riderTel = `tel:${resv.riderPhone.replace(/[^\d+]/g, '')}`;
-                            return (
-                              <div
-                                key={resv.id}
-                                data-testid={`charger-reservation-item-${resv.id}`}
-                                className="p-3 rounded bg-[#08090B] border border-[#282D34] space-y-2"
-                              >
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span
-                                      data-testid={`reservation-status-${resv.id}`}
-                                      className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                        resv.status === 'Approved'
-                                          ? 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
-                                          : resv.status === 'Requested'
-                                          ? 'bg-[#E8AA45]/15 border-[#E8AA45]/40 text-[#E8AA45]'
-                                          : resv.status === 'Completed'
-                                          ? 'bg-[#729BCB]/15 border-[#729BCB]/40 text-[#729BCB]'
-                                          : 'bg-[#E04F5F]/15 border-[#E04F5F]/40 text-[#E04F5F]'
-                                      }`}
-                                    >
-                                      {resv.status.toUpperCase()}
-                                    </span>
-                                    <span className="font-bold text-[#F1F3F5]">
-                                      {resv.reservationDate} • {resv.startTime} – {resv.endTime} ({resv.durationMinutes} mins)
-                                    </span>
-                                  </div>
-                                  <span className="text-[11px] font-bold text-[#E8AA45]">
-                                    {resv.pricingType === 'Free' || resv.estimatedCost === 0
-                                      ? 'FREE (₹0)'
-                                      : `₹${resv.estimatedCost} (~${resv.estimatedKwh} kWh)`}
+                        {selectedTerms.reservations.map(resv => {
+                          const perms = canManageChargerReservation(
+                            selectedStation as any,
+                            resv,
+                            {
+                              id: currentUser?.id,
+                              role: currentUser?.role,
+                              isOwner: currentUser?.isOwner,
+                              fullName: currentUser?.fullName
+                            }
+                          );
+                          const riderTel = `tel:${resv.riderPhone.replace(/[^\d+]/g, '')}`;
+                          return (
+                            <div
+                              key={resv.id}
+                              data-testid={`charger-reservation-item-${resv.id}`}
+                              className="p-2.5 rounded bg-[#08090B] border border-[#282D34] space-y-1.5"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span
+                                    data-testid={`reservation-status-${resv.id}`}
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                                      resv.status === 'Approved'
+                                        ? 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
+                                        : resv.status === 'Requested'
+                                        ? 'bg-[#E8AA45]/15 border-[#E8AA45]/40 text-[#E8AA45]'
+                                        : resv.status === 'Completed'
+                                        ? 'bg-[#729BCB]/15 border-[#729BCB]/40 text-[#729BCB]'
+                                        : 'bg-[#E04F5F]/15 border-[#E04F5F]/40 text-[#E04F5F]'
+                                    }`}
+                                  >
+                                    {resv.status.toUpperCase()}
+                                  </span>
+                                  <span className="font-bold text-[#F1F3F5] text-[11px]">
+                                    {resv.reservationDate} • {resv.startTime}–{resv.endTime}
                                   </span>
                                 </div>
-
-                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#D4D8DE]">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span>
-                                      Rider: <strong className="text-[#F1F3F5]">{resv.riderName}</strong> ({resv.riderBikeModel})
-                                    </span>
-                                    <span>•</span>
-                                    <a
-                                      href={riderTel}
-                                      className="inline-flex items-center gap-1 text-[#42B883] hover:underline font-bold"
-                                    >
-                                      <Phone className="w-3 h-3" />
-                                      <span>{resv.riderPhone}</span>
-                                    </a>
-                                  </div>
-                                  <span className="text-[10px] text-[#A0A7B0]">
-                                    Owner: {resv.ownerName}
-                                  </span>
+                                <div className="flex items-center gap-2 text-[11px]">
+                                  <span className="text-[#D4D8DE]">{resv.riderName}</span>
+                                  <a href={riderTel} className="text-[#42B883] font-bold hover:underline">
+                                    {resv.riderPhone}
+                                  </a>
                                 </div>
+                              </div>
 
-                                {resv.vehicleNotes && (
-                                  <div className="text-[11px] text-[#A0A7B0] font-sans">
-                                    Rider Note: <span className="text-[#D4D8DE]">{resv.vehicleNotes}</span>
-                                  </div>
-                                )}
-
-                                {resv.ownerResponseNote && (
-                                  <div className="p-2 rounded bg-[#13161A] border border-[#42B883]/30 text-[11px] text-[#42B883] font-sans">
-                                    <strong>Owner Note ({resv.ownerName}):</strong> {resv.ownerResponseNote}
-                                  </div>
-                                )}
-
-                                {(perms.canApproveOrReject || perms.canCancel) && (
-                                  <div className="pt-2 border-t border-[#1E232B] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-                                    {perms.canApproveOrReject && (
-                                      <input
-                                        type="text"
-                                        value={ownerNoteDrafts[resv.id] || ''}
-                                        onChange={e =>
-                                          setOwnerNoteDrafts(prev => ({
-                                            ...prev,
-                                            [resv.id]: e.target.value
-                                          }))
-                                        }
-                                        placeholder="Optional owner response note (e.g., Socket ready, call at gate)..."
-                                        className="flex-1 bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1 text-[11px] text-[#F1F3F5] font-sans focus:border-[#E8AA45] focus:outline-none"
-                                      />
-                                    )}
-                                    <div className="flex flex-wrap items-center gap-1.5">
-                                      {perms.canApproveOrReject && resv.status === 'Requested' && (
-                                        <>
-                                          <button
-                                            type="button"
-                                            data-testid={`approve-reservation-btn-${resv.id}`}
-                                            disabled={updatingResId === resv.id}
-                                            onClick={() =>
-                                              handleUpdateReservationStatus(resv.id, 'Approved')
-                                            }
-                                            className="px-2.5 py-1 rounded bg-[#42B883] hover:bg-[#389d6f] text-[#08090B] font-bold text-[10px] cursor-pointer"
-                                          >
-                                            Approve Reservation
-                                          </button>
-                                          <button
-                                            type="button"
-                                            data-testid={`reject-reservation-btn-${resv.id}`}
-                                            disabled={updatingResId === resv.id}
-                                            onClick={() =>
-                                              handleUpdateReservationStatus(resv.id, 'Rejected')
-                                            }
-                                            className="px-2.5 py-1 rounded bg-[#E04F5F]/20 hover:bg-[#E04F5F]/30 border border-[#E04F5F]/40 text-[#E04F5F] font-bold text-[10px] cursor-pointer"
-                                          >
-                                            Reject
-                                          </button>
-                                        </>
-                                      )}
-                                      {perms.canApproveOrReject && resv.status === 'Approved' && (
+                              {(perms.canApproveOrReject || perms.canCancel) && (
+                                <div className="pt-1.5 border-t border-[#1E232B] flex flex-wrap items-center justify-between gap-2">
+                                  {perms.canApproveOrReject && (
+                                    <input
+                                      type="text"
+                                      value={ownerNoteDrafts[resv.id] || ''}
+                                      onChange={e =>
+                                        setOwnerNoteDrafts(prev => ({
+                                          ...prev,
+                                          [resv.id]: e.target.value
+                                        }))
+                                      }
+                                      placeholder="Host note..."
+                                      className="flex-1 bg-[#13161A] border border-[#282D34] rounded px-2 py-1 text-[10px] text-[#F1F3F5] font-sans"
+                                    />
+                                  )}
+                                  <div className="flex items-center gap-1.5">
+                                    {perms.canApproveOrReject && resv.status === 'Requested' && (
+                                      <>
                                         <button
                                           type="button"
-                                          data-testid={`complete-reservation-btn-${resv.id}`}
+                                          data-testid={`approve-reservation-btn-${resv.id}`}
                                           disabled={updatingResId === resv.id}
-                                          onClick={() =>
-                                            handleUpdateReservationStatus(resv.id, 'Completed')
-                                          }
-                                          className="px-2.5 py-1 rounded bg-[#729BCB]/20 hover:bg-[#729BCB]/30 border border-[#729BCB]/40 text-[#729BCB] font-bold text-[10px] cursor-pointer"
+                                          onClick={() => handleUpdateReservationStatus(resv.id, 'Approved')}
+                                          className="px-2 py-1 rounded bg-[#42B883] text-[#08090B] font-bold text-[10px] cursor-pointer"
                                         >
-                                          Mark Completed
+                                          Approve
+                                        </button>
+                                        <button
+                                          type="button"
+                                          data-testid={`reject-reservation-btn-${resv.id}`}
+                                          disabled={updatingResId === resv.id}
+                                          onClick={() => handleUpdateReservationStatus(resv.id, 'Rejected')}
+                                          className="px-2 py-1 rounded bg-[#E04F5F]/20 text-[#E04F5F] border border-[#E04F5F]/40 font-bold text-[10px] cursor-pointer"
+                                        >
+                                          Reject
+                                        </button>
+                                      </>
+                                    )}
+                                    {perms.canApproveOrReject && resv.status === 'Approved' && (
+                                      <button
+                                        type="button"
+                                        data-testid={`complete-reservation-btn-${resv.id}`}
+                                        disabled={updatingResId === resv.id}
+                                        onClick={() => handleUpdateReservationStatus(resv.id, 'Completed')}
+                                        className="px-2 py-1 rounded bg-[#729BCB]/20 text-[#729BCB] border border-[#729BCB]/40 font-bold text-[10px] cursor-pointer"
+                                      >
+                                        Complete
+                                      </button>
+                                    )}
+                                    {perms.canCancel &&
+                                      (resv.status === 'Requested' || resv.status === 'Approved') && (
+                                        <button
+                                          type="button"
+                                          data-testid={`cancel-reservation-btn-${resv.id}`}
+                                          disabled={updatingResId === resv.id}
+                                          onClick={() => handleUpdateReservationStatus(resv.id, 'Cancelled')}
+                                          className="px-2 py-1 rounded bg-[#252A30] text-[#A0A7B0] font-bold text-[10px] cursor-pointer"
+                                        >
+                                          Cancel
                                         </button>
                                       )}
-                                      {perms.canCancel &&
-                                        (resv.status === 'Requested' || resv.status === 'Approved') && (
-                                          <button
-                                            type="button"
-                                            data-testid={`cancel-reservation-btn-${resv.id}`}
-                                            disabled={updatingResId === resv.id}
-                                            onClick={() =>
-                                              handleUpdateReservationStatus(resv.id, 'Cancelled')
-                                            }
-                                            className="px-2.5 py-1 rounded bg-[#252A30] hover:bg-[#414851] text-[#A0A7B0] font-bold text-[10px] cursor-pointer"
-                                          >
-                                            Cancel
-                                          </button>
-                                        )}
-                                    </div>
                                   </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   )}
 
-                  {/* Community Charger Intelligence Block */}
-                  <div className="p-3.5 rounded bg-[#0D0F12] border border-[#282D34] space-y-2">
+                  {/* Compact Charger Status & Report Strip */}
+                  <div className="p-3 rounded-xl bg-[#0D0F12] border border-[#282D34] space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-[#707883]">
-                          COMMUNITY CHARGER INTELLIGENCE:
-                        </span>
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                             stIntel.confidenceLabel === 'RECENTLY REPORTED WORKING'
                               ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
                               : stIntel.confidenceLabel === 'RECENT ISSUE REPORTED'
                               ? 'bg-red-500/15 border-red-500/40 text-red-300'
-                              : stIntel.confidenceLabel === 'MIXED REPORTS'
-                              ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
                               : 'bg-[#13161A] border-[#282D34] text-[#A0A7B0]'
                           }`}
                         >
-                          {stIntel.confidenceLabel} ({stIntel.sourceLabel})
+                          {stIntel.confidenceLabel}
+                        </span>
+                        <span className="text-[11px] text-[#A0A7B0] font-sans hidden sm:inline">
+                          {stIntel.shortSummary}
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={() => setShowMapStationReportForm(prev => !prev)}
-                        className="px-2.5 py-1 rounded bg-[#252A30] hover:bg-[#414851] border border-[#414851] text-[#E8AA45] text-[10px] font-bold flex items-center gap-1"
+                        className="px-2.5 py-1 rounded bg-[#191D22] hover:bg-[#252A30] border border-[#414851] text-[#E8AA45] text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                       >
                         <MessageSquarePlus className="w-3 h-3" />
-                        <span>Report Charger Status</span>
+                        <span>Report Status</span>
                       </button>
                     </div>
 
-                    <div className="text-[11px] text-[#D4D8DE] font-sans">
-                      {stIntel.shortSummary}
-                    </div>
-
                     {showMapStationReportForm && (
-                      <div className="pt-2 mt-2 border-t border-[#282D34] space-y-2">
+                      <div className="pt-2 border-t border-[#282D34] space-y-2">
                         <div className="flex flex-wrap gap-1.5">
                           {VALID_CHARGER_REPORT_CATEGORIES.map(cat => (
                             <button
                               key={cat}
                               type="button"
                               onClick={() => setMapReportCategory(cat)}
-                              className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
+                              className={`px-2 py-1 rounded text-[10px] font-bold border ${
                                 mapReportCategory === cat
                                   ? 'bg-[#E8AA45] border-[#E8AA45] text-[#08090B]'
                                   : 'bg-[#0D0F12] border-[#282D34] text-[#A0A7B0]'
@@ -2443,7 +2201,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                                 setMapReportComment('');
                                 setShowMapStationReportForm(false);
                                 setSubmissionNotice(
-                                  `Saved "${mapReportCategory}" report for ${selectedStation.name} to phone storage — will sync when online.`
+                                  `Saved "${mapReportCategory}" report for ${selectedStation.name} to phone storage.`
                                 );
                                 setTimeout(() => setSubmissionNotice(null), 5000);
                               } finally {
@@ -2476,6 +2234,12 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                     >
                       <ChargingIndiaMap
                         stations={filteredStations}
+                        allStations={stations}
+                        activeFilter={filterType}
+                        onFilterChange={setFilterType}
+                        searchQuery={searchQuery}
+                        onSearchQueryChange={setSearchQuery}
+                        databaseStats={minimalDbStats}
                         selectedStation={selectedStation}
                         onSelectStation={st => setSelectedStation(st)}
                         currentUser={currentUser}
@@ -2489,15 +2253,22 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                     selectedStation && (
                       <div
                         data-testid="selected-charger-info-panel"
-                        className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5 space-y-5 text-xs font-mono"
+                        className="bg-[#0D0F12] border border-[#282D34] rounded-xl p-4 space-y-4 text-xs font-mono"
                       >
                         <div className="flex items-center justify-between pb-2 border-b border-[#282D34]">
-                          <h3 className="text-base font-bold text-[#F1F3F5]">
-                            {selectedStation.name} — {selectedStation.location}
-                          </h3>
-                          <span className="text-[#42B883] font-bold">
-                            {selectedStation.operatingStatus.toUpperCase()}
-                          </span>
+                          <div>
+                            <h3 className="text-sm font-bold text-[#F1F3F5]">
+                              {selectedStation.name}
+                            </h3>
+                            <p className="text-[11px] text-[#A0A7B0] font-sans">{selectedStation.location}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedStation(null)}
+                            className="p-1.5 rounded bg-[#191D22] text-[#A0A7B0] hover:text-white"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </div>
                         {renderSelectedChargerReservationAndIntel()}
                       </div>
@@ -2506,28 +2277,34 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 </AnimatePresence>
 
                 {/* ========================================================= */}
-                {/* STATIONS DIRECTORY GRID */}
+                {/* CLEAN STATIONS DIRECTORY GRID */}
                 {/* ========================================================= */}
                 <section aria-label="Charging Stations Directory" className="space-y-3">
                   <div className="flex items-center justify-between text-xs font-mono text-[#A0A7B0]">
                     <span className="font-bold text-[#F1F3F5]">
-                      CHARGING STATIONS DIRECTORY ({filteredStations.length})
+                      CHARGING STATIONS ({filteredStations.length})
                     </span>
-                    <span>CLICK ANY STATION TO INSPECT OR RESERVE ABOVE</span>
+                    <span className="text-[10px] text-[#707883]">TAP TO INSPECT OR NAVIGATE</span>
                   </div>
 
                   {filteredStations.length === 0 ? (
-                    <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-10 text-center text-xs font-mono text-[#707883]">
-                      NO CHARGING STATIONS MATCHING SELECTED FILTER
+                    <div className="bg-[#0D0F12] border border-[#282D34] rounded-xl p-8 text-center text-xs font-mono text-[#707883]">
+                      No charging stations match this filter.
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {filteredStations.map(cs => {
                         const isSelected = selectedStation?.id === cs.id;
-                        const plugType = cs.chargerType || (cs.isSupernova ? 'Supernova' : 'Socket');
-                        const intel = evaluateChargerIntelligence(cs.id, chargerReports);
+                        const plugType =
+                          cs.rawChargerType !== undefined
+                            ? formatMinimalChargerType(cs.rawChargerType)
+                            : cs.chargerType || (cs.isSupernova ? 'Supernova' : 'Socket');
                         const submitterInfo = resolveChargerSubmitterInfo(cs);
                         const cardTerms = resolveCommunityChargerTerms(cs);
+                        const navUrl = buildChargerNavigationUrl(cs as any, null);
+                        const exactCoordsDisplay =
+                          cs.exactLocationCoordinates ||
+                          `${Number(cs.latitude).toFixed(6)}, ${Number(cs.longitude).toFixed(6)}`;
                         return (
                           <div
                             key={cs.id}
@@ -2535,103 +2312,111 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                             onClick={() => {
                               playTacticalClick();
                               setSelectedStation(cs);
+                              const anchor = document.getElementById('selected-charger-details-anchor');
+                              if (anchor) {
+                                anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }
                             }}
-                            className={`p-4 rounded-lg border cursor-pointer transition-all flex flex-col justify-between ${
+                            className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-3 ${
                               isSelected
                                 ? 'bg-[#191D22] border-[#E8AA45] shadow-lg'
-                                : 'bg-[#0D0F12] border-[#282D34] hover:border-[#414851]/60'
+                                : 'bg-[#0D0F12] border-[#282D34] hover:border-[#414851]'
                             }`}
                           >
-                            <div>
-                              <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[10px] font-mono">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {getStationSourceBadge(cs)}
-                                  <span className="px-2 py-0.5 rounded bg-[#13161A] border border-[#414851] text-[#E8AA45] font-bold">
-                                    {plugType}
-                                  </span>
+                                  {plugType.toLowerCase() !== 'supernova' && (
+                                    <span className="px-2 py-0.5 rounded bg-[#13161A] border border-[#414851] text-[#E8AA45] font-bold">
+                                      {plugType}
+                                    </span>
+                                  )}
+                                  {cs.isUnverifiedAssociation && (
+                                    <span
+                                      className="px-1.5 py-0.5 rounded bg-[#E8AA45]/15 border border-[#E8AA45]/40 text-[#E8AA45] text-[9px] font-bold"
+                                      title={cs.locationStatus}
+                                    >
+                                      UNVERIFIED ASSOC.
+                                    </span>
+                                  )}
                                   {isChargerAddedInLast24Hours(cs) && (
                                     <span
                                       data-testid={`charger-new-24h-badge-${cs.id}`}
-                                      className="px-1.5 py-0.5 rounded bg-[#42B883]/20 border border-[#42B883]/50 text-[#42B883] text-[9px] font-bold tracking-wider inline-flex items-center gap-1"
+                                      className="px-1.5 py-0.5 rounded bg-[#42B883]/20 border border-[#42B883]/50 text-[#42B883] text-[9px] font-bold"
                                     >
-                                      <Clock className="w-2.5 h-2.5" />
-                                      <span>NEW (24H)</span>
+                                      NEW
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-[#F1F3F5] font-bold">{cs.powerOutputKw} kW</span>
+                                <span className="text-[#42B883] font-bold">{cs.powerOutputKw} kW</span>
                               </div>
 
-                              <div className="text-xs font-bold text-[#F1F3F5] line-clamp-1">
-                                {cs.name}
+                              <div className="text-sm sm:text-base font-bold text-[#F8FAFC] line-clamp-1">
+                                {cs.referenceName || cs.name}
                               </div>
-                              <div className="text-[11px] text-[#A0A7B0] truncate mt-1">
+                              <div className="text-[11px] font-mono text-[#38BDF8] truncate">
+                                GPS: {exactCoordsDisplay}
+                              </div>
+                              <div className="text-xs text-[#A0A7B0] truncate font-sans">
                                 {cs.location}
                               </div>
 
                               {submitterInfo.isCommunityProvided && (
-                                <div className="mt-2.5 space-y-1.5">
-                                  <div
-                                    data-testid={`charger-card-submitter-${cs.id}`}
-                                    className="px-2.5 py-1.5 rounded bg-[#13161A] border border-[#E8AA45]/35 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono"
+                                <div
+                                  data-testid={`charger-card-submitter-${cs.id}`}
+                                  className="pt-1.5 flex flex-wrap items-center justify-between gap-1.5 text-[10px] font-mono text-[#D4D8DE]"
+                                >
+                                  <span className="truncate">
+                                    Host: <strong className="text-[#F1F3F5]">{submitterInfo.submitterName}</strong>
+                                  </span>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded font-bold border ${
+                                      cardTerms.pricingType === 'Free'
+                                        ? 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
+                                        : 'bg-[#E8AA45]/15 border-[#E8AA45]/40 text-[#E8AA45]'
+                                    }`}
                                   >
-                                    <div className="flex items-center gap-1.5 text-[#D4D8DE] min-w-0">
-                                      <UserIcon className="w-3 h-3 text-[#E8AA45] shrink-0" />
-                                      <span className="text-[10px] text-[#A0A7B0] shrink-0">
-                                        Submitted by:
-                                      </span>
-                                      <span className="font-bold text-[#F1F3F5] truncate">
-                                        {submitterInfo.submitterName}
-                                      </span>
-                                    </div>
-                                    <a
-                                      href={submitterInfo.telHref}
-                                      onClick={e => e.stopPropagation()}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#42B883]/15 hover:bg-[#42B883]/25 border border-[#42B883]/40 text-[#42B883] font-bold text-[10px] shrink-0 transition-colors"
-                                    >
-                                      <Phone className="w-2.5 h-2.5" />
-                                      <span>{submitterInfo.submitterPhone}</span>
-                                    </a>
-                                  </div>
-                                  <div className="px-2.5 py-1.5 rounded bg-[#08090B] border border-[#282D34] flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
-                                    <span
-                                      className={`px-2 py-0.5 rounded font-bold border ${
-                                        cardTerms.pricingType === 'Free'
-                                          ? 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
-                                          : 'bg-[#E8AA45]/15 border-[#E8AA45]/40 text-[#E8AA45]'
-                                      }`}
-                                    >
-                                      {cardTerms.formattedPricingBadge}
-                                    </span>
-                                    <span className="text-[#D4D8DE] flex items-center gap-1">
-                                      <Clock className="w-3 h-3 text-[#729BCB]" />
-                                      <span>{cardTerms.availabilityTimeText}</span>
-                                    </span>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    data-testid={`directory-reserve-btn-${cs.id}`}
-                                    onClick={e => {
-                                      e.stopPropagation();
-                                      playTacticalClick();
-                                      setSelectedStation(cs);
-                                      const anchor = document.getElementById('selected-charger-details-anchor');
-                                      if (anchor) {
-                                        anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                      }
-                                    }}
-                                    className="w-full py-1.5 px-3 rounded bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-mono font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                                  >
-                                    <Calendar className="w-3.5 h-3.5" />
-                                    <span>Reserve / Book Appointment with Owner</span>
-                                  </button>
+                                    {cardTerms.formattedPricingBadge}
+                                  </span>
                                 </div>
                               )}
                             </div>
 
-                            <div className="flex items-center justify-between mt-3 pt-2 border-t border-[#282D34] text-[10px] font-mono text-[#707883]">
-                              <span>{intel.confidenceLabel}</span>
-                              <span>{cs.accessConditions}</span>
+                            <div className="flex items-center gap-2 pt-2 border-t border-[#282D34] font-mono">
+                              <a
+                                href={navUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  playTacticalClick();
+                                }}
+                                className="flex-1 py-2 px-3 rounded-lg bg-[#191D22] hover:bg-[#E8AA45] text-[#E8AA45] hover:text-[#08090B] border border-[#E8AA45]/50 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
+                              >
+                                <NavIcon className="w-3 h-3" />
+                                <span>Navigate</span>
+                              </a>
+
+                              {submitterInfo.isCommunityProvided && (
+                                <button
+                                  type="button"
+                                  data-testid={`directory-reserve-btn-${cs.id}`}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    playTacticalClick();
+                                    setSelectedStation(cs);
+                                    const anchor = document.getElementById('selected-charger-details-anchor');
+                                    if (anchor) {
+                                      anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                    }
+                                  }}
+                                  className="py-2 px-3 rounded-lg bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                >
+                                  <Calendar className="w-3 h-3" />
+                                  <span>Reserve</span>
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
@@ -2639,146 +2424,146 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                     </div>
                   )}
                 </section>
+
+                {/* ========================================================= */}
+                {/* UNDERLYING DATASET — SKIPPED MAP MARKERS (NO VALID COORDS) */}
+                {/* ========================================================= */}
+                {skippedMinimalRecords.length > 0 && (
+                  <section
+                    data-testid="unmapped-dataset-records-section"
+                    aria-label="Underlying Dataset Records Excluded from Map Markers"
+                    className="bg-[#0D1015] border border-[#282D34] rounded-xl overflow-hidden font-mono text-xs"
+                  >
+                    <button
+                      type="button"
+                      data-testid="toggle-unmapped-records-btn"
+                      aria-expanded={isSkippedDrawerOpen}
+                      onClick={() => {
+                        playTacticalClick();
+                        setIsSkippedDrawerOpen(prev => !prev);
+                      }}
+                      className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-[#13171F] transition-colors cursor-pointer"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Layers className="w-4 h-4 text-[#E8AA45] shrink-0" />
+                        <span className="font-bold text-[#F1F3F5]">
+                          UNDERLYING DATASET — RECORDS WITHOUT COORDINATES ({skippedMinimalRecords.length})
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-[#191D22] border border-[#282D34] text-[#A0A7B0]">
+                          Preserved in dataset • Not plotted as map pins
+                        </span>
+                      </div>
+                      <span className="p-1 rounded-md bg-[#191D22] border border-[#282D34] text-[#E8AA45] flex items-center gap-1 text-[10px] font-bold px-2 shrink-0">
+                        <span>{isSkippedDrawerOpen ? 'Hide Records' : 'Inspect Dataset'}</span>
+                        {isSkippedDrawerOpen ? (
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        )}
+                      </span>
+                    </button>
+
+                    {isSkippedDrawerOpen && (
+                      <div className="p-4 border-t border-[#282D34] space-y-2.5 max-h-80 overflow-y-auto">
+                        <p className="text-[11px] text-[#A0A7B0] font-sans">
+                          These {skippedMinimalRecords.length} records from{' '}
+                          <code className="text-[#E8AA45] font-mono">charging_stations_minimal.json</code>{' '}
+                          have empty or invalid GPS coordinates and are preserved in the underlying dataset without inventing coordinates or plotting false map markers.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {skippedMinimalRecords.map(rec => (
+                            <div
+                              key={`skipped-${rec.originalIndex}-${rec.reference_name}`}
+                              className="p-2.5 rounded-lg bg-[#13161A] border border-[#282D34] space-y-1"
+                            >
+                              <div className="font-bold text-[#F1F3F5] truncate" title={rec.reference_name}>
+                                {rec.reference_name}
+                              </div>
+                              <div className="text-[10px] text-[#E8AA45]">
+                                {formatMinimalChargerType(rec.charger_type)}
+                              </div>
+                              <div className="text-[10px] text-[#707883] font-sans">
+                                {rec.location_status || rec.reasonSkipped}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
               </>
             );
           })()}
 
-          {/* ========================================================= */}
-          {/* 6.4 LONG-RIDE PLANNING INFORMATION SECTION */}
-          {/* ========================================================= */}
-          <section
-            aria-labelledby="planning-long-ride-heading"
-            className="bg-[#13161A] border border-[#282D34] rounded-lg p-5 space-y-4"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#282D34]">
-              <div className="flex items-center space-x-2.5">
-                <FileText className="w-4 h-4 text-[#42B883]" />
-                <h2
-                  id="planning-long-ride-heading"
-                  className="text-sm font-mono font-bold text-[#F1F3F5] tracking-wider"
+          {/* Long-Ride Planning Section (Only shown when configured or for Admin) */}
+          {(Boolean(longRidePlanningText) || isAdmin) && (
+            <section
+              aria-labelledby="planning-long-ride-heading"
+              className="bg-[#13161A] border border-[#282D34] rounded-xl p-4 space-y-3"
+            >
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#282D34]">
+                <div className="flex items-center space-x-2">
+                  <FileText className="w-4 h-4 text-[#42B883]" />
+                  <h2
+                    id="planning-long-ride-heading"
+                    className="text-xs font-mono font-bold text-[#F1F3F5] tracking-wider uppercase"
+                  >
+                    Long-Ride Advisory
+                  </h2>
+                </div>
+                {planningSavedFeedback && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#42B883]/15 text-[#42B883]">
+                    {planningSavedFeedback}
+                  </span>
+                )}
+              </div>
+
+              {longRidePlanningText && (
+                <div
+                  data-testid="long-ride-planning-display"
+                  className="p-3 rounded-lg bg-[#0D0F12] border border-[#282D34] text-xs text-[#D4D8DE] leading-relaxed whitespace-pre-wrap font-sans"
                 >
-                  Planning a Long Ride?
-                </h2>
-              </div>
-
-              {planningSavedFeedback && (
-                <span className="text-[11px] font-mono px-2.5 py-1 rounded bg-[#42B883]/15 text-[#42B883] border border-[#42B883]/30 font-semibold">
-                  {planningSavedFeedback}
-                </span>
+                  {longRidePlanningText}
+                </div>
               )}
-            </div>
 
-            {/* User-Facing Configured Text Display (Never Fabricated) */}
-            {longRidePlanningText ? (
-              <div
-                data-testid="long-ride-planning-display"
-                className="p-4 rounded bg-[#0D0F12] border border-[#282D34] text-xs text-[#D4D8DE] leading-relaxed whitespace-pre-wrap font-sans"
-              >
-                {longRidePlanningText}
-              </div>
-            ) : (
-              <div
-                data-testid="long-ride-planning-empty"
-                className="p-4 rounded bg-[#0D0F12] border border-[#282D34] text-xs font-mono text-[#707883]"
-              >
-                No long-ride planning information has been configured yet.
-              </div>
-            )}
-
-            {/* Admin Configuration Controls */}
-            {isAdmin && (
-              <form
-                onSubmit={handleSavePlanningText}
-                className="pt-2 border-t border-[#282D34] space-y-3 font-mono text-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <label
-                    htmlFor="long-ride-planning-textarea"
-                    className="text-[#AEB5BE] font-semibold flex items-center gap-1.5"
-                  >
-                    <Edit3 className="w-3.5 h-3.5 text-[#E8AA45]" />
-                    <span>ADMIN CONFIGURATION — EDIT LONG-RIDE PLANNING TEXT</span>
-                  </label>
-                </div>
-
-                <textarea
-                  id="long-ride-planning-textarea"
-                  rows={3}
-                  value={planningDraft}
-                  onChange={e => setPlanningDraft(e.target.value)}
-                  placeholder="Enter long-ride charging and planning information for riders..."
-                  className="w-full bg-[#08090B] border border-[#282D34] focus:border-[#414851] rounded p-3 text-[#F1F3F5] text-xs font-sans focus:outline-none"
-                />
-
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  {longRidePlanningText && (
+              {isAdmin && (
+                <form
+                  onSubmit={handleSavePlanningText}
+                  className="space-y-2.5 font-mono text-xs"
+                >
+                  <textarea
+                    id="long-ride-planning-textarea"
+                    rows={2}
+                    value={planningDraft}
+                    onChange={e => setPlanningDraft(e.target.value)}
+                    placeholder="Admin: Enter long-ride charging advisory for riders..."
+                    className="w-full bg-[#08090B] border border-[#282D34] focus:border-[#414851] rounded-lg p-2.5 text-[#F1F3F5] text-xs font-sans focus:outline-none"
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    {longRidePlanningText && (
+                      <button
+                        type="button"
+                        onClick={handleRemovePlanningText}
+                        disabled={savingPlanning}
+                        className="px-3 py-1.5 rounded bg-[#E04F5F]/15 text-[#E04F5F] border border-[#E04F5F]/40 font-bold text-[11px]"
+                      >
+                        Remove
+                      </button>
+                    )}
                     <button
-                      type="button"
-                      onClick={handleRemovePlanningText}
+                      type="submit"
                       disabled={savingPlanning}
-                      className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 text-[#E04F5F] border border-[#E04F5F]/40 font-bold transition-colors disabled:opacity-50"
+                      className="px-3 py-1.5 rounded bg-[#42B883] text-[#08090B] font-bold text-[11px]"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Remove Text</span>
+                      {savingPlanning ? 'Saving...' : 'Save Advisory'}
                     </button>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={savingPlanning}
-                    className="flex items-center space-x-1.5 px-4 py-1.5 rounded bg-[#42B883] hover:bg-[#389d6f] text-[#08090B] font-bold transition-colors disabled:opacity-50"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>{savingPlanning ? 'Saving...' : 'Save Text'}</span>
-                  </button>
-                </div>
-              </form>
-            )}
-          </section>
-
-          {/* ========================================================= */}
-          {/* AT THE VERY LAST: ACTIVE MAP MARKERS & CLUSTERS SECTION */}
-          {/* ========================================================= */}
-          <section
-            data-testid="active-map-markers-clusters-section"
-            className="bg-[#13161A] border border-[#282D34] rounded-lg p-4 space-y-2.5 font-mono"
-          >
-            <div className="flex items-center justify-between text-[10px] text-[#707883]">
-              <span>ACTIVE MAP MARKERS &amp; CLUSTERS ({filteredStations.length} STATIONS):</span>
-              <span>CLICK TO FOCUS PIN &amp; VIEW DETAILS ABOVE</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {filteredStations.map(st => {
-                const isSelected = selectedStation?.id === st.id;
-                const cType = st.chargerType || (st.isSupernova ? 'Supernova' : 'Socket');
-                return (
-                  <button
-                    key={st.id}
-                    type="button"
-                    onClick={() => {
-                      playTacticalClick();
-                      setSelectedStation(st);
-                      const anchor = document.getElementById('selected-charger-details-anchor');
-                      if (anchor) {
-                        anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }
-                    }}
-                    aria-label={`Select map marker ${st.name} (${cType})`}
-                    className={`px-2.5 py-1.5 rounded text-[11px] border transition-all flex items-center gap-1.5 cursor-pointer ${
-                      isSelected
-                        ? 'bg-[#252A30] border-[#E8AA45] text-[#F1F3F5] font-bold shadow'
-                        : 'bg-[#0D0F12] border-[#282D34] text-[#A0A7B0] hover:border-[#414851] hover:text-[#F1F3F5]'
-                    }`}
-                  >
-                    <MapPin className="w-3 h-3 text-[#E8AA45] shrink-0" />
-                    <span className="truncate max-w-[180px]">{st.name}</span>
-                    <span className="text-[9px] px-1 py-0.2 rounded bg-[#191D22] text-[#D4D8DE]">
-                      {cType}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+                  </div>
+                </form>
+              )}
+            </section>
+          )}
         </div>
       )}
       </AvionicsToggleTransition>

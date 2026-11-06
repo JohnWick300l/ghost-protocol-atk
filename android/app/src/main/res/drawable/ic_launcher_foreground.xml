@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer Cyan-Slate Avionics Ring (within 66dp safe zone) -->
+    <path
+        android:fillColor="#090E18"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.2"
+        android:pathData="M54,24 A30,30 0 1,1 53.99,24 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1E293B"
+        android:strokeWidth="1.2"
+        android:pathData="M54,28 A26,26 0 1,1 53.99,28 Z" />
+
+    <!-- Cardinal Red Tactical Reticle Ticks -->
+    <path
+        android:strokeColor="#FF3B1F"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:pathData="M54,25 L54,33 M54,75 L54,83 M25,54 L33,54 M75,54 L83,54" />
+
+    <!-- Center Stealth Delta Wing Emblem -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M38,45 L54,50 L70,45 L54,69 Z" />
+    <path
+        android:fillColor="#070B12"
+        android:pathData="M46,50 L54,52.5 L62,50 L54,62 Z" />
+</vector>

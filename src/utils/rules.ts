@@ -1127,7 +1127,7 @@ export function calculateChargingNetworkComposition(
       last24hCount++;
     }
 
-    // 1. UV Supernova
+    // 1. UV Supernova (strictly exclusive)
     const isUv =
       st.chargerSource === 'Supernova' ||
       Boolean(st.isSupernova) ||
@@ -1135,6 +1135,7 @@ export function calculateChargingNetworkComposition(
     if (isUv) {
       uvCount++;
       uvKw += kw;
+      continue;
     }
 
     // 2. Owners / Community Chargers
@@ -1146,15 +1147,16 @@ export function calculateChargingNetworkComposition(
       ownerKw += kw;
     }
 
-    // 3. Bolt Type 6 Chargers (LEV DC fast standard)
+    // 3. Bolt Type 6 Chargers (LEV DC fast standard, non-Supernova only)
     const connectors = st.connectorTypes || [];
     const isType6 =
       st.chargerType === 'Type 6' ||
-      connectors.some(
-        c =>
-          c.toLowerCase().includes('type 6') ||
-          c.toLowerCase().includes('type-6')
-      );
+      (!st.chargerType &&
+        connectors.some(
+          c =>
+            c.toLowerCase().includes('type 6') ||
+            c.toLowerCase().includes('type-6')
+        ));
     if (isType6) {
       boltCount++;
       boltKw += kw;
@@ -1228,15 +1230,23 @@ export function matchesChargingStationFilter(
     return isChargerAddedInLast24Hours(station, referenceTimestamp);
   }
 
+  const isSupernovaStation =
+    station.chargerSource === 'Supernova' ||
+    Boolean(station.isSupernova) ||
+    station.chargerType === 'Supernova';
+
   if (
     filterType === 'SUPERNOVA' ||
     filterType === 'Supernova' ||
     filterType === 'UV_SUPERNOVA'
   ) {
-    if (station.chargerSource) {
-      return station.chargerSource === 'Supernova';
-    }
-    return Boolean(station.isSupernova) || station.chargerType === 'Supernova';
+    return isSupernovaStation;
+  }
+
+  // Supernova is pure and exclusive to the Supernova option:
+  // never include a Supernova station in Type 2, Type 6, Socket, Community, or 3rd Party filters.
+  if (isSupernovaStation) {
+    return false;
   }
 
   if (
@@ -1258,15 +1268,54 @@ export function matchesChargingStationFilter(
     filterType === 'TYPE_6' ||
     filterType === 'bolt_type_6'
   ) {
+    if (station.chargerType) {
+      return station.chargerType === 'Type 6';
+    }
     const connectors = station.connectorTypes || [];
-    return (
-      station.chargerType === 'Type 6' ||
-      connectors.some(
-        c =>
-          c.toLowerCase().includes('type 6') ||
-          c.toLowerCase().includes('type-6')
-      )
+    return connectors.some(
+      c =>
+        c.toLowerCase().includes('type 6') ||
+        c.toLowerCase().includes('type-6')
     );
+  }
+
+  if (
+    filterType === 'TYPE_2' ||
+    filterType === 'Type 2' ||
+    filterType === 'type_2'
+  ) {
+    if (station.chargerType) {
+      return station.chargerType === 'Type 2';
+    }
+    const connectors = station.connectorTypes || [];
+    return connectors.some(
+      c =>
+        c.toLowerCase().includes('type 2') ||
+        c.toLowerCase().includes('type-2')
+    );
+  }
+
+  if (
+    filterType === 'SOCKET' ||
+    filterType === 'SOCKETS' ||
+    filterType === 'Socket' ||
+    filterType === 'Sockets' ||
+    filterType === 'socket'
+  ) {
+    if (station.chargerType) {
+      return station.chargerType === 'Socket';
+    }
+    const connectors = station.connectorTypes || [];
+    return connectors.some(c => {
+      const lower = c.toLowerCase();
+      return (
+        lower.includes('socket') ||
+        lower.includes('15a') ||
+        lower.includes('16a') ||
+        lower.includes('3-pin') ||
+        lower.includes('industrial')
+      );
+    });
   }
 
   if (filterType === '3rd Party Station' || filterType === 'FAST') {
@@ -1899,28 +1948,266 @@ export interface ChargerCluster<T> {
   count: number;
   latitude: number;
   longitude: number;
+  locationLabel?: string;
   stations: T[];
 }
 
+const CHARGER_CITY_SYNONYMS: Record<string, string> = {
+  bangalore: 'bengaluru',
+  bengaluru: 'bengaluru',
+  blr: 'bengaluru',
+  mysore: 'mysuru',
+  mysuru: 'mysuru',
+  mangalore: 'mangaluru',
+  mangaluru: 'mangaluru',
+  tumkur: 'tumakuru',
+  tumakuru: 'tumakuru',
+  bellary: 'ballari',
+  ballari: 'ballari',
+  hubli: 'hubballi',
+  hubballi: 'hubballi',
+  belgaum: 'belagavi',
+  belagavi: 'belagavi',
+  shimoga: 'shivamogga',
+  shivamogga: 'shivamogga',
+  cochin: 'kochi',
+  kochi: 'kochi',
+  calicut: 'kozhikode',
+  kozhikode: 'kozhikode',
+  trivandrum: 'thiruvananthapuram',
+  thiruvananthapuram: 'thiruvananthapuram',
+  pondicherry: 'puducherry',
+  puducherry: 'puducherry',
+  madras: 'chennai',
+  chennai: 'chennai',
+  bombay: 'mumbai',
+  mumbai: 'mumbai',
+  poona: 'pune',
+  pune: 'pune',
+  gurgaon: 'gurugram',
+  gurugram: 'gurugram',
+  mahabalipuram: 'mamallapuram',
+  mamallapuram: 'mamallapuram'
+};
+
+const INDIAN_STATE_TOKENS = new Set([
+  'karnataka',
+  'tamil nadu',
+  'tamilnadu',
+  'maharashtra',
+  'kerala',
+  'telangana',
+  'andhra pradesh',
+  'delhi ncr',
+  'goa',
+  'gujarat',
+  'rajasthan',
+  'uttar pradesh',
+  'west bengal',
+  'madhya pradesh',
+  'punjab',
+  'haryana',
+  'india'
+]);
+
+const MULTI_ZONE_METROS = new Set([
+  'bengaluru',
+  'mumbai',
+  'chennai',
+  'new delhi',
+  'delhi',
+  'hyderabad',
+  'pune',
+  'kolkata'
+]);
+
+function applyCitySynonyms(text: string): string {
+  let out = text.toLowerCase();
+  for (const [alias, canonical] of Object.entries(CHARGER_CITY_SYNONYMS)) {
+    out = out.replace(new RegExp(`\\b${alias}\\b`, 'g'), canonical);
+  }
+  return out;
+}
+
 /**
- * Groups proximate charging stations into clusters based on the current map zoom level.
- * At high zoom levels (zoom >= 12), individual stations are shown directly unless at identical coordinates.
+ * Normalizes a charger's location/address string for co-location matching, ignoring state suffixes,
+ * pin codes, punctuation, and minimal-DB coordinate status boilerplate.
+ */
+export function normalizeChargerLocationKey(location?: string | null): string {
+  if (!location || typeof location !== 'string') return '';
+  const lower = location.toLowerCase();
+  if (
+    lower.includes('coordinates found in same text section') ||
+    lower.includes('exact coordinates not present')
+  ) {
+    return '';
+  }
+
+  const parts = location
+    .split(',')
+    .map(p =>
+      applyCitySynonyms(
+        p
+          .replace(/\b\d{6}\b/g, ' ')
+          .replace(/[^\w\s]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      )
+    )
+    .filter(p => p.length > 0 && !INDIAN_STATE_TOKENS.has(p));
+
+  return parts.join(', ').trim();
+}
+
+/**
+ * Extracts a normalized city/town (or neighborhood + metro) key from a charger's location.
+ */
+export function extractChargerCityOrTownKey(
+  stationOrLocation:
+    | string
+    | {
+        name?: string;
+        location?: string | null;
+      }
+    | null
+    | undefined
+): string {
+  const rawLocation =
+    typeof stationOrLocation === 'string'
+      ? stationOrLocation
+      : stationOrLocation?.location || '';
+  const normLoc = normalizeChargerLocationKey(rawLocation);
+  if (!normLoc) return '';
+
+  const segments = normLoc
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (segments.length === 0) return '';
+
+  const lastSeg = segments[segments.length - 1];
+  if (MULTI_ZONE_METROS.has(lastSeg) && segments.length >= 2) {
+    const subLocality = segments[segments.length - 2];
+    return `${subLocality}, ${lastSeg}`;
+  }
+
+  return lastSeg;
+}
+
+/**
+ * Determines whether two charging stations (regardless of whether Community Provided, Supernova,
+ * Type 6, Type 2, Socket, or 3rd Party) belong to the exact same location, address, or city/town group.
+ */
+export function areChargingStationsCoLocated(
+  a: {
+    latitude: number;
+    longitude: number;
+    name?: string;
+    location?: string | null;
+    exactLocationCoordinates?: string;
+  },
+  b: {
+    latitude: number;
+    longitude: number;
+    name?: string;
+    location?: string | null;
+    exactLocationCoordinates?: string;
+  }
+): boolean {
+  if (
+    a.exactLocationCoordinates &&
+    b.exactLocationCoordinates &&
+    a.exactLocationCoordinates.trim() === b.exactLocationCoordinates.trim()
+  ) {
+    return true;
+  }
+
+  const distKm = calculateDistanceKm(a.latitude, a.longitude, b.latitude, b.longitude);
+  // 1. Co-located coordinates (within 1.6 km — same building, address, or highway plaza)
+  if (distKm <= 1.6) {
+    return true;
+  }
+
+  // 2. Identical normalized location / address / city string entered by users
+  const locA = normalizeChargerLocationKey(a.location);
+  const locB = normalizeChargerLocationKey(b.location);
+  if (locA.length >= 2 && locA === locB) {
+    return true;
+  }
+
+  // 3. Same city / town key (or one user entered the city name and another entered an address in that same city)
+  const cityA = extractChargerCityOrTownKey(a);
+  const cityB = extractChargerCityOrTownKey(b);
+  if (cityA.length >= 3 && cityB.length >= 3) {
+    if (cityA === cityB && (locA === cityA || locB === cityB || distKm <= 20)) {
+      return true;
+    }
+    const baseCityA = cityA.split(',').pop()?.trim() || cityA;
+    const baseCityB = cityB.split(',').pop()?.trim() || cityB;
+    if (
+      baseCityA === baseCityB &&
+      !MULTI_ZONE_METROS.has(baseCityA) &&
+      (locA === baseCityA || locB === baseCityB || distKm <= 15)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function resolveClusterLocationLabel<
+  T extends { name: string; location?: string | null; referenceName?: string }
+>(group: T[]): string {
+  for (const st of group) {
+    const loc = (st.location || '').trim();
+    if (
+      loc &&
+      !loc.toLowerCase().includes('coordinates found in same text section') &&
+      !loc.toLowerCase().includes('exact coordinates not present')
+    ) {
+      const parts = loc
+        .split(',')
+        .map(p => p.trim())
+        .filter(Boolean);
+      if (parts.length >= 2) {
+        return parts.slice(-2).join(', ');
+      }
+      return loc;
+    }
+  }
+  const first = group[0];
+  return first ? first.referenceName || first.name : 'Shared Charger Hub';
+}
+
+/**
+ * Groups proximate or co-located charging stations into clusters based on the current map zoom level
+ * as well as exact location, address, or city/town matching.
  */
 export function clusterChargingStations<
-  T extends { id: string; latitude: number; longitude: number; name: string }
->(stations: T[], zoom: number): ChargerCluster<T>[] {
+  T extends {
+    id: string;
+    latitude: number;
+    longitude: number;
+    name: string;
+    location?: string | null;
+    referenceName?: string;
+    exactLocationCoordinates?: string;
+  }
+>(stations: T[], zoom: number = 14): ChargerCluster<T>[] {
   if (!Array.isArray(stations) || stations.length === 0) return [];
 
-  // Radius threshold in km based on zoom level
-  let thresholdKm = 0.05;
-  if (zoom <= 5) thresholdKm = 90;
-  else if (zoom === 6) thresholdKm = 55;
-  else if (zoom === 7) thresholdKm = 30;
-  else if (zoom === 8) thresholdKm = 18;
-  else if (zoom === 9) thresholdKm = 10;
-  else if (zoom === 10) thresholdKm = 5;
-  else if (zoom === 11) thresholdKm = 2;
-  else thresholdKm = 0.05; // zoom >= 12 shows individual pins
+  // Radius threshold in km based on zoom level so pins never pile on top of each other
+  let thresholdKm = 1.6;
+  if (zoom <= 4) thresholdKm = 240;
+  else if (zoom === 5) thresholdKm = 165;
+  else if (zoom === 6) thresholdKm = 105;
+  else if (zoom === 7) thresholdKm = 60;
+  else if (zoom === 8) thresholdKm = 32;
+  else if (zoom === 9) thresholdKm = 16;
+  else if (zoom === 10) thresholdKm = 8;
+  else if (zoom === 11) thresholdKm = 3.5;
+  else thresholdKm = 1.6; // zoom >= 12 groups co-located/same-address/same-city stations
 
   const visited = new Set<string>();
   const clusters: ChargerCluster<T>[] = [];
@@ -1932,19 +2219,30 @@ export function clusterChargingStations<
     visited.add(anchor.id);
     const group: T[] = [anchor];
 
-    for (let j = i + 1; j < stations.length; j++) {
-      const candidate = stations[j];
-      if (visited.has(candidate.id)) continue;
+    // Bounded spatial radius from anchor + transitive closure for same-location/same-city stations
+    let added = true;
+    while (added) {
+      added = false;
+      for (let j = i + 1; j < stations.length; j++) {
+        const candidate = stations[j];
+        if (visited.has(candidate.id)) continue;
 
-      const distKm = calculateDistanceKm(
-        anchor.latitude,
-        anchor.longitude,
-        candidate.latitude,
-        candidate.longitude
-      );
-      if (distKm <= thresholdKm) {
-        visited.add(candidate.id);
-        group.push(candidate);
+        const distToAnchorKm = calculateDistanceKm(
+          anchor.latitude,
+          anchor.longitude,
+          candidate.latitude,
+          candidate.longitude
+        );
+        const withinSpatialRadius = distToAnchorKm <= thresholdKm;
+        const matchesCoLocatedInGroup =
+          withinSpatialRadius ||
+          group.some(member => areChargingStationsCoLocated(member, candidate));
+
+        if (matchesCoLocatedInGroup) {
+          visited.add(candidate.id);
+          group.push(candidate);
+          added = true;
+        }
       }
     }
 
@@ -1955,6 +2253,7 @@ export function clusterChargingStations<
         count: 1,
         latitude: anchor.latitude,
         longitude: anchor.longitude,
+        locationLabel: resolveClusterLocationLabel(group),
         stations: group
       });
     } else {
@@ -1966,12 +2265,31 @@ export function clusterChargingStations<
         count: group.length,
         latitude: Number(avgLat.toFixed(5)),
         longitude: Number(avgLng.toFixed(5)),
+        locationLabel: resolveClusterLocationLabel(group),
         stations: group
       });
     }
   }
 
   return clusters;
+}
+
+/**
+ * Always groups 2 or more charging stations that share the same coordinates, address, or city/town
+ * regardless of charger type (Community, Supernova, Type 6, Type 2, Socket, or 3rd Party).
+ */
+export function groupCoLocatedChargingStations<
+  T extends {
+    id: string;
+    latitude: number;
+    longitude: number;
+    name: string;
+    location?: string | null;
+    referenceName?: string;
+    exactLocationCoordinates?: string;
+  }
+>(stations: T[]): ChargerCluster<T>[] {
+  return clusterChargingStations(stations, 14);
 }
 
 /**
@@ -2497,6 +2815,69 @@ export const VERIFIED_INDIA_PLACES_DIRECTORY: PlaceSuggestion[] = [
     category: 'Mall & Commercial Building',
     latitude: 10.0261,
     longitude: 76.3125
+  },
+  {
+    id: 'poi_kerala_kochi_hub',
+    name: 'Kerala — Kochi (Ernakulam NH 66 / NH 544 Highway Hub)',
+    locality: 'Kochi, Ernakulam, Kerala',
+    address: 'Edappally–Vyttila NH 66 Highway Corridor, Kochi, Kerala 682024',
+    category: 'City & Highway Destination',
+    latitude: 10.0190,
+    longitude: 76.3142
+  },
+  {
+    id: 'poi_kerala_thrissur_hub',
+    name: 'Thrissur Swaraj Round & NH 544 Highway Hub, Kerala',
+    locality: 'Thrissur, Kerala',
+    address: 'Mannuthy–Swaraj Round Corridor, NH 544, Thrissur, Kerala 680001',
+    category: 'City & Highway Destination',
+    latitude: 10.4937,
+    longitude: 76.2541
+  },
+  {
+    id: 'poi_kerala_kozhikode_hub',
+    name: 'Kozhikode (Calicut) Beach & NH 66 Highway Hub, Kerala',
+    locality: 'Kozhikode (Calicut), Kerala',
+    address: 'Thondayad Bypass & Beach Road, Kozhikode, Kerala 673001',
+    category: 'City & Coastal Destination',
+    latitude: 11.2588,
+    longitude: 75.7804
+  },
+  {
+    id: 'poi_kerala_palakkad_hub',
+    name: 'Palakkad Highway Bypass & Fort Junction, Kerala',
+    locality: 'Palakkad, Kerala',
+    address: 'NH 544 Chandra Nagar Bypass Junction, Palakkad, Kerala 678007',
+    category: 'City & Highway Waypoint',
+    latitude: 10.7867,
+    longitude: 76.6548
+  },
+  {
+    id: 'poi_kerala_trivandrum_hub',
+    name: 'Thiruvananthapuram (Trivandrum) Technopark & NH 66 Hub, Kerala',
+    locality: 'Kazhakkoottam, Thiruvananthapuram, Kerala',
+    address: 'NH 66 Kazhakkoottam Bypass, Thiruvananthapuram, Kerala 695581',
+    category: 'City & Highway Destination',
+    latitude: 8.5526,
+    longitude: 76.9429
+  },
+  {
+    id: 'poi_coimbatore_avinashi_hub',
+    name: 'Coimbatore Avinashi Road & L&T Bypass Junction',
+    locality: 'Coimbatore, Tamil Nadu',
+    address: 'NH 544 L&T Bypass & Avinashi Road, Coimbatore, Tamil Nadu 641014',
+    category: 'City & Highway Waypoint',
+    latitude: 11.0204,
+    longitude: 76.9923
+  },
+  {
+    id: 'poi_salem_five_roads_hub',
+    name: 'Salem NH 44 / NH 544 Highway Junction',
+    locality: 'Salem, Tamil Nadu',
+    address: 'NH 44 Kondalampatti & Five Roads Bypass, Salem, Tamil Nadu 636004',
+    category: 'City & Highway Waypoint',
+    latitude: 11.6646,
+    longitude: 78.1233
   },
   // Iconic Riding Destinations, Hills, Toll Gates & Highway Waypoints
   {
@@ -3728,6 +4109,14 @@ export interface SystemControlFeatureItem {
 
 export const ALL_SYSTEM_CONTROLS_DIRECTORY: SystemControlFeatureItem[] = [
   {
+    id: 'dir_squadron_showdown',
+    label: 'SQUADRON SHOWDOWN',
+    subtitle: '',
+    description: '',
+    routeId: 'squadron-showdown',
+    category: 'primary'
+  },
+  {
     id: 'dir_jet_engineer_ask',
     label: 'JET ENGINEER',
     subtitle: '',
@@ -4105,6 +4494,144 @@ export function buildUpiPaymentUri(params: {
     queryParts.push(`tn=${encodeURIComponent(tn.slice(0, 80))}`);
   }
   return `upi://pay?${queryParts.join('&')}`;
+}
+
+export type UpiAppTarget = 'upi' | 'gpay' | 'phonepe' | 'paytm';
+
+export const UPI_APP_PACKAGE_MAP: Record<Exclude<UpiAppTarget, 'upi'>, string> = {
+  gpay: 'com.google.android.apps.nbu.paisa.user',
+  phonepe: 'com.phonepe.app',
+  paytm: 'net.one97.paytm'
+};
+
+/**
+ * Normalizes any UPI payment URI (`upi://pay?...`, `tez://upi/pay?...`, `phonepe://pay?...`,
+ * `paytmmp://pay?...`, or `intent://pay?...`) into an Android `intent://pay?...#Intent;scheme=upi;...;end`
+ * URI that is intercepted by Android WebView (`MainActivity.java` `url.startsWith("intent://")` ->
+ * `Intent.parseUri(url, Intent.URI_INTENT_SCHEME)` -> `startActivity(intent)`) and Android Chrome
+ * without ever triggering `net::ERR_UNKNOWN_URL_SCHEME`.
+ */
+export function buildUpiIntentUri(
+  rawUpiUri: string,
+  app: UpiAppTarget = 'upi'
+): string {
+  const trimmed = (rawUpiUri || '').trim();
+  const queryIdx = trimmed.indexOf('?');
+  const rawQuery =
+    queryIdx >= 0
+      ? trimmed.slice(queryIdx + 1).replace(/#Intent;.*$/i, '')
+      : `pa=${encodeURIComponent(DEFAULT_CONTRIBUTION_CONFIG.upiId)}&pn=${encodeURIComponent('GHOST PROTOCOL')}&cu=INR`;
+
+  const cleanUpiUri = `upi://pay?${rawQuery}`;
+  const encodedFallback = encodeURIComponent(cleanUpiUri);
+
+  if (app === 'gpay' || app === 'phonepe' || app === 'paytm') {
+    const pkg = UPI_APP_PACKAGE_MAP[app];
+    return `intent://pay?${rawQuery}#Intent;scheme=upi;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=${pkg};S.browser_fallback_url=${encodedFallback};end`;
+  }
+
+  return `intent://pay?${rawQuery}#Intent;scheme=upi;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;S.browser_fallback_url=${encodedFallback};end`;
+}
+
+/**
+ * Launches the requested UPI app ('upi' chooser, 'gpay', 'phonepe', or 'paytm') using
+ * `buildUpiIntentUri` on Android WebViews/browsers so `MainActivity.java` intercepts `intent://`
+ * via `Intent.parseUri` and opens the native UPI app directly without `net::ERR_UNKNOWN_URL_SCHEME`.
+ */
+export function openInUpiApp(
+  rawUpiUri: string,
+  app: UpiAppTarget = 'upi',
+  userAgentOverride?: string
+): string {
+  const targetUrl = buildUpiIntentUri(rawUpiUri, app);
+  const ua =
+    userAgentOverride !== undefined
+      ? userAgentOverride
+      : typeof navigator !== 'undefined'
+      ? navigator.userAgent || ''
+      : '';
+
+  if (typeof window !== 'undefined' && /Android/i.test(ua)) {
+    window.location.assign(targetUrl);
+  }
+
+  return targetUrl;
+}
+
+/**
+ * Normalizes any phone number or `tel:` link (`"112"`, `"tel:112"`, `"+91 98450 11223"`) into an
+ * Android `intent://<number>#Intent;scheme=tel;action=android.intent.action.DIAL;S.browser_fallback_url=...;end`
+ * URI that `MainActivity.java` intercepts (`url.startsWith("intent://")` -> `Intent.parseUri` ->
+ * `startActivity` or `openInBrowser("tel:...")`) so clicking CALL 112 or any phone link never
+ * triggers `net::ERR_UNKNOWN_URL_SCHEME` in Android WebViews.
+ */
+export function buildPhoneDialIntentUri(phoneInput?: string | null): string {
+  const trimmed = (phoneInput || '').trim().replace(/#Intent;.*$/i, '');
+  const withoutScheme = trimmed
+    .replace(/^intent:\/*/i, '')
+    .replace(/^tel:\/*/i, '');
+  const cleanDigits = withoutScheme.replace(/[^\d+*#]/g, '') || '112';
+  const cleanTelUri = `tel:${cleanDigits}`;
+  const encodedFallback = encodeURIComponent(cleanTelUri);
+
+  return `intent://${cleanDigits}#Intent;scheme=tel;action=android.intent.action.DIAL;category=android.intent.category.BROWSABLE;S.browser_fallback_url=${encodedFallback};end`;
+}
+
+/**
+ * Launches the native Android Phone Dialer (`112` or any rider/shop number) via `buildPhoneDialIntentUri`
+ * on Android devices without triggering `net::ERR_UNKNOWN_URL_SCHEME`.
+ */
+export function openPhoneDialer(
+  phoneInput?: string | null,
+  userAgentOverride?: string
+): string {
+  const targetUrl = buildPhoneDialIntentUri(phoneInput);
+  const ua =
+    userAgentOverride !== undefined
+      ? userAgentOverride
+      : typeof navigator !== 'undefined'
+      ? navigator.userAgent || ''
+      : '';
+
+  if (typeof window !== 'undefined' && /Android/i.test(ua)) {
+    window.location.assign(targetUrl);
+  }
+
+  return targetUrl;
+}
+
+/**
+ * Normalizes any email or `mailto:` link into an Android `intent://` URI with `S.browser_fallback_url`
+ * so email links never trigger `net::ERR_UNKNOWN_URL_SCHEME` in Android WebViews.
+ */
+export function buildMailtoIntentUri(mailtoInput?: string | null): string {
+  const trimmed = (mailtoInput || '').trim().replace(/#Intent;.*$/i, '');
+  const withoutScheme = trimmed
+    .replace(/^intent:\/*/i, '')
+    .replace(/^mailto:\/*/i, '');
+  const cleanMailto = `mailto:${withoutScheme}`;
+  const encodedFallback = encodeURIComponent(cleanMailto);
+
+  return `intent://${withoutScheme}#Intent;scheme=mailto;action=android.intent.action.SENDTO;category=android.intent.category.BROWSABLE;S.browser_fallback_url=${encodedFallback};end`;
+}
+
+export function openMailClient(
+  mailtoInput?: string | null,
+  userAgentOverride?: string
+): string {
+  const targetUrl = buildMailtoIntentUri(mailtoInput);
+  const ua =
+    userAgentOverride !== undefined
+      ? userAgentOverride
+      : typeof navigator !== 'undefined'
+      ? navigator.userAgent || ''
+      : '';
+
+  if (typeof window !== 'undefined' && /Android/i.test(ua)) {
+    window.location.assign(targetUrl);
+  }
+
+  return targetUrl;
 }
 
 /**
@@ -4542,6 +5069,7 @@ export const PAGE_TRANSITION_ORDER: readonly string[] = [
   'marketplace',
   'service',
   'garage',
+  'squadron-showdown',
   'admin',
   'contribute'
 ];
@@ -7087,5 +7615,1041 @@ export function buildMasterRouteGoogleMapsUrl(
   return `https://maps.google.com/maps?saddr=${encodeURIComponent(originStr)}&daddr=${encodeURIComponent(destStr)}`;
 }
 
+// ============================================================================
+// CHARGING STATIONS MINIMAL DATABASE INTEGRATION
+// ============================================================================
 
+export interface MinimalChargingStationRecord {
+  reference_name: string;
+  exact_location_coordinates: string;
+  charger_type: string;
+  location_status: string;
+}
+
+export interface ParsedMinimalCoordinatePair {
+  latitude: number;
+  longitude: number;
+  rawCoordinateString: string;
+}
+
+export interface SkippedMinimalStationRecord {
+  recordIndex: number;
+  originalIndex: number;
+  reference_name: string;
+  exact_location_coordinates: string;
+  charger_type: string;
+  formattedChargerType: string;
+  location_status: string;
+  skipReason: 'missing_coordinates' | 'invalid_coordinates';
+  reasonSkipped: string;
+}
+
+export interface MinimalChargingStationMarkerRecord {
+  id: string;
+  name: string;
+  referenceName: string;
+  location: string;
+  latitude: number;
+  longitude: number;
+  exactLocationCoordinates: string;
+  rawChargerType: string;
+  chargerType: ChargerPlugType;
+  chargerDetails: string;
+  locationStatus: string;
+  isUnverifiedAssociation: boolean;
+  originalRecordIndex: number;
+  coordinatePairIndex: number;
+  vehicleCompatibility: string;
+  connectorTypes: string[];
+  powerOutputKw: number;
+  chargerSource: ChargerSource;
+  isSupernova: boolean;
+  isCommunityReported: boolean;
+  verifiedByAdmin: boolean;
+  approvalStatus: 'approved';
+  published: true;
+  operatingStatus: 'Operational';
+  accessConditions: 'Public 24/7';
+  pricing: string;
+  lastVerifiedDate: string;
+  userNotes: string;
+  reportedBy: string;
+}
+
+export interface ParsedMinimalChargingDatabaseResult {
+  allRecords: MinimalChargingStationRecord[];
+  validStations: MinimalChargingStationMarkerRecord[];
+  skippedRecords: SkippedMinimalStationRecord[];
+  totalRecordsCount: number;
+  totalRecordsLoaded: number;
+  recordsWithValidCoordinatesCount: number;
+  validMarkersCount: number;
+  validMapMarkersCount: number;
+  skippedRecordsCount: number;
+}
+
+/**
+ * Extracts all valid GPS coordinate pairs from `exact_location_coordinates`.
+ * Supports single `"lat, lng"` strings as well as semicolon-separated multiple pairs
+ * `"lat1, lng1; lat2, lng2"`. Never generates random or approximate coordinates.
+ */
+export function parseMinimalCoordinatePairs(rawCoords: unknown): ParsedMinimalCoordinatePair[] {
+  if (typeof rawCoords !== 'string' || !rawCoords.trim()) {
+    return [];
+  }
+
+  const segments = rawCoords
+    .split(';')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const pairs: ParsedMinimalCoordinatePair[] = [];
+
+  for (const seg of segments) {
+    const parts = seg.split(',').map(p => p.trim());
+    if (parts.length !== 2) continue;
+
+    const coordCheck = validateManualCoordinates(parts[0], parts[1]);
+    if (
+      coordCheck.valid &&
+      coordCheck.latitude !== undefined &&
+      coordCheck.longitude !== undefined
+    ) {
+      pairs.push({
+        latitude: coordCheck.latitude,
+        longitude: coordCheck.longitude,
+        rawCoordinateString: `${parts[0]}, ${parts[1]}`
+      });
+    }
+  }
+
+  return pairs;
+}
+
+/**
+ * Formats the charger_type field from charging_stations_minimal.json.
+ * Keeps missing charger types clearly labeled as "Charger type unavailable" per data rules.
+ */
+export function formatMinimalChargerType(rawChargerType: unknown): string {
+  if (typeof rawChargerType !== 'string') {
+    return 'Charger type unavailable';
+  }
+  const trimmed = rawChargerType.trim();
+  if (!trimmed) {
+    return 'Charger type unavailable';
+  }
+  return trimmed;
+}
+
+/**
+ * Maps a raw `charger_type` and `reference_name` from `charging_stations_minimal.json`
+ * to a consistent GHOST PROTOCOL marker category ('Supernova' | 'Type 6' | 'Type 2' | 'Socket').
+ */
+export function inferChargerPlugCategory(
+  rawChargerType: unknown,
+  referenceName?: unknown
+): {
+  chargerType: ChargerPlugType;
+  chargerSource: ChargerSource;
+  isSupernova: boolean;
+  powerOutputKw: number;
+  connectorTypes: string[];
+} {
+  const typeText = typeof rawChargerType === 'string' ? rawChargerType.toLowerCase() : '';
+  const nameText = typeof referenceName === 'string' ? referenceName.toLowerCase() : '';
+  const combined = `${nameText} ${typeText}`;
+
+  if (
+    combined.includes('supernova') ||
+    nameText.includes('ultraviolette space station') ||
+    nameText.includes('ultraviolette hangar')
+  ) {
+    return {
+      chargerType: 'Supernova',
+      chargerSource: 'Supernova',
+      isSupernova: true,
+      powerOutputKw: 30,
+      connectorTypes: ['Supernova DC Fast']
+    };
+  }
+
+  if (
+    typeText.includes('type 2') ||
+    typeText.includes('type-2') ||
+    typeText.includes('type2') ||
+    typeText.includes('ccs2') ||
+    typeText.includes('ac type 2') ||
+    typeText.includes('7.2kw') ||
+    typeText.includes('7.4kw')
+  ) {
+    return {
+      chargerType: 'Type 2',
+      chargerSource: '3rd Party Station',
+      isSupernova: false,
+      powerOutputKw: 7.2,
+      connectorTypes: [formatMinimalChargerType(rawChargerType)]
+    };
+  }
+
+  if (
+    typeText.includes('type 6') ||
+    typeText.includes('type-6') ||
+    typeText.includes('type6') ||
+    typeText.includes('blaze dc') ||
+    typeText.includes('blazer dc') ||
+    typeText.includes('bolt blaze') ||
+    typeText.includes('fast 3kw') ||
+    typeText.includes('3 kw fast') ||
+    typeText.includes('dc 3kw')
+  ) {
+    return {
+      chargerType: 'Type 6',
+      chargerSource: '3rd Party Station',
+      isSupernova: false,
+      powerOutputKw: 3.0,
+      connectorTypes: [formatMinimalChargerType(rawChargerType)]
+    };
+  }
+
+  return {
+    chargerType: 'Socket',
+    chargerSource: '3rd Party Station',
+    isSupernova: false,
+    powerOutputKw: 3.3,
+    connectorTypes: [formatMinimalChargerType(rawChargerType)]
+  };
+}
+
+/**
+ * Parses the entire `charging_stations_minimal.json` array according to strict data rules:
+ * - Preserves all 182 records in `allRecords`.
+ * - Keeps records with missing/invalid coordinates in `skippedRecords` (never plots them on map).
+ * - Creates a marker record for every valid GPS coordinate pair at its exact supplied coordinates.
+ * - Preserves duplicate records and duplicate coordinates until genuine duplicates can be confirmed.
+ * - Never invents station names or GPS coordinates.
+ * - Marks `isUnverifiedAssociation` when `location_status` warns to verify association.
+ */
+export function parseMinimalChargingStationsDatabase(
+  rawRecords: unknown
+): ParsedMinimalChargingDatabaseResult {
+  if (!Array.isArray(rawRecords)) {
+    return {
+      allRecords: [],
+      validStations: [],
+      skippedRecords: [],
+      totalRecordsCount: 0,
+      totalRecordsLoaded: 0,
+      recordsWithValidCoordinatesCount: 0,
+      validMarkersCount: 0,
+      validMapMarkersCount: 0,
+      skippedRecordsCount: 0
+    };
+  }
+
+  const allRecords: MinimalChargingStationRecord[] = [];
+  const validStations: MinimalChargingStationMarkerRecord[] = [];
+  const skippedRecords: SkippedMinimalStationRecord[] = [];
+  let recordsWithValidCoordinatesCount = 0;
+
+  rawRecords.forEach((item, recordIndex) => {
+    if (!item || typeof item !== 'object') return;
+    const rec = item as Record<string, unknown>;
+    const reference_name =
+      typeof rec.reference_name === 'string' && rec.reference_name.trim()
+        ? rec.reference_name.trim()
+        : 'Unnamed Charging Station';
+    const exact_location_coordinates =
+      typeof rec.exact_location_coordinates === 'string'
+        ? rec.exact_location_coordinates.trim()
+        : '';
+    const charger_type =
+      typeof rec.charger_type === 'string' ? rec.charger_type.trim() : '';
+    const location_status =
+      typeof rec.location_status === 'string' && rec.location_status.trim()
+        ? rec.location_status.trim()
+        : exact_location_coordinates
+        ? 'coordinates found in same text section; verify association'
+        : 'exact coordinates not present in this section';
+
+    const normalizedRecord: MinimalChargingStationRecord = {
+      reference_name,
+      exact_location_coordinates,
+      charger_type,
+      location_status
+    };
+    allRecords.push(normalizedRecord);
+
+    const formattedChargerType = formatMinimalChargerType(charger_type);
+    const coordPairs = parseMinimalCoordinatePairs(exact_location_coordinates);
+
+    if (coordPairs.length === 0) {
+      skippedRecords.push({
+        recordIndex,
+        originalIndex: recordIndex,
+        reference_name,
+        exact_location_coordinates,
+        charger_type,
+        formattedChargerType,
+        location_status,
+        skipReason: exact_location_coordinates ? 'invalid_coordinates' : 'missing_coordinates',
+        reasonSkipped: location_status || 'Missing or invalid GPS coordinates'
+      });
+      return;
+    }
+
+    recordsWithValidCoordinatesCount++;
+    const inferred = inferChargerPlugCategory(charger_type, reference_name);
+    const isUnverifiedAssociation =
+      location_status.toLowerCase().includes('verify association') ||
+      location_status.toLowerCase().includes('same text section') ||
+      location_status.toLowerCase().includes('unverified');
+
+    coordPairs.forEach((pair, pairIndex) => {
+      validStations.push({
+        id: `min_cs_${recordIndex}_${pairIndex}`,
+        name: reference_name,
+        referenceName: reference_name,
+        location: `${pair.rawCoordinateString} • ${location_status}`,
+        latitude: pair.latitude,
+        longitude: pair.longitude,
+        exactLocationCoordinates: pair.rawCoordinateString,
+        rawChargerType: charger_type,
+        chargerType: inferred.chargerType,
+        chargerDetails: formattedChargerType,
+        locationStatus: location_status,
+        isUnverifiedAssociation,
+        originalRecordIndex: recordIndex,
+        coordinatePairIndex: pairIndex,
+        vehicleCompatibility: 'F77, X47',
+        connectorTypes: inferred.connectorTypes,
+        powerOutputKw: inferred.powerOutputKw,
+        chargerSource: inferred.chargerSource,
+        isSupernova: inferred.isSupernova,
+        isCommunityReported: false,
+        verifiedByAdmin: true,
+        approvalStatus: 'approved',
+        published: true,
+        operatingStatus: 'Operational',
+        accessConditions: 'Public 24/7',
+        pricing: 'Standard Network Tariff',
+        lastVerifiedDate: '2026-11-02',
+        userNotes: location_status,
+        reportedBy: 'GHOST PROTOCOL Charging Database'
+      });
+    });
+  });
+
+  return {
+    allRecords,
+    validStations,
+    skippedRecords,
+    totalRecordsCount: allRecords.length,
+    totalRecordsLoaded: allRecords.length,
+    recordsWithValidCoordinatesCount,
+    validMarkersCount: validStations.length,
+    validMapMarkersCount: validStations.length,
+    skippedRecordsCount: skippedRecords.length
+  };
+}
+
+/**
+ * Searches and filters charging stations by station/reference name, charger type,
+ * coordinates, or plug category filter.
+ */
+export function searchAndFilterChargingStations<
+  T extends {
+    id?: string;
+    name: string;
+    referenceName?: string;
+    location?: string;
+    latitude: number;
+    longitude: number;
+    exactLocationCoordinates?: string;
+    rawChargerType?: string;
+    chargerType?: string;
+    chargerDetails?: string;
+    locationStatus?: string;
+    connectorTypes?: string[];
+    isSupernova: boolean;
+    isCommunityReported: boolean;
+    powerOutputKw: number;
+    chargerSource?: ChargerSource;
+    createdAt?: string;
+    lastVerifiedDate?: string;
+  }
+>(stations: T[], searchQuery: string, filterType = 'ALL'): T[] {
+  if (!Array.isArray(stations)) return [];
+  const q = (searchQuery || '').trim().toLowerCase();
+
+  return stations.filter(st => {
+    if (filterType && filterType !== 'ALL') {
+      if (!matchesChargingStationFilter(st, filterType)) {
+        return false;
+      }
+    }
+
+    if (!q) return true;
+
+    const refName = (st.referenceName || st.name || '').toLowerCase();
+    const rawType = formatMinimalChargerType(st.rawChargerType ?? st.chargerDetails ?? st.chargerType).toLowerCase();
+    const plugCategory = (st.chargerType || '').toLowerCase();
+    const coordsText = (
+      st.exactLocationCoordinates || `${st.latitude}, ${st.longitude}`
+    ).toLowerCase();
+    const locText = (st.location || '').toLowerCase();
+    const connectorsText = Array.isArray(st.connectorTypes)
+      ? st.connectorTypes.join(' ').toLowerCase()
+      : '';
+
+    return (
+      refName.includes(q) ||
+      rawType.includes(q) ||
+      plugCategory.includes(q) ||
+      coordsText.includes(q) ||
+      locText.includes(q) ||
+      connectorsText.includes(q)
+    );
+  });
+}
+
+// ============================================================================
+// INTERACTIVE COCKPIT RED-GLOW TARGET REGISTRY & ROTARY HUD HELPERS
+// ============================================================================
+
+export interface CockpitInteractiveZone {
+  id: string;
+  label: string;
+  routeId: string;
+  /** Compass bearing in degrees (0 = North/Top, 90 = East/Right, 180 = South/Bottom, 270 = West/Left) */
+  bearingDeg: number;
+  /** Center point in 941 x 1672 canvas coordinates */
+  centerPoint: { x: number; y: number };
+  /** SVG path in 0 0 941 1672 coordinates for masking the photorealistic red glow layer */
+  svgMaskPath: string;
+  /** SVG path in 0 0 941 1672 coordinates for the animated crimson plasma border & laser trace */
+  svgBorderPath: string;
+  /** Whether this zone is one of the 8 primary circular dial sectors */
+  isDialSector: boolean;
+}
+
+export const COCKPIT_DIAL_CENTER = { x: 470.5, y: 808.5 };
+
+export const COCKPIT_INTERACTIVE_ZONES: CockpitInteractiveZone[] = [
+  {
+    id: 'sector_priority_issues',
+    label: 'PRIORITY ISSUES',
+    routeId: 'problems',
+    bearingDeg: 284,
+    centerPoint: { x: 84, y: 724 },
+    svgMaskPath: 'M 46 604 L 196 604 A 337.5 339.5 0 0 0 133 818.5 L 6 818.5 A 460 460 0 0 1 46 604 Z',
+    svgBorderPath: 'M 46 604 L 196 604 A 337.5 339.5 0 0 0 133 818.5 L 6 818.5 A 460 460 0 0 1 46 604 Z',
+    isDialSector: true
+  },
+  {
+    id: 'sector_jet_engineer',
+    label: 'JET ENGINEER',
+    routeId: 'jet_engineer',
+    bearingDeg: 0,
+    centerPoint: { x: 470.5, y: 564 },
+    svgMaskPath:
+      'M 377 698 L 352 679 L 321 647 L 289 615 L 265 576 L 246 549 A 337.5 339.5 0 0 1 695 549 L 674 574 L 635 600 L 607 636 L 576 669 L 559 694 A 143 143 0 0 0 377 698 Z',
+    svgBorderPath:
+      'M 377 698 L 352 679 L 321 647 L 289 615 L 265 576 L 246 549 A 337.5 339.5 0 0 1 695 549 L 674 574 L 635 600 L 607 636 L 576 669 L 559 694 A 143 143 0 0 0 377 698 Z',
+    isDialSector: true
+  },
+  {
+    id: 'sector_marketplace',
+    label: 'MARKET PLACE',
+    routeId: 'marketplace',
+    bearingDeg: 76,
+    centerPoint: { x: 857, y: 724 },
+    svgMaskPath: 'M 745 604 L 895 604 A 460 460 0 0 1 935 818.5 L 808 818.5 A 337.5 339.5 0 0 0 745 604 Z',
+    svgBorderPath: 'M 745 604 L 895 604 A 460 460 0 0 1 935 818.5 L 808 818.5 A 337.5 339.5 0 0 0 745 604 Z',
+    isDialSector: true
+  },
+  {
+    id: 'sector_charging_network',
+    label: 'CHARGING NETWORK',
+    routeId: 'charging',
+    bearingDeg: 90,
+    centerPoint: { x: 705, y: 805 },
+    svgMaskPath:
+      'M 559 694 L 576 669 L 607 636 L 635 600 L 674 574 L 695 549 A 337.5 339.5 0 0 1 698 1054 L 695 1022 L 668 985 L 636 954 L 603 923 L 579 905 A 143 143 0 0 0 559 694 Z',
+    svgBorderPath:
+      'M 559 694 L 576 669 L 607 636 L 635 600 L 674 574 L 695 549 A 337.5 339.5 0 0 1 698 1054 L 695 1022 L 668 985 L 636 954 L 603 923 L 579 905 A 143 143 0 0 0 559 694 Z',
+    isDialSector: true
+  },
+  {
+    id: 'sector_discussions',
+    label: 'DISCUSSIONS',
+    routeId: 'discussions',
+    bearingDeg: 104,
+    centerPoint: { x: 857, y: 904 },
+    svgMaskPath: 'M 808 818.5 L 935 818.5 A 460 460 0 0 1 891 1014 L 739 1014 A 337.5 339.5 0 0 0 808 818.5 Z',
+    svgBorderPath: 'M 808 818.5 L 935 818.5 A 460 460 0 0 1 891 1014 L 739 1014 A 337.5 339.5 0 0 0 808 818.5 Z',
+    isDialSector: true
+  },
+  {
+    id: 'sector_mission_mode',
+    label: 'MISSION MODE',
+    routeId: 'mission',
+    bearingDeg: 180,
+    centerPoint: { x: 470.5, y: 1042 },
+    svgMaskPath:
+      'M 579 905 L 603 923 L 636 954 L 668 985 L 695 1022 L 698 1054 A 337.5 339.5 0 0 1 243 1054 L 248 1024 L 285 997 L 315 964 L 348 933 L 365 908 A 143 143 0 0 0 579 905 Z',
+    svgBorderPath:
+      'M 579 905 L 603 923 L 636 954 L 668 985 L 695 1022 L 698 1054 A 337.5 339.5 0 0 1 243 1054 L 248 1024 L 285 997 L 315 964 L 348 933 L 365 908 A 143 143 0 0 0 579 905 Z',
+    isDialSector: true
+  },
+  {
+    id: 'sector_mod_lab',
+    label: 'MOD LAB',
+    routeId: 'modifications',
+    bearingDeg: 256,
+    centerPoint: { x: 84, y: 904 },
+    svgMaskPath: 'M 6 818.5 L 133 818.5 A 337.5 339.5 0 0 0 202 1014 L 50 1014 A 460 460 0 0 1 6 818.5 Z',
+    svgBorderPath: 'M 6 818.5 L 133 818.5 A 337.5 339.5 0 0 0 202 1014 L 50 1014 A 460 460 0 0 1 6 818.5 Z',
+    isDialSector: true
+  },
+  {
+    id: 'sector_squadron_assist',
+    label: 'SQUADRON ASSIST',
+    routeId: 'emergency',
+    bearingDeg: 270,
+    centerPoint: { x: 236, y: 805 },
+    svgMaskPath:
+      'M 365 908 L 348 933 L 315 964 L 285 997 L 248 1024 L 243 1054 A 337.5 339.5 0 0 1 246 549 L 265 576 L 289 615 L 321 647 L 352 679 L 377 698 A 143 143 0 0 0 365 908 Z',
+    svgBorderPath:
+      'M 365 908 L 348 933 L 315 964 L 285 997 L 248 1024 L 243 1054 A 337.5 339.5 0 0 1 246 549 L 265 576 L 289 615 L 321 647 L 352 679 L 377 698 A 143 143 0 0 0 365 908 Z',
+    isDialSector: true
+  },
+  {
+    id: 'sector_center_core',
+    label: 'AVIONICS CORE RETICLE',
+    routeId: 'system_controls',
+    bearingDeg: 0,
+    centerPoint: { x: 470.5, y: 808.5 },
+    svgMaskPath: 'M 328.5 808.5 A 142 142 0 1 1 612.5 808.5 A 142 142 0 1 1 328.5 808.5 Z',
+    svgBorderPath: 'M 328.5 808.5 A 142 142 0 1 1 612.5 808.5 A 142 142 0 1 1 328.5 808.5 Z',
+    isDialSector: false
+  },
+  {
+    id: 'panel_all_system_controls',
+    label: 'ALL SYSTEMS',
+    routeId: 'system_controls',
+    bearingDeg: 180,
+    centerPoint: { x: 470.5, y: 1328 },
+    svgMaskPath: 'M 192 1254 L 749 1254 L 796 1328 L 749 1406 L 192 1406 L 145 1328 Z',
+    svgBorderPath: 'M 192 1254 L 749 1254 L 796 1328 L 749 1406 L 192 1406 L 145 1328 Z',
+    isDialSector: false
+  },
+  {
+    id: 'nav_ride',
+    label: 'RIDE',
+    routeId: 'mission',
+    bearingDeg: 332,
+    centerPoint: { x: 165, y: 224 },
+    svgMaskPath: 'M 95 198 L 235 198 L 235 252 L 95 252 Z',
+    svgBorderPath: 'M 95 198 L 235 198 L 235 252 L 95 252 Z',
+    isDialSector: false
+  },
+  {
+    id: 'nav_connect',
+    label: 'CONNECT',
+    routeId: 'discussions',
+    bearingDeg: 348,
+    centerPoint: { x: 338, y: 224 },
+    svgMaskPath: 'M 236 198 L 440 198 L 440 252 L 236 252 Z',
+    svgBorderPath: 'M 236 198 L 440 198 L 440 252 L 236 252 Z',
+    isDialSector: false
+  },
+  {
+    id: 'nav_support',
+    label: 'SUPPORT',
+    routeId: 'service',
+    bearingDeg: 12,
+    centerPoint: { x: 542, y: 224 },
+    svgMaskPath: 'M 441 198 L 645 198 L 645 252 L 441 252 Z',
+    svgBorderPath: 'M 441 198 L 645 198 L 645 252 L 441 252 Z',
+    isDialSector: false
+  },
+  {
+    id: 'nav_upgrade',
+    label: 'UPGRADE',
+    routeId: 'modifications',
+    bearingDeg: 28,
+    centerPoint: { x: 750, y: 224 },
+    svgMaskPath: 'M 646 198 L 845 198 L 845 252 L 646 252 Z',
+    svgBorderPath: 'M 646 198 L 845 198 L 845 252 L 646 252 Z',
+    isDialSector: false
+  },
+  {
+    id: 'status_online',
+    label: 'ONLINE',
+    routeId: 'online_status',
+    bearingDeg: 312,
+    centerPoint: { x: 145, y: 348 },
+    svgMaskPath: 'M 16 304 L 278 304 L 278 394 L 16 394 Z',
+    svgBorderPath: 'M 16 304 L 278 304 L 278 394 L 16 394 Z',
+    isDialSector: false
+  },
+  {
+    id: 'top_right_contribute',
+    label: 'SUPPORT APP CONTRIBUTE',
+    routeId: 'contribute',
+    bearingDeg: 48,
+    centerPoint: { x: 796, y: 348 },
+    svgMaskPath: 'M 662 304 L 925 304 L 925 394 L 662 394 Z',
+    svgBorderPath: 'M 662 304 L 925 304 L 925 394 L 662 394 Z',
+    isDialSector: false
+  },
+  {
+    id: 'header_logo',
+    label: 'GHOST PROTOCOL',
+    routeId: 'dashboard',
+    bearingDeg: 335,
+    centerPoint: { x: 235, y: 126 },
+    svgMaskPath: 'M 20 60 L 490 60 L 424 192 L 20 192 Z',
+    svgBorderPath: 'M 20 60 L 490 60 L 424 192 L 20 192 Z',
+    isDialSector: false
+  },
+  {
+    id: 'header_search',
+    label: 'GLOBAL SEARCH',
+    routeId: 'search',
+    bearingDeg: 8,
+    centerPoint: { x: 531.5, y: 128 },
+    svgMaskPath: 'M 495.5 128 A 36 36 0 1 1 567.5 128 A 36 36 0 1 1 495.5 128 Z',
+    svgBorderPath: 'M 495.5 128 A 36 36 0 1 1 567.5 128 A 36 36 0 1 1 495.5 128 Z',
+    isDialSector: false
+  },
+  {
+    id: 'header_notifications',
+    label: 'NOTIFICATIONS',
+    routeId: 'notifications',
+    bearingDeg: 18,
+    centerPoint: { x: 613, y: 128 },
+    svgMaskPath: 'M 577 128 A 36 36 0 1 1 649 128 A 36 36 0 1 1 577 128 Z',
+    svgBorderPath: 'M 577 128 A 36 36 0 1 1 649 128 A 36 36 0 1 1 577 128 Z',
+    isDialSector: false
+  },
+  {
+    id: 'header_profile',
+    label: 'OPERATOR PROFILE',
+    routeId: 'profile',
+    bearingDeg: 32,
+    centerPoint: { x: 693.5, y: 128 },
+    svgMaskPath: 'M 656 90 L 900 90 L 900 166 L 656 166 Z',
+    svgBorderPath: 'M 656 90 L 900 90 L 900 166 L 656 166 Z',
+    isDialSector: false
+  }
+];
+
+/**
+ * Clockwise order of the 8 circular dial sectors for sequential / rotary toggling.
+ */
+export const COCKPIT_DIAL_RING_ORDER: string[] = [
+  'sector_jet_engineer',
+  'sector_marketplace',
+  'sector_charging_network',
+  'sector_discussions',
+  'sector_mission_mode',
+  'sector_mod_lab',
+  'sector_squadron_assist',
+  'sector_priority_issues'
+];
+
+export function getCockpitZoneById(zoneId: string): CockpitInteractiveZone {
+  return (
+    COCKPIT_INTERACTIVE_ZONES.find(z => z.id === zoneId) ||
+    COCKPIT_INTERACTIVE_ZONES[0]
+  );
+}
+
+/**
+ * Computes the shortest signed angular delta (-180..+180) from currentDeg to targetDeg
+ * so rotating needles/reticles never spin the wrong way across 0/360.
+ */
+export function computeShortestRotationDelta(currentDeg: number, targetDeg: number): number {
+  const diff = ((targetDeg - currentDeg + 540) % 360) - 180;
+  return diff === -180 ? 180 : diff;
+}
+
+/**
+ * Resolves which cockpit sector is under a given (x, y) point in 941 x 1672 canvas coordinates
+ * during rotary touch/pointer scrubbing around the circular cockpit dial.
+ */
+export function resolveCockpitZoneFromCanvasPoint(
+  x: number,
+  y: number
+): CockpitInteractiveZone | null {
+  const dx = x - COCKPIT_DIAL_CENTER.x;
+  const dy = y - COCKPIT_DIAL_CENTER.y;
+  const dist = Math.hypot(dx, dy);
+
+  // Outside the circular dial & wings region
+  if (dist > 475 || y < 440 || y > 1190) {
+    return null;
+  }
+
+  // Center reticle core
+  if (dist < 143) {
+    return getCockpitZoneById('sector_center_core');
+  }
+
+  // Outer wing regions (Left: Priority Issues / Mod Lab; Right: Marketplace / Discussions)
+  if (dist >= 340) {
+    if (x < 196 && y >= 604 && y <= 1016) {
+      return getCockpitZoneById(
+        y <= 818.5 ? 'sector_priority_issues' : 'sector_mod_lab'
+      );
+    }
+    if (x > 745 && y >= 604 && y <= 1016) {
+      return getCockpitZoneById(
+        y <= 818.5 ? 'sector_marketplace' : 'sector_discussions'
+      );
+    }
+  }
+
+  // Inner 4 sectors resolved by angle from (470.5, 808.5)
+  const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+  if (angleDeg >= -131 && angleDeg <= -50) {
+    return getCockpitZoneById('sector_jet_engineer');
+  }
+  if (angleDeg > -50 && angleDeg <= 43) {
+    return getCockpitZoneById('sector_charging_network');
+  }
+  if (angleDeg > 43 && angleDeg <= 136) {
+    return getCockpitZoneById('sector_mission_mode');
+  }
+  return getCockpitZoneById('sector_squadron_assist');
+}
+
+/**
+ * Cycles the active red-glow cockpit sector clockwise/counter-clockwise or directionally.
+ */
+export function cycleCockpitSector(
+  currentZoneId: string,
+  direction: 'next' | 'prev' | 'up' | 'down' | 'left' | 'right'
+): CockpitInteractiveZone {
+  if (direction === 'up') return getCockpitZoneById('sector_jet_engineer');
+  if (direction === 'down') return getCockpitZoneById('sector_mission_mode');
+  if (direction === 'left') {
+    if (currentZoneId === 'sector_squadron_assist') {
+      return getCockpitZoneById('sector_priority_issues');
+    }
+    if (currentZoneId === 'sector_priority_issues') {
+      return getCockpitZoneById('sector_mod_lab');
+    }
+    return getCockpitZoneById('sector_squadron_assist');
+  }
+  if (direction === 'right') {
+    if (currentZoneId === 'sector_charging_network') {
+      return getCockpitZoneById('sector_marketplace');
+    }
+    if (currentZoneId === 'sector_marketplace') {
+      return getCockpitZoneById('sector_discussions');
+    }
+    return getCockpitZoneById('sector_charging_network');
+  }
+
+  const idx = COCKPIT_DIAL_RING_ORDER.indexOf(currentZoneId);
+  const startIdx = idx === -1 ? 0 : idx;
+  const step = direction === 'next' ? 1 : -1;
+  const nextIdx =
+    (startIdx + step + COCKPIT_DIAL_RING_ORDER.length) %
+    COCKPIT_DIAL_RING_ORDER.length;
+  return getCockpitZoneById(COCKPIT_DIAL_RING_ORDER[nextIdx]);
+}
+
+// ============================================================================
+// COCKPIT CORE-TO-INTERFACE TRANSFORMING BOOT ANIMATION ENGINE
+// ============================================================================
+
+export type CockpitBootPhase = 'core_logo' | 'dial_expand' | 'full_deploy' | 'ready';
+
+export const COCKPIT_BOOT_TIMELINE_MS = {
+  CORE_LOGO_END: 650,
+  DIAL_EXPAND_END: 1450,
+  FULL_DEPLOY_END: 2200
+} as const;
+
+export interface CockpitBootTransformSpec {
+  phase: CockpitBootPhase;
+  /** Circular iris clip-path radius percentage around (50%, 48.44%) */
+  irisRadiusPct: number;
+  /** CSS clip-path string for the 941x1672 cockpit stage */
+  clipPathCss: string;
+  /** Scale factor centered on the circular dial core (470.5, 810) */
+  stageScale: number;
+  /** Subtle mechanical lock-in rotation in degrees */
+  stageRotateDeg: number;
+  /** Opacity of the central Ghost Protocol holo-emblem overlay (0..1) */
+  centerLogoOpacity: number;
+  /** Scale of the central Ghost Protocol holo-emblem overlay */
+  centerLogoScale: number;
+  /** Opacity of the radial dial sector expansion shockwave & rays (0..1) */
+  dialWaveOpacity: number;
+  /** Radius (in canvas px) of the expanding circular interface shockwave */
+  dialWaveRadiusPx: number;
+  /** Opacity of the outer buttons/options perimeter lock-on trace (0..1) */
+  outerButtonsTraceOpacity: number;
+  /** Opacity of the bottom lower chassis extension & community disclaimer (0..1) */
+  lowerChassisOpacity: number;
+  /** Scale factor of the bottom lower chassis extension during boot transformation */
+  lowerChassisScale: number;
+  /** Vertical translation (in px) of the bottom lower chassis extension during boot transformation */
+  lowerChassisTranslateYPx: number;
+  /** CSS clip-path string for the bottom lower chassis extension during boot transformation */
+  lowerChassisClipPathCss: string;
+}
+
+export interface CockpitRadialExpansionRay {
+  id: string;
+  angleDeg: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  accentColor: '#FF1E27' | '#38BDF8';
+}
+
+/**
+* 8 radial vector rays emanating from the circular interface center (470.5, 810)
+* along the primary sector boundaries and cardinal axes during the transforming expansion.
+*/
+export const COCKPIT_RADIAL_EXPANSION_RAYS: readonly CockpitRadialExpansionRay[] = [
+  { angleDeg: -90, accentColor: '#FF1E27' },
+  { angleDeg: -45, accentColor: '#38BDF8' },
+  { angleDeg: 0, accentColor: '#FF1E27' },
+  { angleDeg: 45, accentColor: '#38BDF8' },
+  { angleDeg: 90, accentColor: '#FF1E27' },
+  { angleDeg: 135, accentColor: '#38BDF8' },
+  { angleDeg: 180, accentColor: '#FF1E27' },
+  { angleDeg: -135, accentColor: '#38BDF8' }
+].map((item, idx) => {
+  const rad = (item.angleDeg * Math.PI) / 180;
+  const innerR = 118;
+  const outerR = 448;
+  return {
+    id: `ray_${idx}_${item.angleDeg}`,
+    angleDeg: item.angleDeg,
+    x1: Number((COCKPIT_DIAL_CENTER.x + Math.cos(rad) * innerR).toFixed(1)),
+    y1: Number((COCKPIT_DIAL_CENTER.y + Math.sin(rad) * innerR).toFixed(1)),
+    x2: Number((COCKPIT_DIAL_CENTER.x + Math.cos(rad) * outerR).toFixed(1)),
+    y2: Number((COCKPIT_DIAL_CENTER.y + Math.sin(rad) * outerR).toFixed(1)),
+    accentColor: item.accentColor as '#FF1E27' | '#38BDF8'
+  };
+});
+
+/**
+ * Resolves the active CockpitBootPhase from elapsed milliseconds since app open.
+ */
+export function resolveCockpitBootPhase(
+  elapsedMs: number,
+  reducedMotion = false
+): CockpitBootPhase {
+  if (reducedMotion || !Number.isFinite(elapsedMs) || elapsedMs < 0) {
+    return 'ready';
+  }
+  if (elapsedMs < COCKPIT_BOOT_TIMELINE_MS.CORE_LOGO_END) {
+    return 'core_logo';
+  }
+  if (elapsedMs < COCKPIT_BOOT_TIMELINE_MS.DIAL_EXPAND_END) {
+    return 'dial_expand';
+  }
+  if (elapsedMs < COCKPIT_BOOT_TIMELINE_MS.FULL_DEPLOY_END) {
+    return 'full_deploy';
+  }
+  return 'ready';
+}
+
+/**
+ * Determines whether the Cockpit Core-to-Interface Transforming Boot Animation
+ * should be skipped (e.g., when returning via Back / Previous Page after initial app start).
+ */
+export function shouldSkipCockpitBootAnimation(options: {
+  hasBootedInSession: boolean;
+  skipBootAnimation?: boolean;
+  reducedMotion?: boolean;
+  initialShowSystemControls?: boolean;
+}): boolean {
+  return Boolean(
+    options.hasBootedInSession ||
+      options.skipBootAnimation ||
+      options.reducedMotion ||
+      options.initialShowSystemControls
+  );
+}
+
+/**
+ * Returns the deterministic geometric & visual transformation parameters for a given
+ * CockpitBootPhase (start with logo in center -> expand circular interface -> deploy all buttons & lower chassis).
+ */
+export function getCockpitBootTransformSpec(
+  phase: CockpitBootPhase
+): CockpitBootTransformSpec {
+  switch (phase) {
+    case 'core_logo':
+      return {
+        phase: 'core_logo',
+        irisRadiusPct: 9.2,
+        clipPathCss: 'circle(9.2% at 50% 48.44%)',
+        stageScale: 1.18,
+        stageRotateDeg: -10,
+        centerLogoOpacity: 1,
+        centerLogoScale: 1.08,
+        dialWaveOpacity: 0.35,
+        dialWaveRadiusPx: 138,
+        outerButtonsTraceOpacity: 0,
+        lowerChassisOpacity: 0,
+        lowerChassisScale: 0.84,
+        lowerChassisTranslateYPx: -44,
+        lowerChassisClipPathCss: 'inset(0% 50% 100% 50%)'
+      };
+    case 'dial_expand':
+      return {
+        phase: 'dial_expand',
+        irisRadiusPct: 28.5,
+        clipPathCss: 'circle(28.5% at 50% 48.44%)',
+        stageScale: 1.04,
+        stageRotateDeg: 0,
+        centerLogoOpacity: 0,
+        centerLogoScale: 0.88,
+        dialWaveOpacity: 1,
+        dialWaveRadiusPx: 388,
+        outerButtonsTraceOpacity: 0.25,
+        lowerChassisOpacity: 0,
+        lowerChassisScale: 0.92,
+        lowerChassisTranslateYPx: -24,
+        lowerChassisClipPathCss: 'inset(0% 35% 100% 35%)'
+      };
+    case 'full_deploy':
+      return {
+        phase: 'full_deploy',
+        irisRadiusPct: 115,
+        clipPathCss: 'circle(115% at 50% 48.44%)',
+        stageScale: 1,
+        stageRotateDeg: 0,
+        centerLogoOpacity: 0,
+        centerLogoScale: 0.82,
+        dialWaveOpacity: 0.45,
+        dialWaveRadiusPx: 780,
+        outerButtonsTraceOpacity: 1,
+        lowerChassisOpacity: 1,
+        lowerChassisScale: 1,
+        lowerChassisTranslateYPx: 0,
+        lowerChassisClipPathCss: 'inset(0% 0% 0% 0%)'
+      };
+    case 'ready':
+    default:
+      return {
+        phase: 'ready',
+        irisRadiusPct: 150,
+        clipPathCss: 'none',
+        stageScale: 1,
+        stageRotateDeg: 0,
+        centerLogoOpacity: 0,
+        centerLogoScale: 1,
+        dialWaveOpacity: 0,
+        dialWaveRadiusPx: 940,
+        outerButtonsTraceOpacity: 0,
+        lowerChassisOpacity: 1,
+        lowerChassisScale: 1,
+        lowerChassisTranslateYPx: 0,
+        lowerChassisClipPathCss: 'none'
+      };
+  }
+}
+
+export interface CockpitOperatorBadge {
+  displayName: string;
+  pilotLabel: string;
+  userId: string;
+  fullName: string;
+}
+
+/**
+ * Resolves the top-right Cockpit Header identity badge for the currently logged-in user
+ * so every user sees their own Name/ID and Bike Model Pilot tag (e.g. F77 PILOT / X47 PILOT / custom nickname).
+ */
+export function resolveCockpitOperatorBadge(
+  user?: {
+    id?: string;
+    email?: string;
+    fullName?: string;
+    originalName?: string;
+    customPrimaryName?: string | null;
+    pilotNickname?: PilotNickname | string | null;
+    customSecondaryTag?: string | null;
+    hideSecondaryTag?: boolean;
+    motorcycleModel?: string;
+    role?: string;
+    isOwner?: boolean;
+  } | null
+): CockpitOperatorBadge {
+  if (!user) {
+    return {
+      displayName: 'SIGN IN',
+      pilotLabel: 'UV PILOT',
+      userId: 'GUEST',
+      fullName: 'Guest Pilot'
+    };
+  }
+
+  const identity = resolveUserDisplayIdentity(user);
+  const rawName = (identity.primaryName || user.fullName || user.originalName || 'PILOT').trim();
+
+  const firstWord = rawName.split(/\s+/)[0] || 'PILOT';
+  const candidateName =
+    identity.customPrimaryName && identity.customPrimaryName.trim().length <= 12
+      ? identity.customPrimaryName.trim()
+      : rawName.length <= 10
+      ? rawName
+      : firstWord;
+  const displayName = candidateName.toUpperCase().slice(0, 12);
+
+  const modelUpper = (user.motorcycleModel || '').trim().toUpperCase();
+  const modelPilot = modelUpper.includes('X47')
+    ? 'X47 PILOT'
+    : modelUpper.includes('F77')
+    ? 'F77 PILOT'
+    : null;
+
+  const customNick =
+    typeof user.pilotNickname === 'string' &&
+    user.pilotNickname.trim().length > 0 &&
+    user.pilotNickname.trim().toUpperCase() !== 'F77 PILOT' &&
+    user.pilotNickname.trim().toUpperCase() !== 'X47 PILOT'
+      ? user.pilotNickname.trim().toUpperCase()
+      : null;
+
+  const explicitNick =
+    typeof user.pilotNickname === 'string' && user.pilotNickname.trim().length > 0
+      ? user.pilotNickname.trim().toUpperCase()
+      : null;
+
+  const rawPilotLabel =
+    (identity.customSecondaryTag && identity.customSecondaryTag.toUpperCase()) ||
+    customNick ||
+    modelPilot ||
+    explicitNick ||
+    'F77 PILOT';
+
+  return {
+    displayName,
+    pilotLabel: rawPilotLabel.slice(0, 14),
+    userId: (user.id || 'PILOT').toUpperCase(),
+    fullName: rawName
+  };
+}
+
+/**
+ * Canonical community purpose disclaimer text displayed in the mobile cockpit bottom chassis gap.
+ */
+export const COCKPIT_COMMUNITY_DISCLAIMER_TEXT =
+  'This is not official Ultraviolette Automotive app, this is to discover, help , assist Ultraviolette owners and have some fun!';
+
+export const COCKPIT_COMMUNITY_DISCLAIMER_TAGLINE =
+  'COMMUNITY PLATFORM • NOT AN OFFICIAL APP';
 

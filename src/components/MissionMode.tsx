@@ -52,7 +52,8 @@ import {
 } from '../utils/rules';
 import {
   INDIA_TOWN_PLACE_SUGGESTIONS,
-  fetchLiveIndiaPlaces
+  fetchLiveIndiaPlaces,
+  searchAllIndiaLocations
 } from '../utils/indiaLocations';
 import {
   CACHE_KEYS,
@@ -62,7 +63,10 @@ import {
   saveFormDraft,
   loadFormDraft,
   clearFormDraft,
-  getSessionAuthHeaders
+  getSessionAuthHeaders,
+  reconcileCollectionWithCache,
+  recordDeletedId,
+  canUserModifyRecord
 } from '../utils/telemetryCache';
 import {
   MissionRouteMap,
@@ -71,7 +75,7 @@ import {
   buildGoogleMapsUrl
 } from './MissionRouteMap';
 
-const CREATE_RIDE_DRAFT_KEY = 'mission_create_ride_v3';
+const CREATE_RIDE_DRAFT_KEY = 'mission_create_ride_v4';
 const UPLOAD_DEST_DRAFT_KEY = 'mission_upload_destination_v1';
 const LOCAL_GUEST_RIDERS_STORAGE_KEY = 'ghost_mission_local_rider_registrations_v1';
 
@@ -230,14 +234,19 @@ export const MissionMode: React.FC = () => {
       description: '',
       rideDate: '',
       startTime: '06:00',
-      meetingPoint: 'Bengaluru Hangar',
-      meetingPointLat: 12.9719 as number | undefined,
-      meetingPointLng: 77.6412 as number | undefined,
+      meetingPoint: '',
+      meetingPointLat: undefined as number | undefined,
+      meetingPointLng: undefined as number | undefined,
       meetingPointGmapsUrl: '',
-      destination: 'Nandi Hills Summit',
-      destinationLat: 13.3702 as number | undefined,
-      destinationLng: 77.6835 as number | undefined,
+      destination: '',
+      destinationLat: undefined as number | undefined,
+      destinationLng: undefined as number | undefined,
       destinationGmapsUrl: '',
+      teaFoodBreak: '',
+      teaFoodBreakLat: undefined as number | undefined,
+      teaFoodBreakLng: undefined as number | undefined,
+      teaFoodBreakGmapsUrl: '',
+      teaFoodBreakNotes: 'Tea / Food Break & Refreshments',
       plannedRoute: '',
       maxDistanceKm: '120',
       estimatedReturnTime: '12:30',
@@ -268,6 +277,13 @@ export const MissionMode: React.FC = () => {
   );
   const [createError, setCreateError] = useState('');
 
+  // Autocomplete dropdown state for Create Ride (Meeting Point, Destination, Tea / Food Break)
+  const [activeDropdownField, setActiveDropdownField] = useState<'meeting' | 'destination' | 'teaBreak' | null>(null);
+  const [meetingSuggestions, setMeetingSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [destSuggestions, setDestSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [teaBreakSuggestions, setTeaBreakSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+
   // Add Stop / Break to Selected Ride Modal State
   const [showAddStopModal, setShowAddStopModal] = useState(false);
   const [addStopType, setAddStopType] = useState<'stop' | 'charging'>('stop');
@@ -292,7 +308,7 @@ export const MissionMode: React.FC = () => {
   const [visitedDestinations, setVisitedDestinations] = useState<VisitedDestinationRecord[]>(() =>
     loadFromCache<VisitedDestinationRecord[]>(
       CACHE_KEYS.VISITED_DESTINATIONS,
-      DEFAULT_VISITED_DESTINATIONS
+      []
     )
   );
   const [destSearchQuery, setDestSearchQuery] = useState('');
@@ -350,17 +366,16 @@ export const MissionMode: React.FC = () => {
         const serverRides: RideSortie[] = Array.isArray(data?.rides)
           ? data.rides.map(normalizeRideWaypoints)
           : [];
-        if (serverRides.length > 0) {
-          setRides(serverRides);
-          saveToCache(CACHE_KEYS.RIDES, serverRides);
-          if (!selectedRideId) {
-            setSelectedRideId(serverRides[0].id);
-          }
+        const merged = reconcileCollectionWithCache(CACHE_KEYS.RIDES, serverRides);
+        setRides(merged);
+        saveToCache(CACHE_KEYS.RIDES, merged);
+        if (!selectedRideId && merged.length > 0) {
+          setSelectedRideId(merged[0].id);
         }
       }
     } catch {
       const cached = loadFromCache<RideSortie[]>(CACHE_KEYS.RIDES, []).map(normalizeRideWaypoints);
-      if (cached.length > 0) setRides(cached);
+      setRides(cached);
     } finally {
       setLoading(false);
     }
@@ -374,18 +389,61 @@ export const MissionMode: React.FC = () => {
         const list: VisitedDestinationRecord[] = Array.isArray(data?.destinations)
           ? data.destinations
           : [];
-        if (list.length > 0) {
-          setVisitedDestinations(list);
-          saveToCache(CACHE_KEYS.VISITED_DESTINATIONS, list);
-        }
+        const merged = reconcileCollectionWithCache(CACHE_KEYS.VISITED_DESTINATIONS, list);
+        setVisitedDestinations(merged);
+        saveToCache(CACHE_KEYS.VISITED_DESTINATIONS, merged);
       }
     } catch {
       const cached = loadFromCache<VisitedDestinationRecord[]>(
         CACHE_KEYS.VISITED_DESTINATIONS,
-        DEFAULT_VISITED_DESTINATIONS
+        []
       );
-      if (cached.length > 0) setVisitedDestinations(cached);
+      setVisitedDestinations(cached);
     }
+  };
+
+  const handleDeleteRide = async (rideId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    recordDeletedId(rideId);
+    const updated = rides.filter(r => r.id !== rideId);
+    setRides(updated);
+    saveToCache(CACHE_KEYS.RIDES, updated);
+    if (selectedRideId === rideId) {
+      setSelectedRideId(updated[0]?.id || null);
+      setActiveSortieView('list');
+    }
+    try {
+      await gpApiFetch(`/api/rides/${rideId}`, {
+        method: 'DELETE',
+        headers: getSessionAuthHeaders()
+      });
+    } catch {
+      // Tombstone recorded locally
+    }
+    setFeedbackBanner({
+      type: 'info',
+      text: 'Group ride removed.'
+    });
+  };
+
+  const handleDeleteDestination = async (destId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    recordDeletedId(destId);
+    const updated = visitedDestinations.filter(d => d.id !== destId);
+    setVisitedDestinations(updated);
+    saveToCache(CACHE_KEYS.VISITED_DESTINATIONS, updated);
+    try {
+      await gpApiFetch(`/api/mission/destinations/${destId}`, {
+        method: 'DELETE',
+        headers: getSessionAuthHeaders()
+      });
+    } catch {
+      // Tombstone recorded locally
+    }
+    setFeedbackBanner({
+      type: 'info',
+      text: 'Destination removed.'
+    });
   };
 
   useEffect(() => {
@@ -988,6 +1046,107 @@ export const MissionMode: React.FC = () => {
     setFeedbackBanner({ type: 'info', text: 'Charging hub removed from ride plan.' });
   };
 
+  // Google Maps-style location autocomplete search handler for Create Ride fields
+  const handleLocationInputFocusOrChange = async (
+    field: 'meeting' | 'destination' | 'teaBreak',
+    query: string
+  ) => {
+    setActiveDropdownField(field);
+    const trimmed = (query || '').trim();
+
+    // Check if query is a Google Maps URL or raw coordinates
+    const urlCoords = extractCoordinatesFromGoogleMapsUrl(trimmed);
+    const urlQueryName = extractQueryTextFromGoogleMapsUrl(trimmed);
+    if (urlCoords) {
+      const pinItem: PlaceSuggestion = {
+        id: `gmaps_pin_${urlCoords.latitude}_${urlCoords.longitude}`,
+        name: urlQueryName || `${field === 'meeting' ? 'Meeting Point' : field === 'destination' ? 'Destination' : 'Tea / Food Break'} (${urlCoords.latitude.toFixed(4)}, ${urlCoords.longitude.toFixed(4)})`,
+        locality: `${urlCoords.latitude.toFixed(5)}°N, ${urlCoords.longitude.toFixed(5)}°E`,
+        address: trimmed.startsWith('http') ? 'Extracted from Google Maps Link' : 'Direct GPS Coordinates',
+        category: 'Google Maps Pin',
+        latitude: urlCoords.latitude,
+        longitude: urlCoords.longitude
+      };
+      if (field === 'meeting') setMeetingSuggestions([pinItem]);
+      else if (field === 'destination') setDestSuggestions([pinItem]);
+      else setTeaBreakSuggestions([pinItem]);
+      return;
+    }
+
+    const effectiveQuery = urlQueryName || trimmed;
+    // Immediate local search from all Indian cities, towns, hangars, toll plazas, and food stops
+    const instantLocal = searchAllIndiaLocations(effectiveQuery);
+    if (field === 'meeting') setMeetingSuggestions(instantLocal);
+    else if (field === 'destination') setDestSuggestions(instantLocal);
+    else setTeaBreakSuggestions(instantLocal);
+
+    if (effectiveQuery.length >= 2) {
+      setIsSearchingLocation(true);
+      try {
+        const live = await fetchLiveIndiaPlaces(effectiveQuery);
+        const merged = searchAllIndiaLocations(effectiveQuery, live);
+        if (field === 'meeting') setMeetingSuggestions(merged);
+        else if (field === 'destination') setDestSuggestions(merged);
+        else setTeaBreakSuggestions(merged);
+      } catch {
+        // Keep instant local matches on network timeout
+      } finally {
+        setIsSearchingLocation(false);
+      }
+    }
+  };
+
+  const handleSelectAutocompleteLocation = (
+    field: 'meeting' | 'destination' | 'teaBreak',
+    place: PlaceSuggestion
+  ) => {
+    const lat = place.latitude;
+    const lng = place.longitude;
+    const name = place.name;
+    const gmapsUrl = buildGoogleMapsUrl(lat, lng, name);
+
+    if (field === 'meeting') {
+      setCreateForm(prev => ({
+        ...prev,
+        meetingPoint: name,
+        meetingPointLat: lat,
+        meetingPointLng: lng,
+        meetingPointGmapsUrl: gmapsUrl
+      }));
+    } else if (field === 'destination') {
+      setCreateForm(prev => ({
+        ...prev,
+        destination: name,
+        destinationLat: lat,
+        destinationLng: lng,
+        destinationGmapsUrl: gmapsUrl
+      }));
+    } else if (field === 'teaBreak') {
+      const newStop = {
+        id: `break_${Date.now()}`,
+        name: name,
+        address: place.address || place.locality,
+        lat: lat,
+        lng: lng,
+        notes: createForm.teaFoodBreakNotes || 'Tea / Food Break & Refreshments',
+        googleMapsUrl: gmapsUrl
+      };
+      setCreateForm(prev => ({
+        ...prev,
+        teaFoodBreak: name,
+        teaFoodBreakLat: lat,
+        teaFoodBreakLng: lng,
+        teaFoodBreakGmapsUrl: gmapsUrl,
+        // Also automatically register or replace the tea break stop in the route's stops array
+        stops: [...prev.stops.filter(s => !s.id.startsWith('break_tea_food_')), {
+          ...newStop,
+          id: `break_tea_food_${Date.now()}`
+        }]
+      }));
+    }
+    setActiveDropdownField(null);
+  };
+
   // Organize New Group Ride with Map & GMaps Links
   const handleCreateRide = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1405,13 +1564,13 @@ export const MissionMode: React.FC = () => {
           <div>
             <div className="flex items-center space-x-2 text-cyan-400 text-xs font-mono tracking-widest uppercase mb-1">
               <Compass className="w-4 h-4 shrink-0" />
-              <span>MISSION MODE • SQUADRON RIDES & ROUTE GUIDES</span>
+              <span>MISSION MODE</span>
             </div>
-            <h1 className="font-display text-xl sm:text-3xl font-black text-white tracking-wider break-words">
-              GROUP RIDES & COOL DESTINATIONS
+            <h1 className="font-display text-xl sm:text-2xl font-black text-white tracking-wider break-words">
+              GROUP RIDES &amp; DESTINATIONS
             </h1>
-            <p className="text-slate-300 text-xs sm:text-sm mt-1 max-w-2xl break-words">
-              Join an upcoming group ride anytime, view full ride plans with interactive maps & Google Maps links, or explore rider-tested destinations.
+            <p className="text-slate-300 text-xs mt-0.5 max-w-xl">
+              Join upcoming squadron rides with live maps or explore rider-tested destinations.
             </p>
           </div>
 
@@ -1472,11 +1631,11 @@ export const MissionMode: React.FC = () => {
             </div>
 
             <div className="w-full min-w-0">
-              <div className="font-display font-bold text-xs sm:text-sm tracking-wide text-white leading-tight break-words">
+              <div className="font-display font-bold text-sm sm:text-base tracking-wide text-white leading-tight break-words">
                 1. Group Rides
               </div>
-              <div className="text-[10px] sm:text-xs text-slate-400 mt-0.5 leading-snug truncate">
-                Upcoming sorties & plans
+              <div className="text-xs text-slate-400 mt-0.5 leading-snug truncate">
+                Upcoming sorties &amp; plans
               </div>
             </div>
           </button>
@@ -1501,17 +1660,17 @@ export const MissionMode: React.FC = () => {
               >
                 <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
-              <span className="px-1.5 py-0.5 sm:px-2 rounded bg-slate-950/80 border border-slate-700/80 text-emerald-400 font-mono text-[9px] sm:text-xs font-bold shrink-0">
+              <span className="px-1.5 py-0.5 sm:px-2 rounded bg-slate-950/80 border border-slate-700/80 text-emerald-400 font-mono text-[10px] sm:text-xs font-bold shrink-0">
                 {visitedDestinations.length} Places
               </span>
             </div>
 
             <div className="w-full min-w-0">
-              <div className="font-display font-bold text-xs sm:text-sm tracking-wide text-white leading-tight break-words">
-                2. Cool Destinations and Places
+              <div className="font-display font-bold text-sm sm:text-base tracking-wide text-white leading-tight break-words">
+                2. Cool Destinations
               </div>
-              <div className="text-[10px] sm:text-xs text-slate-400 mt-0.5 leading-snug truncate">
-                Scenic routes & photos
+              <div className="text-xs text-slate-400 mt-0.5 leading-snug truncate">
+                Scenic routes &amp; photos
               </div>
             </div>
           </button>
@@ -1671,18 +1830,31 @@ export const MissionMode: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Dedicated View Details Button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedRideId(ride.id);
-                            setActiveSortieView('details');
-                          }}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-bold text-xs tracking-wider uppercase transition-all shadow-lg shadow-cyan-500/20 cursor-pointer"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>VIEW FULL RIDE DETAILS & MAP ↗</span>
-                        </button>
+                        {/* Dedicated View Details + Optional Delete Button */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedRideId(ride.id);
+                              setActiveSortieView('details');
+                            }}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-bold text-xs tracking-wider uppercase transition-all shadow-lg shadow-cyan-500/20 cursor-pointer"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>VIEW FULL RIDE DETAILS & MAP ↗</span>
+                          </button>
+                          {canUserModifyRecord(currentUser, ride) && (
+                            <button
+                              type="button"
+                              data-testid={`btn-delete-ride-${ride.id}`}
+                              onClick={e => handleDeleteRide(ride.id, e)}
+                              title="Delete Group Ride"
+                              className="p-2.5 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-300 border border-red-500/30 transition-all cursor-pointer shrink-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -2396,46 +2568,31 @@ export const MissionMode: React.FC = () => {
       {/* SUB-PAGE 2: VISITED DESTINATIONS & RIDER ROUTE GUIDES */}
       {activeSubPage === 'destinations' && (
         <div className="space-y-6" data-testid="visited-destinations-section">
-          {/* Intro + Search + Upload Action Bar */}
-          <div className="glass-panel rounded-xl p-5 border border-emerald-500/30 bg-slate-900/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="text-xs font-mono text-emerald-400 uppercase tracking-wider flex items-center space-x-1.5">
-                <Sparkles className="w-4 h-4" />
-                <span>COMMUNITY RIDER ROUTE LOGBOOK</span>
-              </div>
-              <h2 className="font-display text-lg font-bold text-white">
-                COOL DESTINATIONS & PLACES VISITED BY RIDERS
-              </h2>
-              <p className="text-xs text-slate-300 max-w-2xl">
-                Been on a great ride? Upload the destination with photos, total distance, options to charge your bike on the way, and the Google Maps location link so other riders can go next or plan a sortie!
-              </p>
+          {/* Compact Search + Upload Action Bar */}
+          <div className="glass-panel rounded-xl p-3.5 border border-emerald-500/30 bg-slate-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={destSearchQuery}
+                onChange={e => setDestSearchQuery(e.target.value)}
+                placeholder="Search rider destinations, routes, or chargers..."
+                className="bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-400 w-full"
+              />
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={destSearchQuery}
-                  onChange={e => setDestSearchQuery(e.target.value)}
-                  placeholder="Search destinations or chargers..."
-                  className="bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-400 w-full sm:w-60"
-                />
-              </div>
-
-              <button
-                type="button"
-                data-testid="btn-upload-destination-secondary"
-                onClick={() => {
-                  setUploadDestError('');
-                  setShowUploadDestModal(true);
-                }}
-                className="flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-xs tracking-wider uppercase shadow-lg shadow-emerald-500/20 shrink-0 cursor-pointer"
-              >
-                <Upload className="w-4 h-4" />
-                <span>+ UPLOAD VISITED DESTINATION</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              data-testid="btn-upload-destination-secondary"
+              onClick={() => {
+                setUploadDestError('');
+                setShowUploadDestModal(true);
+              }}
+              className="flex items-center justify-center space-x-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-xs tracking-wider uppercase shadow-lg shadow-emerald-500/20 shrink-0 cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>+ SHARE DESTINATION</span>
+            </button>
           </div>
 
           {/* Grid of Visited Destinations */}
@@ -2513,7 +2670,7 @@ export const MissionMode: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Card Footer: Map Link & Plan a Ride Button */}
+                  {/* Card Footer: Map Link, Plan a Ride & Delete Button */}
                   <div className="p-4 pt-0 flex flex-col sm:flex-row gap-2">
                     <a
                       href={sanitizeGoogleMapsUrl(
@@ -2538,6 +2695,18 @@ export const MissionMode: React.FC = () => {
                       <Calendar className="w-3.5 h-3.5" />
                       <span>PLAN RIDE HERE</span>
                     </button>
+
+                    {canUserModifyRecord(currentUser, dest) && (
+                      <button
+                        type="button"
+                        data-testid={`btn-delete-dest-${dest.id}`}
+                        onClick={e => handleDeleteDestination(dest.id, e)}
+                        title="Delete Destination"
+                        className="p-2.5 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-300 border border-red-500/30 transition-all cursor-pointer shrink-0 flex items-center justify-center"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -3176,64 +3345,240 @@ export const MissionMode: React.FC = () => {
                 </div>
               </div>
 
-              {/* Direct Meeting Point & Destination Inputs + Interactive Route Map */}
-              <div className="space-y-3 pt-2 border-t border-slate-800">
+              {/* Meeting Point, Destination & Tea / Food Break with Google Maps Style Autocomplete */}
+              <div className="space-y-4 pt-2 border-t border-slate-800">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-mono text-cyan-400 uppercase mb-1">
-                      📍 MEETING POINT *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={createForm.meetingPoint}
-                      onChange={e => {
-                        const val = e.target.value;
-                        const resolved = resolveTrueWaypointCoordinates({ name: val }, INDIA_TOWN_PLACE_SUGGESTIONS);
-                        setCreateForm(prev => ({
-                          ...prev,
-                          meetingPoint: val,
-                          meetingPointLat: resolved?.latitude,
-                          meetingPointLng: resolved?.longitude
-                        }));
-                      }}
-                      placeholder="e.g., Bengaluru Hangar / Hebbal Flyover"
-                      className="w-full bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-400"
-                    />
+                  {/* Meeting Point Input with Google Maps Dropdown */}
+                  <div className="relative">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-mono font-bold text-cyan-400 uppercase">
+                        📍 MEETING POINT *
+                      </label>
+                      {createForm.meetingPointLat && createForm.meetingPointLng && (
+                        <span className="text-[10px] font-mono text-cyan-400/80">
+                          {createForm.meetingPointLat.toFixed(3)}°N, {createForm.meetingPointLng.toFixed(3)}°E
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required
+                        data-testid="input-create-meeting-point"
+                        value={createForm.meetingPoint}
+                        onFocus={() => handleLocationInputFocusOrChange('meeting', createForm.meetingPoint)}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setCreateForm(prev => ({
+                            ...prev,
+                            meetingPoint: val,
+                            meetingPointLat: undefined,
+                            meetingPointLng: undefined,
+                            meetingPointGmapsUrl: ''
+                          }));
+                          handleLocationInputFocusOrChange('meeting', val);
+                        }}
+                        placeholder="Search city, town, hangar, toll gate or paste GMaps link..."
+                        className="w-full bg-slate-900/90 border border-slate-700 rounded-lg pl-3 pr-8 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-400 font-sans"
+                      />
+                      {activeDropdownField === 'meeting' && isSearchingLocation && (
+                        <div className="w-3.5 h-3.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin absolute right-3 top-3.5" />
+                      )}
+                    </div>
+
+                    {/* Autocomplete Dropdown List for Meeting Point */}
+                    {activeDropdownField === 'meeting' && meetingSuggestions.length > 0 && (
+                      <div
+                        data-testid="dropdown-create-meeting-point"
+                        className="absolute z-50 left-0 right-0 mt-1 bg-[#050811] border border-cyan-500/40 rounded-xl shadow-2xl max-h-60 overflow-y-auto divide-y divide-slate-800"
+                      >
+                        <div className="px-3 py-1.5 bg-cyan-950/40 text-[10px] font-mono text-cyan-400 uppercase flex items-center justify-between">
+                          <span>Google Maps Suggestions</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveDropdownField(null)}
+                            className="hover:text-white"
+                          >
+                            ✕ Close
+                          </button>
+                        </div>
+                        {meetingSuggestions.map(item => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleSelectAutocompleteLocation('meeting', item)}
+                            className="w-full text-left p-2.5 hover:bg-slate-800/80 transition-colors flex items-start gap-2.5 text-xs text-slate-300"
+                          >
+                            <MapPin className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-white truncate">{item.name}</div>
+                              <div className="text-[11px] text-slate-400 font-mono truncate">
+                                {item.address || item.locality}
+                              </div>
+                              <div className="text-[10px] text-cyan-400 font-mono mt-0.5 uppercase">
+                                {item.category} • {item.latitude.toFixed(4)}°N, {item.longitude.toFixed(4)}°E
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-mono text-emerald-400 uppercase mb-1">
-                      🏁 DESTINATION *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={createForm.destination}
-                      onChange={e => {
-                        const val = e.target.value;
-                        const resolved = resolveTrueWaypointCoordinates({ name: val }, INDIA_TOWN_PLACE_SUGGESTIONS);
-                        setCreateForm(prev => ({
-                          ...prev,
-                          destination: val,
-                          destinationLat: resolved?.latitude,
-                          destinationLng: resolved?.longitude
-                        }));
-                      }}
-                      placeholder="e.g., Kolar / Nandi Hills / Coorg"
-                      className="w-full bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-400"
-                    />
+                  {/* Destination Input with Google Maps Dropdown */}
+                  <div className="relative">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-mono font-bold text-emerald-400 uppercase">
+                        🏁 DESTINATION *
+                      </label>
+                      {createForm.destinationLat && createForm.destinationLng && (
+                        <span className="text-[10px] font-mono text-emerald-400/80">
+                          {createForm.destinationLat.toFixed(3)}°N, {createForm.destinationLng.toFixed(3)}°E
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required
+                        data-testid="input-create-destination"
+                        value={createForm.destination}
+                        onFocus={() => handleLocationInputFocusOrChange('destination', createForm.destination)}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setCreateForm(prev => ({
+                            ...prev,
+                            destination: val,
+                            destinationLat: undefined,
+                            destinationLng: undefined,
+                            destinationGmapsUrl: ''
+                          }));
+                          handleLocationInputFocusOrChange('destination', val);
+                        }}
+                        placeholder="Search hill, town, city, summit or paste GMaps link..."
+                        className="w-full bg-slate-900/90 border border-slate-700 rounded-lg pl-3 pr-8 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-400 font-sans"
+                      />
+                      {activeDropdownField === 'destination' && isSearchingLocation && (
+                        <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin absolute right-3 top-3.5" />
+                      )}
+                    </div>
+
+                    {/* Autocomplete Dropdown List for Destination */}
+                    {activeDropdownField === 'destination' && destSuggestions.length > 0 && (
+                      <div
+                        data-testid="dropdown-create-destination"
+                        className="absolute z-50 left-0 right-0 mt-1 bg-[#050811] border border-emerald-500/40 rounded-xl shadow-2xl max-h-60 overflow-y-auto divide-y divide-slate-800"
+                      >
+                        <div className="px-3 py-1.5 bg-emerald-950/40 text-[10px] font-mono text-emerald-400 uppercase flex items-center justify-between">
+                          <span>Google Maps Suggestions</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveDropdownField(null)}
+                            className="hover:text-white"
+                          >
+                            ✕ Close
+                          </button>
+                        </div>
+                        {destSuggestions.map(item => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleSelectAutocompleteLocation('destination', item)}
+                            className="w-full text-left p-2.5 hover:bg-slate-800/80 transition-colors flex items-start gap-2.5 text-xs text-slate-300"
+                          >
+                            <MapPin className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-white truncate">{item.name}</div>
+                              <div className="text-[11px] text-slate-400 font-mono truncate">
+                                {item.address || item.locality}
+                              </div>
+                              <div className="text-[10px] text-emerald-400 font-mono mt-0.5 uppercase">
+                                {item.category} • {item.latitude.toFixed(4)}°N, {item.longitude.toFixed(4)}°E
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <span className="font-display font-bold text-sm text-cyan-400 uppercase tracking-wider flex items-center gap-2">
-                    <Route className="w-4 h-4" />
-                    <span>MISSION ROUTE MAP & WAYPOINTS PICKER</span>
-                  </span>
-                  <span className="font-mono text-xs text-slate-400">
-                    Search any town/city/hill or pick on map
-                  </span>
+                {/* Tea / Food Break Location Option with Google Maps Dropdown */}
+                <div className="p-3.5 rounded-xl bg-[#080D1A] border border-amber-500/30 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-xs font-mono font-bold text-amber-400 uppercase flex items-center gap-1.5">
+                      <Coffee className="w-4 h-4" />
+                      <span>☕ TEA / FOOD BREAK (OPTIONAL EN-ROUTE STOP)</span>
+                    </label>
+                    {createForm.teaFoodBreakLat && createForm.teaFoodBreakLng && (
+                      <span className="text-[10px] font-mono text-amber-300">
+                        Pinned: {createForm.teaFoodBreakLat.toFixed(3)}°N, {createForm.teaFoodBreakLng.toFixed(3)}°E
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type="text"
+                      data-testid="input-create-tea-break"
+                      value={createForm.teaFoodBreak}
+                      onFocus={() => handleLocationInputFocusOrChange('teaBreak', createForm.teaFoodBreak)}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCreateForm(prev => ({
+                          ...prev,
+                          teaFoodBreak: val,
+                          teaFoodBreakLat: undefined,
+                          teaFoodBreakLng: undefined,
+                          teaFoodBreakGmapsUrl: ''
+                        }));
+                        handleLocationInputFocusOrChange('teaBreak', val);
+                      }}
+                      placeholder="e.g. Indian Paratha Company / Nandi Upachar / Swathi Delicacy / Rasta Cafe..."
+                      className="w-full bg-slate-900/90 border border-slate-700 rounded-lg pl-3 pr-8 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400 font-sans"
+                    />
+                    {activeDropdownField === 'teaBreak' && isSearchingLocation && (
+                      <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin absolute right-3 top-3.5" />
+                    )}
+
+                    {/* Autocomplete Dropdown List for Tea / Food Break */}
+                    {activeDropdownField === 'teaBreak' && teaBreakSuggestions.length > 0 && (
+                      <div
+                        data-testid="dropdown-create-tea-break"
+                        className="absolute z-50 left-0 right-0 mt-1 bg-[#050811] border border-amber-500/40 rounded-xl shadow-2xl max-h-60 overflow-y-auto divide-y divide-slate-800"
+                      >
+                        <div className="px-3 py-1.5 bg-amber-950/40 text-[10px] font-mono text-amber-400 uppercase flex items-center justify-between">
+                          <span>Highway Cafes, Dhabas & Places</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveDropdownField(null)}
+                            className="hover:text-white"
+                          >
+                            ✕ Close
+                          </button>
+                        </div>
+                        {teaBreakSuggestions.map(item => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleSelectAutocompleteLocation('teaBreak', item)}
+                            className="w-full text-left p-2.5 hover:bg-slate-800/80 transition-colors flex items-start gap-2.5 text-xs text-slate-300"
+                          >
+                            <Coffee className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-white truncate">{item.name}</div>
+                              <div className="text-[11px] text-slate-400 font-mono truncate">
+                                {item.address || item.locality}
+                              </div>
+                              <div className="text-[10px] text-amber-400 font-mono mt-0.5 uppercase">
+                                {item.category} • {item.latitude.toFixed(4)}°N, {item.longitude.toFixed(4)}°E
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <MissionRouteMap

@@ -1,4 +1,4 @@
-import * as Phaser from 'phaser';
+import * as Phaser from '../engine/canvasPhaserShim';
 import {
   BattleMatchState,
   CombatHitEvent,
@@ -20,10 +20,6 @@ import {
 } from '../combat/combatEngine';
 import { SquadronAIController } from '../ai/aiController';
 import { gameAudio } from '../audio/gameAudio';
-import {
-  ArticulatedFighterPuppet,
-  extractCombatPoseFromState,
-} from '../animation/fighterRig';
 
 export interface BattleSceneConfig {
   playerFighterId: string;
@@ -36,8 +32,6 @@ export interface BattleSceneConfig {
   onPauseRequested: () => void;
 }
 
-const PUPPET_CANVAS_WIDTH = 520;
-const PUPPET_CANVAS_HEIGHT = 460;
 
 interface ArenaParticle {
   x: number;
@@ -60,10 +54,6 @@ export class BattleScene extends Phaser.Scene {
 
   private playerSprite?: Phaser.GameObjects.Image;
   private opponentSprite?: Phaser.GameObjects.Image;
-  private playerPuppet?: ArticulatedFighterPuppet;
-  private opponentPuppet?: ArticulatedFighterPuppet;
-  private playerCanvasTex?: Phaser.Textures.CanvasTexture;
-  private opponentCanvasTex?: Phaser.Textures.CanvasTexture;
 
   private playerShadow?: Phaser.GameObjects.Ellipse;
   private opponentShadow?: Phaser.GameObjects.Ellipse;
@@ -90,6 +80,7 @@ export class BattleScene extends Phaser.Scene {
     kick: false,
     dodge: false,
     special: false,
+    taunt: false,
   };
 
   private keys?: {
@@ -105,6 +96,7 @@ export class BattleScene extends Phaser.Scene {
     G: Phaser.Input.Keyboard.Key;
     H: Phaser.Input.Keyboard.Key;
     R: Phaser.Input.Keyboard.Key;
+    T: Phaser.Input.Keyboard.Key;
     SHIFT: Phaser.Input.Keyboard.Key;
     P: Phaser.Input.Keyboard.Key;
     ESC: Phaser.Input.Keyboard.Key;
@@ -119,15 +111,28 @@ export class BattleScene extends Phaser.Scene {
     this.playerDef = getFighterById(this.configData.playerFighterId);
     this.opponentDef = getFighterById(this.configData.opponentFighterId);
 
-    const pKey = `fighter_tex_${this.playerDef.id}`;
-    const oKey = `fighter_tex_${this.opponentDef.id}`;
+    const poses = [
+      'idle',
+      'punch',
+      'kick',
+      'jump',
+      'block',
+      'special',
+      'victory',
+      'defeat',
+    ] as const;
+    const loadFighter = (def: FighterDefinition) => {
+      for (const pose of poses) {
+        const texKey = `fighter_${def.id}_${pose}`;
+        if (!this.textures.exists(texKey)) {
+          const url = def.actionSprites?.[pose] || def.spriteAsset;
+          this.load.image(texKey, url);
+        }
+      }
+    };
 
-    if (!this.textures.exists(pKey)) {
-      this.load.image(pKey, this.playerDef.spriteAsset);
-    }
-    if (!this.textures.exists(oKey)) {
-      this.load.image(oKey, this.opponentDef.spriteAsset);
-    }
+    loadFighter(this.playerDef);
+    loadFighter(this.opponentDef);
   }
 
   public create(): void {
@@ -154,49 +159,19 @@ export class BattleScene extends Phaser.Scene {
       .ellipse(this.matchState.opponent.x, GROUND_Y + 4, 124, 24, 0x000000, 0.58)
       .setDepth(5);
 
-    const pKey = `fighter_tex_${this.playerDef.id}`;
-    const oKey = `fighter_tex_${this.opponentDef.id}`;
-
-    const pSource = this.textures.get(pKey).getSourceImage() as
-      | HTMLImageElement
-      | HTMLCanvasElement;
-    const oSource = this.textures.get(oKey).getSourceImage() as
-      | HTMLImageElement
-      | HTMLCanvasElement;
-
-    this.playerPuppet = new ArticulatedFighterPuppet(
-      pSource,
-      this.playerDef.id
-    );
-    this.opponentPuppet = new ArticulatedFighterPuppet(
-      oSource,
-      this.opponentDef.id
-    );
-
-    const pDynamicKey = `puppet_dyn_p1_${Date.now()}`;
-    const oDynamicKey = `puppet_dyn_ai_${Date.now()}`;
-
-    this.playerCanvasTex =
-      this.textures.createCanvas(
-        pDynamicKey,
-        PUPPET_CANVAS_WIDTH,
-        PUPPET_CANVAS_HEIGHT
-      ) || undefined;
-    this.opponentCanvasTex =
-      this.textures.createCanvas(
-        oDynamicKey,
-        PUPPET_CANVAS_WIDTH,
-        PUPPET_CANVAS_HEIGHT
-      ) || undefined;
+    const pIdleKey = `fighter_${this.playerDef.id}_idle`;
+    const oIdleKey = `fighter_${this.opponentDef.id}_idle`;
 
     this.playerSprite = this.add
-      .image(this.matchState.player.x, GROUND_Y + 28, pDynamicKey)
-      .setOrigin(0.44, 1)
+      .image(this.matchState.player.x, GROUND_Y, pIdleKey)
+      .setDisplaySize(272, 340)
+      .setOrigin(0.5, 0.9375)
       .setDepth(10);
 
     this.opponentSprite = this.add
-      .image(this.matchState.opponent.x, GROUND_Y + 28, oDynamicKey)
-      .setOrigin(0.44, 1)
+      .image(this.matchState.opponent.x, GROUND_Y, oIdleKey)
+      .setDisplaySize(272, 340)
+      .setOrigin(0.5, 0.9375)
       .setDepth(9);
     this.opponentSprite.setFlipX(true);
 
@@ -227,6 +202,7 @@ export class BattleScene extends Phaser.Scene {
         G: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G),
         H: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.H),
         R: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
+        T: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T),
         SHIFT: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
         P: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P),
         ESC: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC),
@@ -248,7 +224,7 @@ export class BattleScene extends Phaser.Scene {
     };
   }
 
-  public triggerTouchAction(action: 'punch' | 'kick' | 'dodge' | 'special'): void {
+  public triggerTouchAction(action: 'punch' | 'kick' | 'dodge' | 'special' | 'taunt'): void {
     this.oneShotActions[action] = true;
   }
 
@@ -270,11 +246,16 @@ export class BattleScene extends Phaser.Scene {
       (k ? Phaser.Input.Keyboard.JustDown(k.SHIFT) : false) ||
       this.externalInput.dodge ||
       this.oneShotActions.dodge;
+    const tauntJust =
+      (k ? Phaser.Input.Keyboard.JustDown(k.T) : false) ||
+      this.externalInput.taunt ||
+      this.oneShotActions.taunt;
 
     this.oneShotActions.punch = false;
     this.oneShotActions.kick = false;
     this.oneShotActions.dodge = false;
     this.oneShotActions.special = false;
+    this.oneShotActions.taunt = false;
 
     return {
       left: Boolean((k && (k.A.isDown || k.LEFT.isDown)) || this.externalInput.left),
@@ -286,6 +267,7 @@ export class BattleScene extends Phaser.Scene {
       kick: kickJust,
       dodge: dodgeJust,
       special: specialJust,
+      taunt: tauntJust,
     };
   }
 
@@ -366,9 +348,17 @@ export class BattleScene extends Phaser.Scene {
       });
     } else if (prevPhase === 'FIGHTING' && this.matchState.phase === 'KO_SEQUENCE') {
       const label = this.matchState.winReason === 'TIME_OUT' ? 'TIME OVER!' : 'K.O.!';
-      this.announceText?.setText(label).setColor('#f43f5e').setAlpha(1).setScale(1.5);
-      this.cameras.main.shake(380, 0.018);
-      this.bikeHeadlightPulseMs = 2000;
+      this.announceText?.setText(label).setColor('#f43f5e').setAlpha(1).setScale(1.75);
+      this.cameras.main.shake(420, 0.022);
+      this.bikeHeadlightPulseMs = 2400;
+      gameAudio.playAnnouncerVoice(label);
+      this.tweens.add({
+        targets: this.cameras.main,
+        zoom: 1.15,
+        duration: 280,
+        yoyo: true,
+        ease: 'Cubic.easeOut',
+      });
     }
 
     for (const ev of this.matchState.recentEvents) {
@@ -379,8 +369,6 @@ export class BattleScene extends Phaser.Scene {
     this.updateArticulatedFighter(
       this.matchState.player,
       this.playerSprite,
-      this.playerPuppet,
-      this.playerCanvasTex,
       this.playerShadow,
       this.playerDef,
       time
@@ -388,8 +376,6 @@ export class BattleScene extends Phaser.Scene {
     this.updateArticulatedFighter(
       this.matchState.opponent,
       this.opponentSprite,
-      this.opponentPuppet,
-      this.opponentCanvasTex,
       this.opponentShadow,
       this.opponentDef,
       time
@@ -437,6 +423,18 @@ export class BattleScene extends Phaser.Scene {
         this.spawnTarmacDust(c.x, GROUND_Y, 10, 0x38bdf8);
       } else if (c.action === 'JUMP') {
         this.spawnTarmacDust(c.x, GROUND_Y, 8, 0x94a3b8);
+      } else if (c.action === 'TAUNT') {
+        const def = isPlayer ? this.playerDef : this.opponentDef;
+        gameAudio.playTauntLaugh(def.id === 'FIGHTER_006');
+        this.spawnTaglineSpeechBubble(
+          c.x,
+          c.y - 210,
+          def.name,
+          this.getFighterTauntQuote(def.id),
+          '#facc15'
+        );
+        this.spawnImpactSparks(c.x, c.y - 120, 16, 0xfacc15);
+        this.spawnFloatingBanner(c.x, c.y - 50, '+15% METER! READY TO RUMBLE!', '#38bdf8');
       } else if (c.action === 'SPECIAL') {
         this.bikeHeadlightPulseMs = 1200;
         this.spawnTarmacDust(c.x, GROUND_Y, 14, 0xfacc15);
@@ -544,7 +542,7 @@ export class BattleScene extends Phaser.Scene {
   private handleCombatHitEvent(ev: CombatHitEvent): void {
     if (ev.dodged) {
       gameAudio.playDodgeWhoosh();
-      this.spawnFloatingBanner(ev.impactX, ev.impactY, 'EVADED!', '#38bdf8');
+      this.spawnFloatingBanner(ev.impactX, ev.impactY, '💨 EVADED!', '#38bdf8');
       return;
     }
 
@@ -557,7 +555,7 @@ export class BattleScene extends Phaser.Scene {
         this.spawnFloatingBanner(
           ev.impactX,
           ev.impactY - 20,
-          'GUARD BREAK!',
+          '💥 GUARD BROKEN!',
           '#f43f5e'
         );
       } else {
@@ -566,13 +564,15 @@ export class BattleScene extends Phaser.Scene {
         this.spawnFloatingBanner(
           ev.impactX,
           ev.impactY,
-          `BLOCKED -${ev.damage}`,
+          `🛡️ BLOCKED -${ev.damage}`,
           '#94a3b8'
         );
         this.cameras.main.shake(90, 0.004);
       }
       return;
     }
+
+    gameAudio.playComicPop();
 
     if (ev.comboCount && ev.comboCount >= 2) {
       gameAudio.playComboStinger(ev.comboCount);
@@ -583,43 +583,46 @@ export class BattleScene extends Phaser.Scene {
       this.spawnFloatingBanner(
         ev.impactX,
         ev.impactY - 58,
-        'COUNTER HIT!',
+        '⚡ COUNTER HIT! DENIED!',
         '#f43f5e'
       );
     }
 
+    const comicWords = ['POW! 💥', 'BAM! 👊', 'WHAM! ⚡', 'CRACK! 🦵', 'SMACK! 💢'];
+    const randomComicWord = comicWords[Math.floor(Math.random() * comicWords.length)];
+
     if (ev.attackType === 'SPECIAL') {
       gameAudio.playSpecialAttack();
-      this.hitstopMs = 95;
-      this.bikeHeadlightPulseMs = 1500;
-      this.cameras.main.shake(260, 0.014);
-      this.spawnImpactSparks(ev.impactX, ev.impactY, 28, 0xfacc15);
+      this.hitstopMs = 120;
+      this.bikeHeadlightPulseMs = 1600;
+      this.cameras.main.shake(280, 0.018);
+      this.spawnImpactSparks(ev.impactX, ev.impactY, 32, 0xfacc15);
       this.spawnFloatingBanner(
         ev.impactX,
-        ev.impactY - 30,
-        `${ev.specialName || 'SPECIAL'}! -${ev.damage}`,
+        ev.impactY - 35,
+        `🔥 ${ev.specialName || 'SUPER'}! -${ev.damage}`,
         '#facc15'
       );
     } else if (ev.attackType === 'KICK') {
       gameAudio.playKickHit();
-      this.hitstopMs = 55;
-      this.cameras.main.shake(140, 0.008);
-      this.spawnImpactSparks(ev.impactX, ev.impactY, 16, 0xfb923c);
+      this.hitstopMs = 60;
+      this.cameras.main.shake(140, 0.009);
+      this.spawnImpactSparks(ev.impactX, ev.impactY, 18, 0xfb923c);
       this.spawnFloatingBanner(
         ev.impactX,
         ev.impactY,
-        `${ev.strikeCallout || 'KICK!'} -${ev.damage}`,
+        `${ev.strikeCallout || randomComicWord} -${ev.damage}`,
         '#fb923c'
       );
     } else {
       gameAudio.playPunchHit();
-      this.hitstopMs = 38;
-      this.cameras.main.shake(95, 0.005);
-      this.spawnImpactSparks(ev.impactX, ev.impactY, 12, 0x38bdf8);
+      this.hitstopMs = 42;
+      this.cameras.main.shake(100, 0.006);
+      this.spawnImpactSparks(ev.impactX, ev.impactY, 14, 0x38bdf8);
       this.spawnFloatingBanner(
         ev.impactX,
         ev.impactY,
-        `${ev.strikeCallout || 'PUNCH!'} -${ev.damage}`,
+        `${ev.strikeCallout || randomComicWord} -${ev.damage}`,
         '#ffffff'
       );
     }
@@ -633,22 +636,24 @@ export class BattleScene extends Phaser.Scene {
   ): void {
     const label = this.add
       .text(x, y, text, {
-        fontFamily: 'Orbitron, Rajdhani, sans-serif',
-        fontSize: '22px',
-        fontStyle: 'bold',
+        fontFamily: 'Orbitron, Rajdhani, Impact, sans-serif',
+        fontSize: '24px',
+        fontStyle: '900',
         color,
         stroke: '#050811',
-        strokeThickness: 5,
+        strokeThickness: 6,
       })
       .setOrigin(0.5)
-      .setDepth(25);
+      .setScale(0.8)
+      .setDepth(26);
 
     this.tweens.add({
       targets: label,
+      scale: 1.15,
       y: y - 55,
       alpha: 0,
-      duration: 680,
-      ease: 'Cubic.easeOut',
+      duration: 720,
+      ease: 'Back.easeOut',
       onComplete: () => label.destroy(),
     });
   }
@@ -712,39 +717,81 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  private getPoseForAction(action: FighterActionState): string {
+    switch (action) {
+      case 'PUNCH':
+        return 'punch';
+      case 'KICK':
+        return 'kick';
+      case 'JUMP':
+        return 'jump';
+      case 'BLOCK':
+      case 'HIT_STUN':
+        return 'block';
+      case 'SPECIAL':
+        return 'special';
+      case 'TAUNT':
+      case 'VICTORY':
+        return 'victory';
+      case 'DEFEAT':
+      case 'KNOCKDOWN':
+        return 'defeat';
+      case 'IDLE':
+      case 'WALK_FORWARD':
+      case 'WALK_BACKWARD':
+      case 'DODGE':
+      default:
+        return 'idle';
+    }
+  }
+
+  private getFighterTauntQuote(fighterId: string): string {
+    const quotes: Record<string, string> = {
+      FIGHTER_001: "True innovation rewards the brave! Eat pure torque! 💥",
+      FIGHTER_002: "Telemetry says your guard is 100% cooked! 🎯",
+      FIGHTER_003: "Catch me if your radar allows! Too slow! 💨",
+      FIGHTER_004: "Redline mode! I don't believe in brakes! 🏎️🔥",
+      FIGHTER_005: "We will get back to you later! ⚡💅",
+      FIGHTER_006: "I put police case on you! Belly bounce!! 🐧💥",
+      FIGHTER_007: "I turn around and SWAPP! 🎖️",
+      FIGHTER_008: "Error 404: Hit not found! Shadows rule! 🥷",
+      FIGHTER_009: "Hold my chai! Chettan's thunder incoming! ☕⚡",
+      FIGHTER_010: "Volt runner never slows down! ⚡",
+      FIGHTER_011: "Valkyrie strike, clean and swift! 🪽",
+      FIGHTER_012: "You can't move a titanium titan! 🛡️",
+      FIGHTER_013: "Drifting through your punches! 🌀",
+    };
+    return quotes[fighterId] || "Is that all you got?! Let's dance!";
+  }
+
   private updateArticulatedFighter(
     state: CombatantRuntimeState,
     sprite: Phaser.GameObjects.Image | undefined,
-    puppet: ArticulatedFighterPuppet | undefined,
-    canvasTex: Phaser.Textures.CanvasTexture | undefined,
     shadow: Phaser.GameObjects.Ellipse | undefined,
     def: FighterDefinition,
     time: number
   ): void {
-    if (!sprite || !puppet || !canvasTex || !shadow) return;
+    if (!sprite || !shadow) return;
 
     const heightOffGround = Math.max(0, GROUND_Y - state.y);
     const shadowScale = Math.max(0.45, 1 - heightOffGround / 380);
     shadow.setPosition(state.x, GROUND_Y + 4);
     shadow.setScale(shadowScale);
 
-    // Compute exact articulated limb angles & physical punch/kick extensions
-    const pose = extractCombatPoseFromState(state, time);
-    const ctx = canvasTex.getContext();
-    ctx.clearRect(0, 0, PUPPET_CANVAS_WIDTH, PUPPET_CANVAS_HEIGHT);
-    puppet.renderPose(
-      ctx,
-      PUPPET_CANVAS_WIDTH,
-      PUPPET_CANVAS_HEIGHT,
-      pose,
-      def.accentColor,
-      def.secondaryColor
-    );
-    canvasTex.refresh();
+    const pose = this.getPoseForAction(state.action);
+    const texKey = `fighter_${def.id}_${pose}`;
+    if (this.textures.exists(texKey) && sprite.texture.key !== texKey) {
+      sprite.setTexture(texKey);
+    }
 
+    sprite.setDisplaySize(272, 340);
+    sprite.setOrigin(0.5, 0.9375);
+    sprite.setPosition(state.x, state.y);
     sprite.setFlipX(state.facing === -1);
-    sprite.setOrigin(state.facing === 1 ? 0.44 : 0.56, 1);
-    sprite.setPosition(state.x, state.y + 28);
+
+    if (state.action === 'IDLE' && heightOffGround < 5) {
+      sprite.y += Math.sin(time * 0.005) * 1.5;
+    }
 
     if (state.action === 'HIT_STUN') {
       sprite.setTint(0xff9999);

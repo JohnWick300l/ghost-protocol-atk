@@ -20,6 +20,11 @@ import { GlobalSearch } from './components/GlobalSearch';
 import { PilotWelcomeScreen } from './components/PilotWelcomeScreen';
 import { AvionicsPageTransition, AnimatePresence, motion } from './components/AvionicsTransition';
 import { Ride, EmergencyRequest, ProblemReport, DiscussionPost, ChargingStation, NotificationItem } from './types';
+import {
+  openPhoneDialer,
+  openMailClient,
+  openInUpiApp
+} from './utils/rules';
 import { Shield, Radio, Lock, AlertTriangle, X } from 'lucide-react';
 
 const SquadronShowdownGame = React.lazy(() => import('./games/squadron-showdown/SquadronShowdownGame'));
@@ -51,6 +56,7 @@ const AppContent: React.FC = () => {
 
   const [tabHistory, setTabHistory] = useState<string[]>(['dashboard']);
   const [showExitToast, setShowExitToast] = useState<boolean>(false);
+  const [hasCompletedInitialBoot, setHasCompletedInitialBoot] = useState<boolean>(false);
   const lastBackPressRef = useRef<number>(0);
 
   const [currentTab, setCurrentTabState] = useState<string>(() => {
@@ -67,7 +73,7 @@ const AppContent: React.FC = () => {
     return 'dashboard';
   });
 
-  // Initialize initial history entry
+  // Initialize initial history entry with a Root Guard so Android Back button can never close the app unexpectedly
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -77,8 +83,15 @@ const AppContent: React.FC = () => {
           ? 'squadron-showdown'
           : params.get('route') || sessionStorage.getItem('ghost_protocol_active_tab') || 'dashboard';
 
+      // Always establish a root_guard entry at the base of the history stack
       window.history.replaceState(
-        { tab: initialTab, isRoot: initialTab === 'dashboard' },
+        { tab: 'root_guard', isGuard: true },
+        '',
+        window.location.href
+      );
+      // Immediately push the active tab entry so history.length >= 2 and Android hardware back button always fires popstate
+      window.history.pushState(
+        { tab: initialTab, isGuard: false, isRoot: initialTab === 'dashboard' },
         '',
         window.location.href
       );
@@ -87,37 +100,82 @@ const AppContent: React.FC = () => {
     }
   }, []);
 
-  const setCurrentTab = (tab: string, isBackAction = false) => {
-    setCurrentTabState(prev => {
-      if (prev !== tab && !isBackAction) {
-        setTabHistory(h => [...h, prev]);
+  // Global Android WebView scheme guard: intercepts any <a href="tel:...">, <a href="mailto:...">,
+  // or <a href="upi://..."> across the entire app so MainActivity.java receives intent:// URIs
+  // instead of crashing with net::ERR_UNKNOWN_URL_SCHEME.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleGlobalAnchorScheme = (e: MouseEvent) => {
+      if (e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const rawHref = (anchor.getAttribute('href') || '').trim();
+      if (!rawHref) return;
+
+      if (/^tel:/i.test(rawHref)) {
+        e.preventDefault();
+        openPhoneDialer(rawHref);
+      } else if (/^mailto:/i.test(rawHref)) {
+        e.preventDefault();
+        openMailClient(rawHref);
+      } else if (/^(upi|tez|phonepe|paytmmp):\/\//i.test(rawHref)) {
+        e.preventDefault();
+        const lower = rawHref.toLowerCase();
+        const app = lower.startsWith('tez://')
+          ? 'gpay'
+          : lower.startsWith('phonepe://')
+          ? 'phonepe'
+          : lower.startsWith('paytmmp://')
+          ? 'paytm'
+          : 'upi';
+        openInUpiApp(rawHref, app);
       }
-      if (typeof window !== 'undefined') {
-        try {
-          sessionStorage.setItem('ghost_protocol_active_tab', tab);
-          if (prev !== tab && !isBackAction) {
-            const url = new URL(window.location.href);
-            if (tab === 'squadron-showdown' || tab === 'squadron_showdown') {
-              url.pathname = '/squadron-showdown';
+    };
+
+    document.addEventListener('click', handleGlobalAnchorScheme);
+    return () => document.removeEventListener('click', handleGlobalAnchorScheme);
+  }, []);
+
+  const setCurrentTab = (tab: string, isBackAction = false) => {
+    if (tab === currentTab) return;
+
+    setHasCompletedInitialBoot(true);
+
+    if (!isBackAction) {
+      setTabHistory(h => [...h, currentTab]);
+    }
+
+    setCurrentTabState(tab);
+
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('ghost_protocol_active_tab', tab);
+        if (!isBackAction) {
+          const url = new URL(window.location.href);
+          if (tab === 'squadron-showdown' || tab === 'squadron_showdown') {
+            url.pathname = '/squadron-showdown';
+            url.searchParams.delete('route');
+          } else {
+            if (url.pathname === '/squadron-showdown') {
+              url.pathname = '/';
+            }
+            if (tab === 'dashboard') {
               url.searchParams.delete('route');
             } else {
-              if (url.pathname === '/squadron-showdown') {
-                url.pathname = '/';
-              }
-              if (tab === 'dashboard') {
-                url.searchParams.delete('route');
-              } else {
-                url.searchParams.set('route', tab);
-              }
+              url.searchParams.set('route', tab);
             }
-            window.history.pushState({ tab, isRoot: tab === 'dashboard' }, '', url.toString());
           }
-        } catch {
-          // Ignore storage or history errors
+          window.history.pushState(
+            { tab, isGuard: false, isRoot: tab === 'dashboard' },
+            '',
+            url.toString()
+          );
         }
+      } catch {
+        // Ignore storage or history errors
       }
-      return tab;
-    });
+    }
   };
 
   const [jetEngineerTab, setJetEngineerTab] = useState<'ask' | 'train'>('ask');
@@ -149,14 +207,16 @@ const AppContent: React.FC = () => {
       setShowWelcome(false);
       return;
     }
-    if (tabHistory.length > 0 && tabHistory[tabHistory.length - 1] !== currentTab) {
-      const prevTab = tabHistory[tabHistory.length - 1];
-      setTabHistory(h => h.slice(0, h.length - 1));
-      setCurrentTab(prevTab, true);
-    } else if (typeof window !== 'undefined' && window.history.length > 1) {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
       window.history.back();
     } else {
-      setCurrentTab('dashboard', true);
+      if (tabHistory.length > 0 && tabHistory[tabHistory.length - 1] !== currentTab) {
+        const prevTab = tabHistory[tabHistory.length - 1];
+        setTabHistory(h => h.slice(0, h.length - 1));
+        setCurrentTab(prevTab, true);
+      } else {
+        setCurrentTab('dashboard', true);
+      }
     }
   };
 
@@ -165,27 +225,111 @@ const AppContent: React.FC = () => {
     if (typeof window === 'undefined') return;
 
     const handlePopState = (e: PopStateEvent) => {
-      // 1. Close active overlays first
+      // 1. Close active overlays first without leaving the page
       if (searchOpen) {
         setSearchOpen(false);
+        try {
+          window.history.pushState(
+            { tab: currentTab, isGuard: false, isRoot: currentTab === 'dashboard' },
+            '',
+            window.location.href
+          );
+        } catch {}
         return;
       }
       if (authModalOpen) {
         closeAuthModal();
+        try {
+          window.history.pushState(
+            { tab: currentTab, isGuard: false, isRoot: currentTab === 'dashboard' },
+            '',
+            window.location.href
+          );
+        } catch {}
         return;
       }
       if (showWelcome) {
         setShowWelcome(false);
+        try {
+          window.history.pushState(
+            { tab: currentTab, isGuard: false, isRoot: currentTab === 'dashboard' },
+            '',
+            window.location.href
+          );
+        } catch {}
         return;
       }
 
-      // 2. Read target tab from history state or query params
+      // 2. Check if we reached the root guard (base of browser history)
+      const isGuardHit = e.state?.isGuard === true || e.state?.tab === 'root_guard';
+
+      if (isGuardHit) {
+        // If user was on a subpage (e.g. Jet Engineer, Priority Issues, Charging, etc.)
+        // Never exit the app: navigate back to the previous tab or home dashboard!
+        if (currentTab !== 'dashboard') {
+          const prevTab =
+            tabHistory.length > 0 && tabHistory[tabHistory.length - 1] !== currentTab
+              ? tabHistory[tabHistory.length - 1]
+              : 'dashboard';
+
+          setHasCompletedInitialBoot(true);
+          setCurrentTabState(prevTab);
+          setTabHistory(h => (h.length > 0 ? h.slice(0, h.length - 1) : ['dashboard']));
+          try {
+            sessionStorage.setItem('ghost_protocol_active_tab', prevTab);
+            const url = new URL(window.location.href);
+            if (prevTab === 'dashboard') {
+              url.pathname = '/';
+              url.searchParams.delete('route');
+            } else {
+              url.searchParams.set('route', prevTab);
+            }
+            // Re-establish active entry so history stays resilient
+            window.history.pushState(
+              { tab: prevTab, isGuard: false, isRoot: prevTab === 'dashboard' },
+              '',
+              url.toString()
+            );
+          } catch {}
+          return;
+        }
+
+        // We are on 'dashboard' (Root of the App).
+        // Handle Android Double-Tap Back to Exit
+        const now = Date.now();
+        if (now - lastBackPressRef.current < 2000) {
+          // Second back press within 2 seconds: allow exit
+          setShowExitToast(false);
+        } else {
+          // First back press at root: DO NOT EXIT THE APP.
+          // Show tactical exit warning toast, and re-push dashboard state to restore guard!
+          lastBackPressRef.current = now;
+          setShowExitToast(true);
+          setTimeout(() => setShowExitToast(false), 2200);
+
+          try {
+            const url = new URL(window.location.href);
+            url.pathname = '/';
+            url.searchParams.delete('route');
+            window.history.pushState(
+              { tab: 'dashboard', isGuard: false, isRoot: true },
+              '',
+              url.toString()
+            );
+          } catch {}
+        }
+        return;
+      }
+
+      // 3. Regular History Navigation between subpages
       const stateTab = e.state?.tab;
       const params = new URLSearchParams(window.location.search);
-      const fromPath = window.location.pathname === '/squadron-showdown' ? 'squadron-showdown' : null;
+      const fromPath =
+        window.location.pathname === '/squadron-showdown' ? 'squadron-showdown' : null;
       const targetTab = stateTab || fromPath || params.get('route');
 
       if (targetTab && targetTab !== currentTab) {
+        setHasCompletedInitialBoot(true);
         setCurrentTabState(targetTab);
         setTabHistory(h => (h.length > 0 ? h.slice(0, h.length - 1) : ['dashboard']));
         try {
@@ -194,27 +338,39 @@ const AppContent: React.FC = () => {
         return;
       }
 
-      // 3. If currently not on dashboard, fallback to dashboard
+      // 4. Fallback if targetTab is missing or matches currentTab but we are on a subpage
       if (currentTab !== 'dashboard') {
-        setCurrentTabState('dashboard');
+        const prevTab =
+          tabHistory.length > 0 && tabHistory[tabHistory.length - 1] !== currentTab
+            ? tabHistory[tabHistory.length - 1]
+            : 'dashboard';
+
+        setHasCompletedInitialBoot(true);
+        setCurrentTabState(prevTab);
+        setTabHistory(h => (h.length > 0 ? h.slice(0, h.length - 1) : ['dashboard']));
         try {
-          sessionStorage.setItem('ghost_protocol_active_tab', 'dashboard');
+          sessionStorage.setItem('ghost_protocol_active_tab', prevTab);
           const url = new URL(window.location.href);
-          url.pathname = '/';
-          url.searchParams.delete('route');
-          window.history.replaceState({ tab: 'dashboard', isRoot: true }, '', url.toString());
+          if (prevTab === 'dashboard') {
+            url.pathname = '/';
+            url.searchParams.delete('route');
+          } else {
+            url.searchParams.set('route', prevTab);
+          }
+          window.history.replaceState(
+            { tab: prevTab, isGuard: false, isRoot: prevTab === 'dashboard' },
+            '',
+            url.toString()
+          );
         } catch {}
         return;
       }
 
-      // 4. We are on 'dashboard' (Root of the App).
-      // Handle Android Double-Tap Back to Exit
+      // 5. If we are on dashboard with no target tab, treat as root back press
       const now = Date.now();
       if (now - lastBackPressRef.current < 2000) {
-        // Second back press within 2 seconds: allow native browser back / exit
         setShowExitToast(false);
       } else {
-        // First back press at root: catch back button, show toast notification, re-push root state
         lastBackPressRef.current = now;
         setShowExitToast(true);
         setTimeout(() => setShowExitToast(false), 2200);
@@ -223,14 +379,18 @@ const AppContent: React.FC = () => {
           const url = new URL(window.location.href);
           url.pathname = '/';
           url.searchParams.delete('route');
-          window.history.pushState({ tab: 'dashboard', isRoot: true }, '', url.toString());
+          window.history.pushState(
+            { tab: 'dashboard', isGuard: false, isRoot: true },
+            '',
+            url.toString()
+          );
         } catch {}
       }
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [currentTab, searchOpen, authModalOpen, showWelcome, closeAuthModal]);
+  }, [currentTab, tabHistory, searchOpen, authModalOpen, showWelcome, closeAuthModal]);
 
   const handleTakeOffStart = () => {
     setIsTakingOff(true);
@@ -528,9 +688,26 @@ const AppContent: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#020305] flex flex-col items-center justify-center font-mono text-xs text-[#64748B] space-y-3">
-        <div className="w-8 h-8 rounded-full border border-[#1E2D42] border-t-[#38BDF8] animate-spin"></div>
-        <div>INITIALIZING GHOST PROTOCOL TELEMETRY LINK...</div>
+      <div className="min-h-screen bg-[#010204] flex flex-col items-center justify-center font-mono text-xs text-[#94A3B8] p-6 relative overflow-hidden select-none">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(56,189,248,0.08)_0%,rgba(1,2,4,0.98)_70%)] pointer-events-none" />
+        <div className="relative z-10 flex flex-col items-center space-y-5 text-center">
+          <div className="relative w-16 h-16 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full border-2 border-[#1E2D42] border-t-[#38BDF8] border-r-[#38BDF8]/40 animate-spin" />
+            <div className="w-10 h-10 rounded-full bg-[#030712] border border-[#38BDF8]/40 flex items-center justify-center shadow-[0_0_20px_rgba(56,189,248,0.25)]">
+              <Shield className="w-5 h-5 text-[#38BDF8] animate-pulse" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="font-sans font-black text-sm tracking-[0.25em] text-[#F8FAFC] uppercase">
+              GHOST PROTOCOL
+            </div>
+            <div className="font-mono text-[10px] tracking-[0.18em] text-[#38BDF8] uppercase font-bold flex items-center justify-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8] animate-ping" />
+              <span>INITIALIZING TELEMETRY LINK...</span>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -559,7 +736,7 @@ const AppContent: React.FC = () => {
       )}
 
       <div
-        className={`min-h-screen bg-[#020305] text-[#F8FAFC] flex flex-col font-sans transition-[opacity,transform] duration-300 ease-out ${
+        className={`min-h-[100dvh] bg-[#020305] text-[#F8FAFC] flex flex-col font-sans transition-[opacity,transform] duration-300 ease-out ${
           showWelcome && !isTakingOff
             ? 'opacity-0 pointer-events-none'
             : 'opacity-100 pointer-events-auto'
@@ -570,7 +747,7 @@ const AppContent: React.FC = () => {
       >
         {/* Navigation Header - Rendered on all operational sub-systems with enter/exit animation */}
         <AnimatePresence initial={false}>
-          {currentTab !== 'dashboard' && currentTab !== 'squadron-showdown' && currentTab !== 'squadron_showdown' && (
+          {currentTab !== 'dashboard' && currentTab !== 'system_controls' && currentTab !== 'squadron-showdown' && currentTab !== 'squadron_showdown' && (
             <motion.div
               key="operational-nav-header"
               initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -10 }}
@@ -655,7 +832,7 @@ const AppContent: React.FC = () => {
         )}
 
       {/* Main Viewport Container with Directional Enter/Exit Avionics Transition */}
-      <main className={`flex-1 w-full mx-auto ${currentTab === 'dashboard' || currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown' ? 'p-0 max-w-none' : 'max-w-7xl px-4 sm:px-6 py-6'}`}>
+      <main className={`flex-1 w-full mx-auto ${currentTab === 'dashboard' || currentTab === 'system_controls' || currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown' ? 'p-0 max-w-none' : 'max-w-7xl px-4 sm:px-6 py-6'}`}>
         <AvionicsPageTransition activeKey={currentTab} reducedMotion={reducedMotion}>
           {(currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown') && (
             <React.Suspense
@@ -668,13 +845,15 @@ const AppContent: React.FC = () => {
               <SquadronShowdownGame onExitToGhostProtocol={() => setCurrentTab('dashboard')} />
             </React.Suspense>
           )}
-          {currentTab === 'dashboard' && (
+          {(currentTab === 'dashboard' || currentTab === 'system_controls') && (
             <CockpitDashboard
               rides={rides}
               emergencies={emergencies}
               problems={problems}
               discussions={discussions}
               chargingStations={chargingStations}
+              initialShowSystemControls={currentTab === 'system_controls'}
+              skipBootAnimation={hasCompletedInitialBoot}
               onNavigate={(tabId, options) => {
                 if (options?.jetMode) {
                   setJetEngineerTab(options.jetMode);
@@ -744,24 +923,26 @@ const AppContent: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Technical Footer */}
-      <footer className="mt-auto border-t border-[#121B29] bg-[#010204] py-6 px-4 sm:px-6 text-xs font-mono text-[#64748B]">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-6 h-6 rounded bg-[#070B12] border border-[#1E2D42] flex items-center justify-center text-[#38BDF8]">
-              <Shield className="w-3.5 h-3.5 text-[#38BDF8]" />
+      {/* Technical Footer (Rendered on sub-pages only; Home Screen is full-cockpit) */}
+      {currentTab !== 'dashboard' && currentTab !== 'system_controls' && currentTab !== 'squadron-showdown' && currentTab !== 'squadron_showdown' && (
+        <footer className="mt-auto border-t border-[#121B29] bg-[#010204] py-6 px-4 sm:px-6 text-xs font-mono text-[#64748B]">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-6 h-6 rounded bg-[#070B12] border border-[#1E2D42] flex items-center justify-center text-[#38BDF8]">
+                <Shield className="w-3.5 h-3.5 text-[#38BDF8]" />
+              </div>
+              <div>
+                <div className="text-[#E2E8F0] font-bold">GHOST PROTOCOL</div>
+                <div className="text-[10px] text-[#64748B]">Ghost Protocol Digital Operations</div>
+              </div>
             </div>
-            <div>
-              <div className="text-[#E2E8F0] font-bold">GHOST PROTOCOL</div>
-              <div className="text-[10px] text-[#64748B]">Ghost Protocol Digital Operations</div>
-            </div>
-          </div>
 
-          <div className="text-center md:text-right text-[11px] leading-relaxed max-w-xl text-[#94A3B8]">
-            Independent private owner platform for verified Ultraviolette motorcycle operators. Not an official Ultraviolette Automotive Pvt. Ltd. manufacturer platform.
+            <div className="text-center md:text-right text-[11px] leading-relaxed max-w-xl text-[#94A3B8]">
+              Independent private owner platform for verified Ultraviolette motorcycle operators. Not an official Ultraviolette Automotive Pvt. Ltd. manufacturer platform.
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
     </>
   );

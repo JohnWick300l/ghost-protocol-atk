@@ -21,7 +21,9 @@ import {
   Activity,
   Layers,
   X,
-  Home
+  Home,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
@@ -121,7 +123,9 @@ export const Navigation: React.FC<NavigationProps> = ({
               OFFLINE SYNC: {queuedActionCount} ACTION(S) QUEUED
             </span>
           )}
-          <span className="text-[#38BDF8]">AVIONICS: ONLINE</span>
+          <span className={isOffline ? 'text-[#EF4444] font-semibold' : 'text-[#38BDF8]'}>
+            AVIONICS: {isOffline ? 'OFFLINE (LOCAL CACHE)' : 'ONLINE'}
+          </span>
         </div>
         <div className="flex items-center space-x-3">
           <button
@@ -153,20 +157,20 @@ export const Navigation: React.FC<NavigationProps> = ({
       </div>
 
       {/* Primary Header Row */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between gap-2 h-14">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 flex items-center justify-between gap-1.5 sm:gap-2 h-14">
         {/* Back Button & Brand */}
-        <div className="flex items-center space-x-2.5 shrink-0">
+        <div className="flex items-center space-x-2 shrink-0 min-w-0">
           <BackButton onBack={onGoBack} label="BACK" />
 
           <button
             onClick={() => handleNavClick('dashboard')}
-            className="flex items-center space-x-2 text-left group"
+            className="flex items-center space-x-1.5 sm:space-x-2 text-left group min-w-0"
           >
             <div className="w-8 h-8 rounded bg-[#070B12] border border-[#1E2D42] flex items-center justify-center text-[#38BDF8] group-hover:border-[#38BDF8] transition-colors shrink-0">
               <Shield className="w-4 h-4 text-[#38BDF8]" />
             </div>
-            <div>
-              <div className="font-mono text-xs sm:text-sm font-bold tracking-wider text-[#F8FAFC] flex items-center gap-1.5 whitespace-nowrap">
+            <div className="hidden sm:block min-w-0">
+              <div className="font-mono text-sm sm:text-base font-bold tracking-wider text-[#F8FAFC] flex items-center gap-1.5 whitespace-nowrap">
                 <span>GHOST PROTOCOL</span>
                 <span className="hidden 2xl:inline-block text-[10px] font-mono px-1.5 py-0.2 bg-[#090F1A] border border-[#1E2D42] text-[#38BDF8] rounded">
                   PILOT NETWORK
@@ -174,6 +178,35 @@ export const Navigation: React.FC<NavigationProps> = ({
               </div>
             </div>
           </button>
+
+          {/* Network Mode Cool Icon Indicator */}
+          <div
+            data-testid="network-mode-indicator"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wider transition-all duration-300 shadow-sm shrink-0 ${
+              isOffline
+                ? 'bg-[#1C1203]/90 border-[#F59E0B]/60 text-[#F59E0B] shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                : 'bg-[#021A1A]/90 border-[#10B981]/60 text-[#10B981] shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+            }`}
+            title={isOffline ? 'Running in Offline Mode (Cached Telemetry)' : 'Running in Online Mode (Live Network Link)'}
+          >
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span
+                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  isOffline ? 'bg-[#F59E0B]' : 'bg-[#10B981]'
+                }`}
+              />
+              <span
+                className={`relative inline-flex rounded-full h-2 w-2 ${
+                  isOffline ? 'bg-[#F59E0B]' : 'bg-[#10B981]'
+                }`}
+              />
+            </span>
+            {isOffline ? (
+              <span className="hidden sm:inline">OFFLINE</span>
+            ) : (
+              <span className="hidden sm:inline">ONLINE</span>
+            )}
+          </div>
         </div>
 
         {/* Desktop Navigation Links */}
@@ -344,14 +377,14 @@ export const Navigation: React.FC<NavigationProps> = ({
                 playTacticalClick();
                 setShowPersonaMenu(!showPersonaMenu);
               }}
-              className="flex items-center space-x-2 px-2.5 py-1.5 rounded bg-[#13161A] border border-[#282D34] hover:border-[#414851] text-xs font-mono transition-colors"
+              className="flex items-center space-x-1.5 px-2 py-1.5 rounded bg-[#13161A] border border-[#282D34] hover:border-[#414851] text-xs font-mono transition-colors"
             >
-              <div className={`w-2 h-2 rounded-full ${currentUser ? 'bg-[#42B883]' : 'bg-[#729BCB]'}`}></div>
-              <span className="max-w-[100px] sm:max-w-[120px] truncate font-medium text-[#F1F3F5]">
+              <div className={`w-2 h-2 rounded-full shrink-0 ${currentUser ? 'bg-[#42B883]' : 'bg-[#729BCB]'}`}></div>
+              <span className="max-w-[68px] sm:max-w-[120px] truncate font-medium text-[#F1F3F5]">
                 {currentUser ? currentUser.fullName.split(' ')[0] : 'VISITOR'}
               </span>
               <span
-                className={`text-[9px] px-1 py-0.2 rounded uppercase ${
+                className={`hidden sm:inline-block text-[9px] px-1 py-0.2 rounded uppercase ${
                   !currentUser
                     ? 'bg-[#729BCB]/15 text-[#729BCB] border border-[#729BCB]/30'
                     : currentUser.verificationStatus === 'verified'
@@ -365,7 +398,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                   ? 'VERIFIED'
                   : 'PENDING'}
               </span>
-              <ChevronDown className="w-3 h-3 text-[#707883]" />
+              <ChevronDown className="w-3 h-3 text-[#707883] shrink-0" />
             </button>
 
             {/* Persona Switcher Menu with Enter/Exit Animation */}
@@ -477,11 +510,11 @@ export const Navigation: React.FC<NavigationProps> = ({
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded text-xs font-mono tracking-wide transition-colors ${
+                  className={`w-full flex items-center space-x-3 px-3.5 py-3 rounded-lg text-sm font-mono tracking-wide transition-colors ${
                     isActive
                       ? item.id === 'emergency'
                         ? 'bg-[#1F0707] text-[#EF4444] border border-[#EF4444]/60 font-bold'
-                        : 'bg-[#191D22] text-[#F1F3F5] border border-[#414851]'
+                        : 'bg-[#191D22] text-[#F1F3F5] border border-[#414851] font-bold'
                       : item.id === 'emergency'
                       ? 'text-[#EF4444] font-semibold hover:bg-[#1F0707]'
                       : 'text-[#A0A7B0] hover:bg-[#13161A] hover:text-[#F1F3F5]'

@@ -63,6 +63,25 @@ class SquadronAudioEngine {
     osc.stop(ctx.currentTime + 0.07);
   }
 
+  public playFighterSelect(): void {
+    const vol = this.getSfxGain();
+    if (vol <= 0) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.22 * vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  }
+
   public playPunchHit(): void {
     const vol = this.getSfxGain();
     if (vol <= 0) return;
@@ -268,6 +287,94 @@ class SquadronAudioEngine {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + (isFinalFight ? 0.26 : 0.13));
+  }
+
+  public playAnnouncerVoice(_phrase: string): void {
+    if (this.settings.muted || this.settings.sfxVolume <= 0.05) return;
+    // Strictly cancel and disallow any robotic AI SpeechSynthesis voice
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // Ignore
+      }
+    }
+
+    // Pure retro synthesized arcade tone
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(440, now);
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.12);
+    gain.gain.setValueAtTime(0.2 * this.getSfxGain(), now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  }
+
+  public playTauntLaugh(isPenguin = false): void {
+    const vol = this.getSfxGain();
+    if (vol <= 0) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    if (isPenguin) {
+      // Funny squeak slide
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(800, now);
+      osc.frequency.linearRampToValueAtTime(1400, now + 0.08);
+      osc.frequency.linearRampToValueAtTime(600, now + 0.18);
+      gain.gain.setValueAtTime(0.3 * vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.24);
+    } else {
+      // Arcade playful chuckle arpeggio
+      const notes = [320, 480, 400, 560];
+      notes.forEach((freq, idx) => {
+        const start = now + idx * 0.06;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.18 * vol, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.09);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.1);
+      });
+    }
+  }
+
+  public playComicPop(): void {
+    const vol = this.getSfxGain();
+    if (vol <= 0) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(450, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.09);
+    gain.gain.setValueAtTime(0.3 * vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.11);
   }
 
   public playVictoryFanfare(): void {

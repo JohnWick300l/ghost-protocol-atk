@@ -40,6 +40,8 @@ import {
   reconcileCollectionWithCache,
   recordDeletedId,
   generateOfflineJetEngineerResponse,
+  formatDirectJetEngineerSolution,
+  JET_ENGINEER_WELCOME_MESSAGE,
   gpApiFetch,
   OFFLINE_SYNC_EVENT
 } from '../utils/telemetryCache';
@@ -65,8 +67,7 @@ interface JetEngineerProps {
 const DEFAULT_WELCOME_MSG: Message = {
   id: 'm_welcome',
   sender: 'assistant',
-  text: 'Hi, Pilot. How can I assist you today? The Jet Engineer operates as an offline empirical diagnostic engine, querying manufacturer specs and the verified TRAIN database entries added by squadron members and admins.',
-  source: 'Offline Tactical Engine & Ghost Protocol Knowledge Base',
+  text: JET_ENGINEER_WELCOME_MESSAGE,
   aiPowered: false,
   timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 };
@@ -188,11 +189,13 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
   const [showPresetManager, setShowPresetManager] = useState(false);
   const [presetFilterQuery, setPresetFilterQuery] = useState('');
 
-  // Initialize messages from local cache so Q&A survives refresh
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const cached = loadFromCache<Message[]>(CACHE_KEYS.JET_QA_HISTORY, []);
-    return cached && cached.length > 0 ? cached : [DEFAULT_WELCOME_MSG];
-  });
+  // Always start with a fresh chat showing the welcome message every time the page or app opens
+  const [messages, setMessages] = useState<Message[]>(() => [
+    {
+      ...DEFAULT_WELCOME_MSG,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+  ]);
   const [inputQuery, setInputQuery] = useState('');
   const [selectedModel, setSelectedModel] = useState<'F77' | 'X47' | 'Both'>(initialModel);
   const [loadingAnswer, setLoadingAnswer] = useState(false);
@@ -293,19 +296,19 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
     }
   }, [trainForm, editingSubmissionId]);
 
-  // Persist messages to local cache whenever updated
   useEffect(() => {
-    if (messages.length > 0) {
-      saveToCache(CACHE_KEYS.JET_QA_HISTORY, messages);
+    // Clear any previously cached chat history so the offline chatbot always opens fresh
+    try {
+      window.localStorage.removeItem(CACHE_KEYS.JET_QA_HISTORY);
+    } catch {
+      // Ignore storage errors
     }
-  }, [messages]);
+  }, []);
 
   useEffect(() => {
     fetchSubmissions();
-    fetchServerHistory();
     const handleSync = () => {
       fetchSubmissions();
-      fetchServerHistory();
     };
     window.addEventListener(OFFLINE_SYNC_EVENT, handleSync);
     return () => window.removeEventListener(OFFLINE_SYNC_EVENT, handleSync);
@@ -316,41 +319,6 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages, loadingAnswer]);
-
-  const fetchServerHistory = async () => {
-    if (!currentUser?.id) return;
-    try {
-      const res = await fetch(`/api/jet-engineer/history?userId=${encodeURIComponent(currentUser.id)}`);
-      if (res.ok) {
-        const data = await res.json();
-        const historyItems: any[] = data.history || [];
-        if (historyItems.length > 0) {
-          const rebuilt: Message[] = [DEFAULT_WELCOME_MSG];
-          // History items are newest-first on server; reverse for chronological chat
-          [...historyItems].reverse().forEach(item => {
-            rebuilt.push({
-              id: `m_u_${item.id}`,
-              sender: 'user',
-              text: item.question,
-              timestamp: new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            });
-            rebuilt.push({
-              id: `m_a_${item.id}`,
-              sender: 'assistant',
-              text: item.answer,
-              source: item.source,
-              aiPowered: item.aiPowered,
-              timestamp: new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            });
-          });
-          setMessages(rebuilt);
-          saveToCache(CACHE_KEYS.JET_QA_HISTORY, rebuilt);
-        }
-      }
-    } catch {
-      // Keep cached messages when offline
-    }
-  };
 
   const fetchSubmissions = async () => {
     try {
@@ -435,14 +403,12 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
         id: `m_eng_${Date.now()}`,
         sender: 'assistant',
         text: data.answer,
-        source: data.source,
         aiPowered: false,
         stepPhotos: data.stepPhotos,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
       setMessages(prev => [...prev, assistantMsg]);
-      await saveQaPairToBackend(textToSend, data.answer, data.source || 'Offline Tactical Base', false);
     } catch {
       // Offline fallback: synthesize verified technical response from cached knowledge base and problem logs
       const cachedProblems = loadFromCache<any[]>(CACHE_KEYS.PROBLEMS, []);
@@ -457,13 +423,11 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
         id: `m_eng_off_${Date.now()}`,
         sender: 'assistant',
         text: offlineResult.answer,
-        source: offlineResult.source,
         aiPowered: false,
         stepPhotos: offlineResult.stepPhotos,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, assistantMsg]);
-      await saveQaPairToBackend(textToSend, offlineResult.answer, offlineResult.source, false);
     } finally {
       setLoadingAnswer(false);
     }
@@ -682,7 +646,7 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
     }
   };
 
-  const handleTriggerPreset = async (preset: JetEngineerSubmission) => {
+  const handleTriggerPreset = (preset: JetEngineerSubmission) => {
     playTacticalClick();
     if (activeTab !== 'ask') {
       setActiveTab('ask');
@@ -690,7 +654,7 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
     const userMsg: Message = {
       id: `m_user_pre_${Date.now()}`,
       sender: 'user',
-      text: `[INSTANT SOLUTION REQUEST] ${preset.title}`,
+      text: preset.title,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
@@ -700,29 +664,12 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
       ? [preset.photoUrl]
       : undefined;
 
-    const solutionBody = [
-      `[INSTANT EMPIRICAL SOLUTION: ${preset.title}]`,
-      `• Platform Model: ${preset.motorcycleModel}${preset.variant ? ` (${preset.variant})` : ''}`,
-      `• Verification: ${preset.status === 'Approved' ? 'Verified Hangar / Admin Approved' : 'Empirical Community Record'}`,
-      `\nOPERATIONAL RESOLUTION:`,
-      `${preset.resolutionOutcome || preset.proposedSolution}`,
-      preset.symptoms && preset.symptoms !== '--' ? `\nTECHNICAL SYMPTOMS:\n• ${preset.symptoms}` : '',
-      preset.troubleshootingAttempted && preset.troubleshootingAttempted !== 'None reported'
-        ? `\nFIELD TROUBLESHOOTING:\n• ${preset.troubleshootingAttempted}`
-        : '',
-      preset.serviceCentreFindings ? `\nHANGAR FINDINGS:\n• ${preset.serviceCentreFindings}` : '',
-      presetPhotos && presetPhotos.length > 0 ? `\n• STEP-BY-STEP INSTRUCTION PHOTOS ATTACHED: ${presetPhotos.length} photo(s) available below.` : '',
-      `\nSOURCE ATTRIBUTION:`,
-      `Logged in TRAIN database by ${preset.authorName} • Reference: ${preset.sourceReferences || 'Tactical Empirical Database'}`
-    ]
-      .filter(Boolean)
-      .join('\n');
+    const solutionBody = formatDirectJetEngineerSolution(preset);
 
     const assistantMsg: Message = {
       id: `m_inst_${Date.now()}`,
       sender: 'assistant',
       text: solutionBody,
-      source: `Database Preset: ${preset.title}`,
       aiPowered: false,
       stepPhotos: presetPhotos,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -735,45 +682,35 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
         chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
       }
     }, 60);
-
-    await saveQaPairToBackend(
-      `[INSTANT SOLUTION] ${preset.title}`,
-      solutionBody,
-      `Database Preset: ${preset.title}`,
-      false
-    );
   };
 
   return (
     <div className="space-y-6">
       {/* Header and Option Selector */}
-      <div className="bg-[#13161A] border border-[#282D34] rounded-lg p-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-[#13161A] border border-[#282D34] rounded-xl p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center space-x-3.5">
-            <div className="w-10 h-10 rounded bg-[#191D22] border border-[#414851] flex items-center justify-center text-[#D4D8DE]">
-              <Cpu className="w-5 h-5 text-[#D4D8DE]" />
+            <div className="w-10 h-10 rounded-lg bg-[#191D22] border border-[#414851] flex items-center justify-center text-[#42B883] shrink-0">
+              <Cpu className="w-5 h-5 text-[#42B883]" />
             </div>
             <div>
-              <div className="text-sm font-mono font-bold text-[#F1F3F5] tracking-wider flex items-center gap-2">
-                THE JET ENGINEER
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#252A30] text-[#42B883] border border-[#42B883]/30">
-                  OFFLINE ENGINE
-                </span>
+              <div className="text-base sm:text-lg font-mono font-bold text-[#F1F3F5] tracking-wider flex items-center gap-2">
+                <span>THE JET ENGINEER</span>
               </div>
-              <div className="text-xs text-[#A0A7B0] mt-0.5">
-                Technical Knowledge Base & Empirical Owner Assistance System
+              <div className="text-xs sm:text-sm text-[#A0A7B0] mt-0.5">
+                Instant motorcycle troubleshooting &amp; rider solutions
               </div>
             </div>
           </div>
 
           {/* Distinct Two-Option Selector */}
-          <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-md bg-[#0D0F12] border border-[#282D34] text-xs font-mono shrink-0">
+          <div className="flex items-center gap-1.5 p-1 rounded-lg bg-[#0D0F12] border border-[#282D34] text-xs sm:text-sm font-mono shrink-0">
             <button
               onClick={() => {
                 playTacticalClick();
                 setActiveTab('ask');
               }}
-              className={`relative px-3.5 py-1.5 rounded font-semibold transition-colors cursor-pointer ${
+              className={`relative flex-1 sm:flex-initial px-4 py-2 rounded-md font-bold transition-colors cursor-pointer ${
                 activeTab === 'ask'
                   ? 'text-[#F1F3F5]'
                   : 'text-[#707883] hover:text-[#D4D8DE]'
@@ -783,7 +720,7 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                 <motion.span
                   layoutId="jet-engineer-mode-pill"
                   transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                  className="pointer-events-none absolute inset-0 rounded bg-[#191D22] border border-[#414851]"
+                  className="pointer-events-none absolute inset-0 rounded-md bg-[#191D22] border border-[#414851]"
                 />
               )}
               <span className="relative z-10">HELP</span>
@@ -793,7 +730,7 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                 playTacticalClick();
                 setActiveTab('train');
               }}
-              className={`relative px-3.5 py-1.5 rounded font-semibold transition-colors cursor-pointer ${
+              className={`relative flex-1 sm:flex-initial px-4 py-2 rounded-md font-bold transition-colors cursor-pointer ${
                 activeTab === 'train'
                   ? 'text-[#F1F3F5]'
                   : 'text-[#707883] hover:text-[#D4D8DE]'
@@ -803,7 +740,7 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                 <motion.span
                   layoutId="jet-engineer-mode-pill"
                   transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                  className="pointer-events-none absolute inset-0 rounded bg-[#191D22] border border-[#414851]"
+                  className="pointer-events-none absolute inset-0 rounded-md bg-[#191D22] border border-[#414851]"
                 />
               )}
               <span className="relative z-10">TRAIN</span>
@@ -969,14 +906,6 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                           </div>
                         </div>
                       )}
-
-                      {/* Source Citations & Safety Footnote */}
-                      {msg.source && (
-                        <div className="mt-3 pt-2 border-t border-[#282D34] text-[10px] font-mono text-[#707883] flex items-center justify-between">
-                          <span className="truncate">SOURCE: {msg.source}</span>
-                          <span className="text-[#AEB5BE] shrink-0 ml-2">VERIFIED REF</span>
-                        </div>
-                      )}
                     </div>
 
                     {/* Feedback Controls on Assistant Messages */}
@@ -1062,21 +991,20 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
             </div>
           </div>
 
-          {/* Technical Diagnostics Sidebar (4 Cols) */}
-          <div className="lg:col-span-4 space-y-4">
-            {/* Database Telemetry Intel Card */}
+          {/* Compact Knowledge & Safety Sidebar (4 Cols) */}
+          <div className="lg:col-span-4 space-y-3">
             <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-4 font-mono text-xs space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-[#D4D8DE] font-semibold flex items-center gap-1.5 uppercase">
                   <Cpu className="w-3.5 h-3.5 text-[#42B883]" />
-                  DATABASE INTEL
+                  EMPIRICAL KNOWLEDGE BASE
                 </div>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#191D22] text-[#42B883] border border-[#42B883]/30">
-                  {submissions.length} RECORDS
+                  {submissions.length} LOGS
                 </span>
               </div>
               <p className="text-[11px] text-[#A0A7B0] leading-relaxed">
-                The Jet Engineer queries manufacturer specifications and empirical field logs submitted by verified squadron pilots.
+                Combines official Ultraviolette specs with verified owner solutions. Always use authorized service centers for high-voltage BMS or battery work.
               </p>
               <button
                 type="button"
@@ -1086,25 +1014,8 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                 }}
                 className="w-full py-2 px-3 rounded bg-[#191D22] hover:bg-[#252A30] border border-[#414851] hover:border-[#42B883] text-[#F1F3F5] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                <span>+ CONTRIBUTE TO TRAIN DB</span>
+                <span>+ SHARE A SOLUTION (TRAIN)</span>
               </button>
-            </div>
-
-            {/* Official Grounding & Safety Guidance Notice */}
-            <div className="bg-[#13161A] border border-[#282D34] rounded-lg p-4 text-xs font-mono space-y-3">
-              <div className="text-[#D4D8DE] font-semibold flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-[#42B883]" />
-                DIAGNOSTIC SAFETY RULES
-              </div>
-              <p className="text-[11px] text-[#A0A7B0] leading-relaxed">
-                1. High-voltage battery disassembly outside authorized Ultraviolette service facilities is strictly prohibited.
-              </p>
-              <p className="text-[11px] text-[#A0A7B0] leading-relaxed">
-                2. If a red flashing BMS triangle or High Voltage Interlock warning displays, pull over safely, key-off, and contact Squadron Assist.
-              </p>
-              <p className="text-[11px] text-[#707883] leading-relaxed pt-2 border-t border-[#282D34]">
-                Answers distinguish between factory engineering specifications and empirical community logs.
-              </p>
             </div>
           </div>
         </div>

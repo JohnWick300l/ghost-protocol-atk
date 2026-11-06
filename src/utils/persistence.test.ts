@@ -14,6 +14,8 @@ import {
   canUserModifyRecord,
   mergeServerAndQueuedRecords,
   generateOfflineJetEngineerResponse,
+  formatDirectJetEngineerSolution,
+  JET_ENGINEER_WELCOME_MESSAGE,
   reconcileCollectionWithCache,
   recordDeletedId,
   getDeletedIds
@@ -161,7 +163,21 @@ test('mergeServerAndQueuedRecords prevents duplicate display after sync', () => 
   assert.equal(merged[2].id, 'srv_2');
 });
 
-test('generateOfflineJetEngineerResponse synthesizes grounded answers from cached knowledge base', () => {
+test('generateOfflineJetEngineerResponse and formatDirectJetEngineerSolution return direct clean solutions without boilerplate metadata', () => {
+  assert.equal(JET_ENGINEER_WELCOME_MESSAGE, 'Welcome Pilot, how can I help you today?');
+
+  const presetSolution = formatDirectJetEngineerSolution({
+    title: 'Debug',
+    resolutionOutcome: 'Perform a 45-second key-off cold reboot and verify the 15A earthing loop.'
+  });
+  assert.equal(
+    presetSolution,
+    'Perform a 45-second key-off cold reboot and verify the 15A earthing loop.'
+  );
+  assert.equal(presetSolution.includes('INSTANT EMPIRICAL SOLUTION'), false);
+  assert.equal(presetSolution.includes('Platform Model'), false);
+  assert.equal(presetSolution.includes('Verification:'), false);
+
   const response = generateOfflineJetEngineerResponse(
     'charger earthing fault blinking red',
     'F77 MACH 2',
@@ -175,7 +191,13 @@ test('generateOfflineJetEngineerResponse synthesizes grounded answers from cache
     ],
     []
   );
-  assert.ok(response.includes('OFFLINE TACTICAL ARCHIVE MODE'));
+  assert.equal(
+    response.answer,
+    'Use a dedicated grounded 15A wall socket with verified earth-to-neutral < 2V.'
+  );
+  assert.equal(response.answer.includes('OFFLINE TACTICAL ARCHIVE MODE'), false);
+  assert.equal(response.answer.includes('Platform Model'), false);
+  assert.equal(response.answer.includes('Verification'), false);
   assert.ok(response.includes('15A Socket Earthing Fault'));
   assert.ok(response.includes('earth-to-neutral < 2V'));
 });

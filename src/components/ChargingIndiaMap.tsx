@@ -28,18 +28,25 @@ import {
 import { ChargingStation, ChargerPlugType, User } from '../types';
 import {
   clusterChargingStations,
+  groupCoLocatedChargingStations,
+  resolveClusterLocationLabel,
   CHARGER_PLUG_TYPE_SPECS,
   canModifyChargerRecord,
   buildChargerNavigationUrl,
   buildGoogleMapsUrl,
   openInGoogleMaps,
+  buildPhoneDialIntentUri,
+  openPhoneDialer,
   calculateDistanceKm,
   ChargerCluster,
   PlaceSuggestion,
   searchAndRankPlaces,
   createTacticalOfflineTileDataUrl,
   resolveChargerSubmitterInfo,
-  resolveCommunityChargerTerms
+  resolveCommunityChargerTerms,
+  matchesChargingStationFilter,
+  formatMinimalChargerType,
+  searchAndFilterChargingStations
 } from '../utils/rules';
 import {
   loadCachedPlacesFromPhone,
@@ -47,8 +54,21 @@ import {
 } from '../utils/telemetryCache';
 import { useAudio } from '../context/AudioContext';
 
+export interface MinimalDatabaseStats {
+  totalRecordsLoaded: number;
+  recordsWithValidCoordinatesCount: number;
+  validMapMarkersCount: number;
+  skippedRecordsCount: number;
+}
+
 interface ChargingIndiaMapProps {
   stations: ChargingStation[];
+  allStations?: ChargingStation[];
+  activeFilter?: string;
+  onFilterChange?: (filter: string) => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (q: string) => void;
+  databaseStats?: MinimalDatabaseStats;
   selectedStation: ChargingStation | null;
   onSelectStation: (station: ChargingStation) => void;
   currentUser: User | null;
@@ -58,15 +78,60 @@ interface ChargingIndiaMapProps {
   selectedChargerReservationAndIntelSlot?: React.ReactNode;
 }
 
-const INDIA_CENTER: [number, number] = [20.5937, 78.9629];
+const INDIA_CENTER: [number, number] = [15.6, 77.5];
 const DEFAULT_INDIA_ZOOM = 5;
 
 const REGION_PRESETS = [
-  { id: 'india', label: 'ALL INDIA', center: [20.5937, 78.9629] as [number, number], zoom: 5 },
-  { id: 'bengaluru', label: 'BENGALURU / SOUTH', center: [12.9716, 77.5946] as [number, number], zoom: 10 },
-  { id: 'mumbai', label: 'MUMBAI / PUNE', center: [18.88, 73.12] as [number, number], zoom: 9 },
-  { id: 'delhi', label: 'DELHI NCR', center: [28.6139, 77.2090] as [number, number], zoom: 11 }
+  { id: 'india', label: 'ALL INDIA', shortLabel: 'INDIA', center: [15.6, 77.5] as [number, number], zoom: 5 },
+  { id: 'bengaluru', label: 'BENGALURU / SOUTH', shortLabel: 'SOUTH', center: [12.9716, 77.5946] as [number, number], zoom: 10 },
+  { id: 'mumbai', label: 'MUMBAI / PUNE', shortLabel: 'WEST', center: [18.88, 73.12] as [number, number], zoom: 9 },
+  { id: 'delhi', label: 'DELHI NCR', shortLabel: 'NORTH', center: [28.6139, 77.2090] as [number, number], zoom: 11 }
 ];
+
+const MAP_STATION_FILTER_OPTIONS = [
+  {
+    id: 'ALL',
+    label: 'All',
+    shortLabel: 'All',
+    dotColor: 'bg-[#F1F3F5]',
+    activeStyle: 'bg-[#F1F3F5] text-[#08090B] border-[#F1F3F5] shadow-sm'
+  },
+  {
+    id: 'SUPERNOVA',
+    label: 'Supernova',
+    shortLabel: 'Supernova',
+    dotColor: 'bg-[#42B883]',
+    activeStyle: 'bg-[#42B883] text-[#08090B] border-[#42B883] shadow-sm shadow-[#42B883]/20'
+  },
+  {
+    id: 'Community Provided Chargers',
+    label: 'Community Owned',
+    shortLabel: 'Community',
+    dotColor: 'bg-[#E8AA45]',
+    activeStyle: 'bg-[#E8AA45] text-[#08090B] border-[#E8AA45] shadow-sm shadow-[#E8AA45]/20'
+  },
+  {
+    id: 'TYPE_2',
+    label: 'Type 2',
+    shortLabel: 'Type 2',
+    dotColor: 'bg-[#38BDF8]',
+    activeStyle: 'bg-[#38BDF8] text-[#08090B] border-[#38BDF8] shadow-sm shadow-[#38BDF8]/20'
+  },
+  {
+    id: 'BOLT_TYPE_6',
+    label: 'Type 6',
+    shortLabel: 'Type 6',
+    dotColor: 'bg-[#729BCB]',
+    activeStyle: 'bg-[#729BCB] text-[#08090B] border-[#729BCB] shadow-sm shadow-[#729BCB]/20'
+  },
+  {
+    id: 'SOCKET',
+    label: 'Sockets',
+    shortLabel: 'Sockets',
+    dotColor: 'bg-[#D4D8DE]',
+    activeStyle: 'bg-[#D4D8DE] text-[#08090B] border-[#D4D8DE] shadow-sm'
+  }
+] as const;
 
 function getChargerTypeBadgeStyle(type?: ChargerPlugType): {
   bg: string;
@@ -109,6 +174,12 @@ function getChargerTypeBadgeStyle(type?: ChargerPlugType): {
 
 export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
   stations,
+  allStations,
+  activeFilter,
+  onFilterChange,
+  searchQuery,
+  onSearchQueryChange,
+  databaseStats,
   selectedStation,
   onSelectStation,
   currentUser,
@@ -124,11 +195,36 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
   const searchedPinRef = useRef<L.Marker | null>(null);
   const mapSearchBoxRef = useRef<HTMLDivElement | null>(null);
   const mapSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasAutoFittedRef = useRef<boolean>(false);
 
   const [currentZoom, setCurrentZoom] = useState<number>(DEFAULT_INDIA_ZOOM);
   const [activeRegionPreset, setActiveRegionPreset] = useState<string>('india');
-  const [typeFilter, setTypeFilter] = useState<'ALL' | ChargerPlugType>('ALL');
+  const [internalFilter, setInternalFilter] = useState<string>('ALL');
   const [isFullNavigation, setIsFullNavigation] = useState(false);
+  const [showIndividualMarkers, setShowIndividualMarkers] = useState<boolean>(false);
+
+  const currentStationFilter = activeFilter !== undefined ? activeFilter : internalFilter;
+  const handleSelectStationFilter = (nextFilter: string) => {
+    playTacticalClick();
+    const resolved =
+      nextFilter !== 'ALL' && currentStationFilter === nextFilter ? 'ALL' : nextFilter;
+    if (onFilterChange) {
+      onFilterChange(resolved);
+    } else {
+      setInternalFilter(resolved);
+    }
+  };
+
+  const baselineStationsForCounts = allStations || stations;
+  const filterCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const opt of MAP_STATION_FILTER_OPTIONS) {
+      counts[opt.id] = baselineStationsForCounts.filter(s =>
+        matchesChargingStationFilter(s, opt.id)
+      ).length;
+    }
+    return counts;
+  }, [baselineStationsForCounts]);
 
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -158,7 +254,19 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
   }, [isFullNavigation]);
 
   // Google Maps-style place & charger search on the map
-  const [mapSearchQuery, setMapSearchQuery] = useState('');
+  const [internalSearchQuery, setInternalSearchQuery] = useState('');
+  const effectiveSearchQuery = searchQuery !== undefined ? searchQuery : internalSearchQuery;
+  const handleUpdateSearchQuery = useCallback(
+    (val: string) => {
+      if (onSearchQueryChange) {
+        onSearchQueryChange(val);
+      } else {
+        setInternalSearchQuery(val);
+      }
+    },
+    [onSearchQueryChange]
+  );
+
   const [mapSearchSuggestions, setMapSearchSuggestions] = useState<PlaceSuggestion[]>([]);
   const [isMapSearching, setIsMapSearching] = useState(false);
   const [isMapDropdownOpen, setIsMapDropdownOpen] = useState(false);
@@ -171,16 +279,87 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
   const [userOrigin, setUserOrigin] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationFallbackMsg, setLocationFallbackMsg] = useState<string | null>(null);
 
-  // Filter published stations by selected connector type if desired
+  // Filter published stations by selected station filter & search query (skipping any invalid coordinates)
   const visibleStations = useMemo(() => {
-    if (typeFilter === 'ALL') return stations;
-    return stations.filter(s => (s.chargerType || (s.isSupernova ? 'Supernova' : 'Socket')) === typeFilter);
-  }, [stations, typeFilter]);
+    const validCoordStations = stations.filter(
+      s =>
+        typeof s.latitude === 'number' &&
+        typeof s.longitude === 'number' &&
+        Number.isFinite(s.latitude) &&
+        Number.isFinite(s.longitude) &&
+        s.latitude >= -90 &&
+        s.latitude <= 90 &&
+        s.longitude >= -180 &&
+        s.longitude <= 180
+    );
+    if (activeFilter !== undefined && searchQuery !== undefined) {
+      return validCoordStations;
+    }
+    return searchAndFilterChargingStations(
+      validCoordStations,
+      effectiveSearchQuery,
+      currentStationFilter
+    );
+  }, [stations, activeFilter, searchQuery, effectiveSearchQuery, currentStationFilter]);
 
-  // Compute spatial clusters based on current map zoom
+  // Matching stations for the quick-jump search dropdown
+  const matchingStationSuggestions = useMemo(() => {
+    const q = effectiveSearchQuery.trim();
+    if (!q) return [];
+    const pool = (allStations || stations).filter(
+      s =>
+        typeof s.latitude === 'number' &&
+        typeof s.longitude === 'number' &&
+        Number.isFinite(s.latitude) &&
+        Number.isFinite(s.longitude)
+    );
+    return searchAndFilterChargingStations(pool, q, 'ALL').slice(0, 12);
+  }, [allStations, stations, effectiveSearchQuery]);
+
+  // Always compute co-located / same-address / same-city clusters so 2+ chargers at the same location are grouped
+  const coLocatedClusters: ChargerCluster<ChargingStation>[] = useMemo(() => {
+    return groupCoLocatedChargingStations(visibleStations);
+  }, [visibleStations]);
+
+  // Compute spatial clusters or co-located location clusters based on mode
   const clusters: ChargerCluster<ChargingStation>[] = useMemo(() => {
+    if (showIndividualMarkers) {
+      return coLocatedClusters;
+    }
     return clusterChargingStations(visibleStations, currentZoom);
-  }, [visibleStations, currentZoom]);
+  }, [visibleStations, currentZoom, showIndividualMarkers, coLocatedClusters]);
+
+  const [selectedClusterStationIds, setSelectedClusterStationIds] = useState<string[] | null>(null);
+
+  // Resolve all stations belonging to the currently selected location cluster (2+ chargers in the same location/city)
+  const activeLocationStations: ChargingStation[] = useMemo(() => {
+    if (!selectedStation) return [];
+
+    if (
+      selectedClusterStationIds &&
+      selectedClusterStationIds.length >= 2 &&
+      selectedClusterStationIds.includes(selectedStation.id)
+    ) {
+      const resolved = selectedClusterStationIds
+        .map(id => visibleStations.find(s => s.id === id) || stations.find(s => s.id === id))
+        .filter((s): s is ChargingStation => Boolean(s));
+      if (resolved.length >= 2) return resolved;
+    }
+
+    const matchingCoLocated = coLocatedClusters.find(c =>
+      c.stations.some(s => s.id === selectedStation.id)
+    );
+    if (matchingCoLocated && matchingCoLocated.stations.length >= 2) {
+      return matchingCoLocated.stations;
+    }
+
+    return [selectedStation];
+  }, [selectedStation, selectedClusterStationIds, coLocatedClusters, visibleStations, stations]);
+
+  const activeClusterLocationLabel = useMemo(() => {
+    if (activeLocationStations.length === 0) return '';
+    return resolveClusterLocationLabel(activeLocationStations);
+  }, [activeLocationStations]);
 
   // Reset navigation drawer origin state if selected station changes
   useEffect(() => {
@@ -248,6 +427,30 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
     };
   }, []);
 
+  // Auto-fit map bounds once when minimal database stations load so all India chargers are visible
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || hasAutoFittedRef.current) return;
+    if (visibleStations.length >= 25) {
+      hasAutoFittedRef.current = true;
+      try {
+        const bounds = L.latLngBounds(
+          visibleStations.map(s => [s.latitude, s.longitude] as [number, number])
+        );
+        if (bounds.isValid()) {
+          const targetZoom = map.getBoundsZoom(bounds, false, L.point(20, 20));
+          if (targetZoom <= 5) {
+            map.setView([15.6, 77.5], 5, { animate: false });
+          } else {
+            map.fitBounds(bounds, { padding: [20, 20], maxZoom: 12 });
+          }
+        }
+      } catch {
+        // Ignore fitBounds error
+      }
+    }
+  }, [visibleStations]);
+
   // Render clustered and individual charger markers whenever clusters or selectedStation update
   useEffect(() => {
     const map = mapInstanceRef.current;
@@ -255,46 +458,115 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
     if (!map || !layerGroup) return;
 
     layerGroup.clearLayers();
+    const coordCountMap = new Map<string, number>();
 
     clusters.forEach(item => {
       if (item.isCluster) {
         const hasSelectedInside = item.stations.some(s => s.id === selectedStation?.id);
+        const locTitle = item.locationLabel || `${item.count} Chargers`;
+        const clusterSize = hasSelectedInside ? 44 : 38;
+        const ringColor = hasSelectedInside ? '#42B883' : '#38BDF8';
+        const boltColor = hasSelectedInside ? '#6EE7B7' : '#E8AA45';
+        const outerHalo = hasSelectedInside
+          ? '0 0 0 4px rgba(66, 184, 131, 0.25), 0 0 16px rgba(66, 184, 131, 0.55), 0 4px 10px rgba(0, 0, 0, 0.9)'
+          : '0 0 0 4px rgba(56, 189, 248, 0.18), 0 0 12px rgba(56, 189, 248, 0.4), 0 4px 10px rgba(0, 0, 0, 0.88)';
+
         const clusterHtml = `
-          <div style="
+          <div data-testid="charger-cluster-pin" data-cluster-count="${item.count}" style="
+            position: relative;
+            width: ${clusterSize}px;
+            height: ${clusterSize}px;
+            border-radius: 9999px;
+            background: radial-gradient(circle at 32% 28%, #172336 0%, #0A101B 75%, #060911 100%);
+            border: 2px solid ${ringColor};
+            box-shadow: ${outerHalo};
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 40px;
-            height: 40px;
-            border-radius: 9999px;
-            background: rgba(19, 22, 26, 0.95);
-            border: 2px solid ${hasSelectedInside ? '#42B883' : '#E8AA45'};
-            color: #F1F3F5;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            font-size: 12px;
-            box-shadow: 0 0 14px rgba(232, 170, 69, 0.35);
-          " title="${item.count} chargers in this area — Click to expand">
-            <span>${item.count}</span>
+            gap: 1.5px;
+            transform: ${hasSelectedInside ? 'scale(1.08)' : 'scale(1)'};
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            cursor: pointer;
+          " title="${item.count} chargers at ${locTitle} — Tap to view chargers">
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="${boltColor}" style="flex-shrink: 0;">
+              <path d="M13 2L4 14h7l-2 8 9-12h-7l2-8z" />
+            </svg>
+            <span style="
+              color: #FFFFFF;
+              font-family: 'JetBrains Mono', monospace;
+              font-weight: 800;
+              font-size: ${item.count >= 10 ? '12px' : '13px'};
+              letter-spacing: -0.03em;
+              line-height: 1;
+            ">${item.count}</span>
           </div>
         `;
 
         const icon = L.divIcon({
           html: clusterHtml,
           className: 'ghost-charger-cluster-icon',
-          iconSize: [40, 40],
-          iconAnchor: [20, 20]
+          iconSize: [clusterSize, clusterSize],
+          iconAnchor: [clusterSize / 2, clusterSize / 2]
         });
 
-        const marker = L.marker([item.latitude, item.longitude], { icon });
-        marker.on('click', () => {
-          playTacticalClick();
-          const nextZoom = Math.min(map.getZoom() + 4, 13);
-          map.setView([item.latitude, item.longitude], nextZoom, { animate: true });
-          if (item.stations[0]) {
-            onSelectStation(item.stations[0]);
-          }
+        const marker = L.marker([item.latitude, item.longitude], {
+          icon,
+          title: `${item.count} Chargers at ${locTitle}`,
+          zIndexOffset: 1000 + item.count * 10
         });
+        const handleSelectCluster = () => {
+          playTacticalClick();
+          let isWideRegionalCluster = false;
+          try {
+            const clusterBounds = L.latLngBounds(
+              item.stations.map(s => [s.latitude, s.longitude] as [number, number])
+            );
+            const spanKm =
+              item.stations.length >= 2
+                ? calculateDistanceKm(
+                    clusterBounds.getSouthWest().lat,
+                    clusterBounds.getSouthWest().lng,
+                    clusterBounds.getNorthEast().lat,
+                    clusterBounds.getNorthEast().lng
+                  )
+                : 0;
+            if (spanKm > 20 && map.getZoom() < 10) {
+              isWideRegionalCluster = true;
+              map.fitBounds(clusterBounds, { padding: [36, 36], maxZoom: 10, animate: true });
+            } else if (spanKm > 4 && map.getZoom() < 11) {
+              map.fitBounds(clusterBounds, { padding: [36, 36], maxZoom: 12, animate: true });
+            } else {
+              const nextZoom = Math.max(map.getZoom(), 12);
+              map.setView([item.latitude, item.longitude], nextZoom, { animate: true });
+            }
+          } catch {
+            const nextZoom = Math.max(map.getZoom(), 11);
+            map.setView([item.latitude, item.longitude], nextZoom, { animate: true });
+          }
+
+          if (isWideRegionalCluster) {
+            setSelectedClusterStationIds(null);
+            const targetStation =
+              item.stations.find(s => s.id === selectedStation?.id) || item.stations[0];
+            if (targetStation) {
+              onSelectStation(targetStation);
+            }
+          } else {
+            setSelectedClusterStationIds(item.stations.map(s => s.id));
+            const targetStation =
+              item.stations.find(s => s.id === selectedStation?.id) || item.stations[0];
+            if (targetStation) {
+              onSelectStation(targetStation);
+            }
+            setTimeout(() => {
+              const anchor = document.getElementById('selected-charger-details-anchor');
+              if (anchor && !isFullNavigation) {
+                anchor.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            }, 120);
+          }
+        };
+        marker.on('click', handleSelectCluster);
         marker.addTo(layerGroup);
       } else {
         const st = item.stations[0];
@@ -304,133 +576,99 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
           st.chargerType || (st.isSupernova ? 'Supernova' : 'Socket');
         const isSupernova =
           effectiveType === 'Supernova' || st.isSupernova || st.chargerSource === 'Supernova';
-        const style = getChargerTypeBadgeStyle(effectiveType);
 
-        let pinHtml = '';
-        let iconSize: [number, number] = [28, 28];
-        let iconAnchor: [number, number] = [14, 14];
-
-        const isCommunity = st.chargerSource === 'Community Provided Charger' || (st as any).isCommunityCharger;
+        const isCommunity =
+          st.chargerSource === 'Community Provided Charger' || (st as any).isCommunityCharger;
         const isType6 = effectiveType === 'Type 6';
         const isSocket = effectiveType === 'Socket';
 
-        if (isCommunity) {
-          const size = isSelected ? 60 : 48;
-          iconSize = [size, size];
-          iconAnchor = [size / 2, size / 2];
-          pinHtml = `
-            <div style="
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: ${size}px;
-              height: ${size}px;
-              background: transparent;
-              border: none;
-              padding: 0;
-              margin: 0;
-              filter: drop-shadow(0 0 ${isSelected ? '18px' : '10px'} rgba(245, 158, 11, 0.95)) drop-shadow(0 0 20px rgba(56, 189, 248, 0.6)) drop-shadow(0 2px 10px rgba(0, 0, 0, 0.95));
-              transition: all 0.2s ease;
-              transform: ${isSelected ? 'scale(1.15)' : 'scale(1)'};
-              cursor: pointer;
-            " title="${st.name} (Community Provided Charger — Tactical Batman Network)">
-              <img src="/assets/aistudio/batman_icon.svg" alt="Community Batman Charger" style="width: 100%; height: 100%; object-fit: contain; background: transparent; border: none; filter: brightness(1.1) contrast(1.15);" />
-            </div>
+        const size = isSelected ? 38 : 31;
+        const iconSize: [number, number] = [size, size];
+        const iconAnchor: [number, number] = [size / 2, size / 2];
+        const glyphSize = isSelected ? 16 : 13;
+
+        let ringColor = '#38BDF8';
+        let glowRgba = 'rgba(56, 189, 248, 0.5)';
+        let coreBg = 'radial-gradient(circle at 30% 30%, #142234, #080D15 85%)';
+        let innerSvg = `
+          <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="#38BDF8">
+            <path d="M13 2L4 14h7l-2 8 9-12h-7l2-8z" />
+          </svg>
+        `;
+        let typeLabel = 'Type 2 AC';
+
+        if (isSupernova) {
+          ringColor = '#42B883';
+          glowRgba = 'rgba(66, 184, 131, 0.65)';
+          coreBg = 'radial-gradient(circle at 30% 30%, #0F2922, #07120F 85%)';
+          typeLabel = 'Supernova DC Fast';
+          innerSvg = `
+            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="#42B883">
+              <path d="M13 2L4 14h7l-2 8 9-12h-7l2-8z" />
+            </svg>
           `;
-        } else if (isSupernova) {
-          const size = isSelected ? 62 : 50;
-          iconSize = [size, size];
-          iconAnchor = [size / 2, size / 2];
-          pinHtml = `
-            <div style="
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: ${size}px;
-              height: ${size}px;
-              background: transparent;
-              border: none;
-              padding: 0;
-              margin: 0;
-              filter: drop-shadow(0 0 ${isSelected ? '16px' : '8px'} rgba(56, 189, 248, 0.95)) drop-shadow(0 2px 8px rgba(0, 0, 0, 0.9));
-              transition: all 0.2s ease;
-              transform: ${isSelected ? 'scale(1.15)' : 'scale(1)'};
-              cursor: pointer;
-            " title="${st.name} (Supernova DC Fast Charging)">
-              <img src="/assets/aistudio/supernova_black.png" alt="Supernova" style="width: 100%; height: 100%; object-fit: contain; background: transparent; border: none; filter: brightness(0.9) contrast(1.1);" />
-            </div>
+        } else if (isCommunity) {
+          ringColor = '#E8AA45';
+          glowRgba = 'rgba(232, 170, 69, 0.6)';
+          coreBg = 'radial-gradient(circle at 30% 30%, #292011, #110D07 85%)';
+          typeLabel = 'Community Provided Charger';
+          innerSvg = `
+            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="none" stroke="#E8AA45" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="rgba(232, 170, 69, 0.18)" />
+              <path d="M13 7L9 13h4l-1 4 4-6h-4l1-4z" fill="#E8AA45" stroke="none" />
+            </svg>
           `;
         } else if (isType6) {
-          const size = isSelected ? 44 : 34;
-          iconSize = [size, size];
-          iconAnchor = [size / 2, size / 2];
-          pinHtml = `
-            <div style="
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: ${size}px;
-              height: ${size}px;
-              background: transparent;
-              border: none;
-              padding: 0;
-              margin: 0;
-              filter: drop-shadow(0 0 ${isSelected ? '14px' : '6px'} rgba(16, 185, 129, 0.95));
-              transition: all 0.2s ease;
-              transform: ${isSelected ? 'scale(1.15)' : 'scale(1)'};
-              cursor: pointer;
-            " title="${st.name} (Type 6 Fast Charging)">
-              <img src="/assets/aistudio/type6_transparent.png" alt="Type 6" style="width: 100%; height: 100%; object-fit: contain; background: transparent; border: none;" />
-            </div>
+          ringColor = '#729BCB';
+          glowRgba = 'rgba(114, 155, 203, 0.6)';
+          coreBg = 'radial-gradient(circle at 30% 30%, #162436, #090F18 85%)';
+          typeLabel = 'Type 6 Fast Charging';
+          innerSvg = `
+            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="#729BCB">
+              <path d="M13 2L4 14h7l-2 8 9-12h-7l2-8z" />
+            </svg>
           `;
         } else if (isSocket) {
-          const size = isSelected ? 48 : 36;
-          iconSize = [size, size];
-          iconAnchor = [size / 2, size / 2];
-          pinHtml = `
-            <div style="
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: ${size}px;
-              height: ${size}px;
-              background: transparent;
-              border: none;
-              padding: 0;
-              margin: 0;
-              filter: drop-shadow(0 0 ${isSelected ? '16px' : '8px'} rgba(255, 255, 255, 0.95)) drop-shadow(0 2px 8px rgba(0, 0, 0, 0.85));
-              transition: all 0.2s ease;
-              transform: ${isSelected ? 'scale(1.15)' : 'scale(1)'};
-              cursor: pointer;
-            " title="${st.name} (15A/16A Industrial White Socket)">
-              <img src="/assets/aistudio/socket_icon.svg" alt="Socket" style="width: 100%; height: 100%; object-fit: contain; background: transparent; border: none; filter: brightness(1.2) contrast(1.1);" />
-            </div>
-          `;
-        } else {
-          iconSize = [isSelected ? 34 : 28, isSelected ? 34 : 28];
-          iconAnchor = [isSelected ? 17 : 14, isSelected ? 17 : 14];
-          pinHtml = `
-            <div style="
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: ${isSelected ? '34px' : '28px'};
-              height: ${isSelected ? '34px' : '28px'};
-              border-radius: 9999px;
-              background: ${isSelected ? style.hex : '#13161A'};
-              border: 2.5px solid ${style.hex};
-              color: ${isSelected ? '#08090B' : style.hex};
-              font-family: 'JetBrains Mono', monospace;
-              font-weight: 700;
-              font-size: 11px;
-              box-shadow: ${isSelected ? `0 0 16px ${style.hex}` : '0 2px 6px rgba(0,0,0,0.75)'};
-              transition: all 0.15s ease;
-              cursor: pointer;
-            " title="${st.name} (${effectiveType})">
-              <span>⚡</span>
-            </div>
+          ringColor = '#D4D8DE';
+          glowRgba = 'rgba(212, 216, 222, 0.45)';
+          coreBg = 'radial-gradient(circle at 30% 30%, #20252D, #0B0E12 85%)';
+          typeLabel = '15A/16A Socket';
+          innerSvg = `
+            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="none" stroke="#F1F3F5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8.5" r="1.4" fill="#F1F3F5" stroke="none" />
+              <circle cx="8.5" cy="14" r="1.3" fill="#F1F3F5" stroke="none" />
+              <circle cx="15.5" cy="14" r="1.3" fill="#F1F3F5" stroke="none" />
+            </svg>
           `;
         }
+
+        const pinHtml = `
+          <div style="
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: ${size}px;
+            height: ${size}px;
+            border-radius: 9999px;
+            background: ${coreBg};
+            border: ${isSelected ? '2.5px' : '2px'} solid ${ringColor};
+            box-shadow: 0 0 0 ${isSelected ? '3px' : '1.5px'} rgba(8, 10, 14, 0.9), 0 0 ${
+              isSelected ? '14px' : '8px'
+            } ${glowRgba}, 0 3px 6px rgba(0, 0, 0, 0.85);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            transform: ${isSelected ? 'scale(1.12)' : 'scale(1)'};
+            cursor: pointer;
+          " title="${st.name} (${typeLabel})">
+            ${innerSvg}
+          </div>
+        `;
+
+        const displayTitle = st.referenceName || st.name;
+        const formattedType = formatMinimalChargerType(
+          st.rawChargerType ?? st.chargerDetails ?? st.chargerType
+        );
+        const exactCoordsText =
+          st.exactLocationCoordinates || `${st.latitude.toFixed(6)}, ${st.longitude.toFixed(6)}`;
 
         const icon = L.divIcon({
           html: pinHtml,
@@ -439,15 +677,50 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
           iconAnchor
         });
 
-        const marker = L.marker([st.latitude, st.longitude], { icon });
+        // Apply tiny deterministic radial separation ONLY when multiple records share identical GPS coordinates
+        const coordKey = `${st.latitude.toFixed(5)},${st.longitude.toFixed(5)}`;
+        const seenIndex = coordCountMap.get(coordKey) || 0;
+        coordCountMap.set(coordKey, seenIndex + 1);
+        let markerLat = st.latitude;
+        let markerLng = st.longitude;
+        if (seenIndex > 0) {
+          const angle = (seenIndex * 137.5 * Math.PI) / 180;
+          const radiusDeg = 0.00022 * Math.ceil(seenIndex / 2);
+          markerLat = Number((st.latitude + Math.cos(angle) * radiusDeg).toFixed(6));
+          markerLng = Number((st.longitude + Math.sin(angle) * radiusDeg).toFixed(6));
+        }
+
+        const marker = L.marker([markerLat, markerLng], {
+          icon,
+          title: `${displayTitle} (${exactCoordsText}) — ${formattedType}`,
+          zIndexOffset: isSelected ? 900 : 100
+        });
         marker.on('click', () => {
           playTacticalClick();
+          setSelectedClusterStationIds(null);
           onSelectStation(st);
         });
         marker.addTo(layerGroup);
       }
     });
-  }, [clusters, selectedStation, onSelectStation, playTacticalClick]);
+  }, [clusters, selectedStation, onSelectStation, playTacticalClick, isFullNavigation]);
+
+  const handleFitAllStationsOnMap = useCallback(() => {
+    playTacticalClick();
+    setActiveRegionPreset('all_markers');
+    const map = mapInstanceRef.current;
+    if (!map || visibleStations.length === 0) return;
+    try {
+      const bounds = L.latLngBounds(
+        visibleStations.map(s => [s.latitude, s.longitude] as [number, number])
+      );
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [28, 28], maxZoom: 12, animate: true });
+      }
+    } catch {
+      // Ignore bounds error
+    }
+  }, [playTacticalClick, visibleStations]);
 
   const handleFlyToPreset = (preset: typeof REGION_PRESETS[number]) => {
     playTacticalClick();
@@ -521,7 +794,7 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
 
   const handleSelectMapPlace = (place: PlaceSuggestion) => {
     playTacticalClick();
-    setMapSearchQuery(place.name);
+    handleUpdateSearchQuery(place.name);
     setSearchedPlaceSummary(place);
     setIsMapDropdownOpen(false);
     setMapHighlightIdx(-1);
@@ -647,225 +920,385 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
   return (
     <div
       data-testid="charging-india-map-section"
-      className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-4 sm:p-5 space-y-4 font-mono text-xs"
+      className="bg-[#0B0E14] border border-[#232934] rounded-2xl p-3.5 sm:p-5 space-y-3.5 font-mono text-xs shadow-xl"
     >
-      {/* Map Top Controls Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-[#282D34]">
-        <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded bg-[#13161A] border border-[#414851] flex items-center justify-center text-[#E8AA45] shrink-0">
-            <Compass className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xs sm:text-sm font-bold text-[#F1F3F5] tracking-wider uppercase">
-                INDIA CHARGING NETWORK MAP
-              </h2>
-              <span className="px-2 py-0.5 rounded text-[10px] bg-[#42B883]/15 text-[#42B883] border border-[#42B883]/30 font-semibold">
-                {visibleStations.length} PUBLISHED CHARGERS
-              </span>
-              {lastSyncedAt && (
-                <span className="text-[10px] text-[#707883] hidden sm:inline">
-                  LIVE SYNC ACTIVE
-                </span>
-              )}
+      {/* Clean, User-Friendly Map Control Panel */}
+      <div className="flex flex-col gap-3">
+        {/* Row 1: Map Title, Active Count & View Mode Controls */}
+        <div className="flex items-center justify-between gap-1.5 sm:gap-2 pb-2.5 border-b border-[#1B212C]">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#131924] border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8] shrink-0 shadow-inner">
+              <Compass className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
-            <p className="text-[11px] text-[#A0A7B0] font-sans mt-0.5">
-              Showing approved user-submitted and administrator-verified chargers across India. Click any pin or cluster to inspect.
-            </p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h2 className="text-[11px] sm:text-sm font-bold text-[#F8FAFC] tracking-wide uppercase font-sans whitespace-nowrap">
+                  Charger Map
+                </h2>
+                <span
+                  data-testid="map-visible-markers-badge"
+                  className="px-1.5 sm:px-2 py-0.5 rounded-full text-[9.5px] sm:text-[10px] bg-[#42B883]/15 text-[#42B883] border border-[#42B883]/35 font-bold whitespace-nowrap"
+                >
+                  {visibleStations.length} Active
+                </span>
+              </div>
+              <p className="text-[10px] text-[#8E96A4] font-sans hidden sm:block">
+                Tap any circular station pin or multi-charger circle to view details and navigate
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Region Quick-Jump & Connector Type Filter */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center bg-[#13161A] border border-[#282D34] rounded p-0.5 gap-0.5">
-            {REGION_PRESETS.map(preset => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => handleFlyToPreset(preset)}
-                className={`px-2.5 py-1 rounded text-[10px] transition-colors ${
-                  activeRegionPreset === preset.id
-                    ? 'bg-[#252A30] text-[#E8AA45] font-bold border border-[#E8AA45]/40'
-                    : 'text-[#707883] hover:text-[#D4D8DE]'
-                }`}
+          <div className="flex items-center gap-2 shrink-0">
+            {databaseStats && databaseStats.totalRecordsLoaded > 0 && (
+              <div
+                data-testid="minimal-db-status-strip"
+                className="hidden md:flex items-center gap-1.5 text-[10px]"
               >
-                {preset.label}
-              </button>
-            ))}
-          </div>
+                <span className="px-2 py-1 rounded-full bg-[#131720] border border-[#252C38] text-[#94A3B8] whitespace-nowrap">
+                  {databaseStats.totalRecordsLoaded} Stations
+                </span>
+              </div>
+            )}
 
-          <select
-            aria-label="Filter map by charger connector type"
-            value={typeFilter}
-            onChange={e => setTypeFilter(e.target.value as any)}
-            className="w-full sm:w-auto max-w-full bg-[#13161A] border border-[#282D34] rounded px-2.5 py-1.5 text-[11px] text-[#F1F3F5] focus:outline-none focus:border-[#414851]"
-          >
-            <option value="ALL">All Types (Supernova, Type 6, Type 2, Socket)</option>
-            <option value="Supernova">Supernova Only</option>
-            <option value="Type 6">Type 6 Only</option>
-            <option value="Type 2">Type 2 Only</option>
-            <option value="Socket">Socket Only</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Google Maps-Style Place & Charger Search Bar on the Map */}
-      <div ref={mapSearchBoxRef} className="relative z-30">
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3.5 top-2.5 text-[#E8AA45]" />
-          <input
-            type="text"
-            aria-label="Search places, cafés, petrol pumps, or EV charging stations on map"
-            value={mapSearchQuery}
-            onChange={e => {
-              const val = e.target.value;
-              setMapSearchQuery(val);
-              if (mapSearchDebounceRef.current) {
-                clearTimeout(mapSearchDebounceRef.current);
-              }
-              if (val.trim().length < 2) {
-                setMapSearchSuggestions([]);
-                setIsMapDropdownOpen(false);
-                setIsMapSearching(false);
-                return;
-              }
-              setIsMapDropdownOpen(true);
-              setIsMapSearching(true);
-              mapSearchDebounceRef.current = setTimeout(() => {
-                executeMapPlaceSearch(val);
-              }, 200);
-            }}
-            onFocus={() => {
-              if (mapSearchQuery.trim().length >= 2) {
-                setIsMapDropdownOpen(true);
-              }
-            }}
-            onKeyDown={e => {
-              if (e.key === 'ArrowDown' && mapSearchSuggestions.length > 0) {
-                e.preventDefault();
-                setIsMapDropdownOpen(true);
-                setMapHighlightIdx(prev => (prev + 1) % mapSearchSuggestions.length);
-              } else if (e.key === 'ArrowUp' && mapSearchSuggestions.length > 0) {
-                e.preventDefault();
-                setMapHighlightIdx(
-                  prev => (prev - 1 + mapSearchSuggestions.length) % mapSearchSuggestions.length
-                );
-              } else if (e.key === 'Enter' && isMapDropdownOpen && mapSearchSuggestions.length > 0) {
-                e.preventDefault();
-                const chosen =
-                  mapSearchSuggestions[mapHighlightIdx >= 0 ? mapHighlightIdx : 0];
-                if (chosen) handleSelectMapPlace(chosen);
-              } else if (e.key === 'Escape') {
-                setIsMapDropdownOpen(false);
-              }
-            }}
-            placeholder="Search Google Maps-style across India (e.g. Kolar CCD, petrol pump near Kolar, EV charging station Bangalore)..."
-            className="w-full bg-[#13161A] border border-[#414851] focus:border-[#E8AA45] rounded-lg pl-10 pr-10 py-2 text-xs text-[#F1F3F5] focus:outline-none transition-colors"
-          />
-          {isMapSearching ? (
-            <Loader2 className="w-4 h-4 absolute right-3 top-2.5 text-[#E8AA45] animate-spin" />
-          ) : mapSearchQuery ? (
             <button
               type="button"
-              aria-label="Clear map place search"
+              data-testid="toggle-marker-clustering-btn"
               onClick={() => {
-                setMapSearchQuery('');
-                setMapSearchSuggestions([]);
-                setIsMapDropdownOpen(false);
-                setSearchedPlaceSummary(null);
-                if (searchedPinRef.current) {
-                  searchedPinRef.current.remove();
-                  searchedPinRef.current = null;
-                }
+                playTacticalClick();
+                setShowIndividualMarkers(prev => !prev);
               }}
-              className="absolute right-3 top-2.5 text-[#707883] hover:text-[#F1F3F5]"
+              className={`px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-full text-[9.5px] sm:text-[10px] font-bold whitespace-nowrap transition-all border flex items-center gap-1 cursor-pointer ${
+                showIndividualMarkers
+                  ? 'bg-[#38BDF8]/15 text-[#38BDF8] border-[#38BDF8]/50'
+                  : 'bg-[#131822] hover:bg-[#1A202C] text-[#E8AA45] border-[#E8AA45]/40'
+              }`}
+              title="Switch between Smart Grouped Circles and All Individual Pins"
             >
-              <X className="w-4 h-4" />
+              <Layers className="w-3 h-3 shrink-0" />
+              <span>{showIndividualMarkers ? 'All Pins' : 'Smart Clusters'}</span>
             </button>
-          ) : null}
+          </div>
         </div>
 
-        {isMapDropdownOpen && mapSearchQuery.trim().length >= 2 && (
-          <div
-            role="listbox"
-            aria-label="Map place search suggestions"
-            className="absolute left-0 right-0 top-full mt-1 z-[10020] bg-[#13161A] border border-[#414851] rounded-lg shadow-2xl max-h-64 overflow-y-auto divide-y divide-[#282D34]"
-          >
-            {isMapSearching && mapSearchSuggestions.length === 0 && (
-              <div className="p-3 text-xs text-[#A0A7B0] flex items-center gap-2">
-                <Loader2 className="w-3.5 h-3.5 text-[#E8AA45] animate-spin" />
-                <span>Searching places, businesses, highways & EV stations across India...</span>
-              </div>
-            )}
-            {!isMapSearching && mapSearchSuggestions.length === 0 && (
-              <div className="p-3 text-xs text-[#A0A7B0]">
-                No matching places found for &ldquo;{mapSearchQuery}&rdquo;. Try a city, landmark, or business name.
-              </div>
-            )}
-            {mapSearchSuggestions.map((item, idx) => (
-              <div
-                key={item.id}
-                role="option"
-                aria-selected={idx === mapHighlightIdx}
-                onMouseEnter={() => setMapHighlightIdx(idx)}
-                onMouseDown={e => {
-                  e.preventDefault();
-                  handleSelectMapPlace(item);
+        {/* Row 2: Station Name, City, Charger Type & GPS Search Bar */}
+        <div ref={mapSearchBoxRef} className="relative z-30">
+          <div className="relative flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#38BDF8]" />
+              <input
+                type="text"
+                data-testid="map-station-search-input"
+                aria-label="Search charging stations by name, charger type, coordinates, or city"
+                value={effectiveSearchQuery}
+                onChange={e => {
+                  const val = e.target.value;
+                  handleUpdateSearchQuery(val);
+                  if (mapSearchDebounceRef.current) {
+                    clearTimeout(mapSearchDebounceRef.current);
+                  }
+                  if (val.trim().length < 1) {
+                    setMapSearchSuggestions([]);
+                    setIsMapDropdownOpen(false);
+                    setIsMapSearching(false);
+                    return;
+                  }
+                  setIsMapDropdownOpen(true);
+                  if (val.trim().length >= 2) {
+                    setIsMapSearching(true);
+                    mapSearchDebounceRef.current = setTimeout(() => {
+                      executeMapPlaceSearch(val);
+                    }, 200);
+                  }
                 }}
-                className={`p-3 cursor-pointer flex items-start justify-between gap-3 transition-colors ${
-                  idx === mapHighlightIdx ? 'bg-[#191D22]' : 'hover:bg-[#191D22]/70'
-                }`}
+                onFocus={() => {
+                  if (effectiveSearchQuery.trim().length >= 1) {
+                    setIsMapDropdownOpen(true);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'ArrowDown' && mapSearchSuggestions.length > 0) {
+                    e.preventDefault();
+                    setIsMapDropdownOpen(true);
+                    setMapHighlightIdx(prev => (prev + 1) % mapSearchSuggestions.length);
+                  } else if (e.key === 'ArrowUp' && mapSearchSuggestions.length > 0) {
+                    e.preventDefault();
+                    setMapHighlightIdx(
+                      prev => (prev - 1 + mapSearchSuggestions.length) % mapSearchSuggestions.length
+                    );
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (matchingStationSuggestions.length > 0) {
+                      const topStation = matchingStationSuggestions[0];
+                      handleFocusStationOnMap(topStation);
+                      setIsMapDropdownOpen(false);
+                    } else if (isMapDropdownOpen && mapSearchSuggestions.length > 0) {
+                      const chosen =
+                        mapSearchSuggestions[mapHighlightIdx >= 0 ? mapHighlightIdx : 0];
+                      if (chosen) handleSelectMapPlace(chosen);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setIsMapDropdownOpen(false);
+                  }
+                }}
+                placeholder="Search by city, station name, charger type, or coordinates..."
+                className="w-full bg-[#12161F] border border-[#262E3B] focus:border-[#38BDF8] rounded-xl pl-10 pr-9 py-2.5 text-xs sm:text-sm text-[#F8FAFC] placeholder-[#64748B] font-sans focus:outline-none transition-colors"
+              />
+              {isMapSearching ? (
+                <Loader2 className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-[#38BDF8] animate-spin" />
+              ) : effectiveSearchQuery ? (
+                <button
+                  type="button"
+                  data-testid="clear-map-station-search-btn"
+                  aria-label="Clear station search"
+                  onClick={() => {
+                    handleUpdateSearchQuery('');
+                    setMapSearchSuggestions([]);
+                    setIsMapDropdownOpen(false);
+                    setSearchedPlaceSummary(null);
+                    if (searchedPinRef.current) {
+                      searchedPinRef.current.remove();
+                      searchedPinRef.current = null;
+                    }
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#707883] hover:text-[#F1F3F5]"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : null}
+            </div>
+
+            {(effectiveSearchQuery || currentStationFilter !== 'ALL') && (
+              <button
+                type="button"
+                data-testid="view-all-valid-stations-btn"
+                onClick={() => {
+                  playTacticalClick();
+                  handleUpdateSearchQuery('');
+                  if (onFilterChange) onFilterChange('ALL');
+                  else setInternalFilter('ALL');
+                  setIsMapDropdownOpen(false);
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-[#161B26] hover:bg-[#1E2534] border border-[#42B883]/50 text-[#42B883] text-xs font-bold whitespace-nowrap cursor-pointer shrink-0"
               >
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-[#E8AA45] shrink-0" />
-                    <span className="text-xs font-bold text-[#F1F3F5] truncate">{item.name}</span>
+                Reset
+              </button>
+            )}
+          </div>
+
+          {isMapDropdownOpen && effectiveSearchQuery.trim().length >= 1 && (
+            <div
+              role="listbox"
+              data-testid="map-station-search-results"
+              aria-label="Matching charging stations and places"
+              className="absolute left-0 right-0 top-full mt-1 z-[10020] bg-[#13161A] border border-[#414851] rounded-lg shadow-2xl max-h-72 overflow-y-auto divide-y divide-[#282D34]"
+            >
+              {/* Matching Charging Stations from Database */}
+              {matchingStationSuggestions.length > 0 && (
+                <div className="p-2 bg-[#0D0F12]/90">
+                  <div className="px-2 py-1 text-[10px] font-bold text-[#42B883] uppercase tracking-wider flex items-center justify-between">
+                    <span>Matching Charging Stations ({matchingStationSuggestions.length})</span>
+                    <span>Tap to select &amp; navigate</span>
                   </div>
-                  <div className="text-[11px] font-semibold text-[#AEB5BE] pl-5">
-                    {item.locality}
-                  </div>
-                  <div className="text-[11px] text-[#707883] font-sans pl-5 line-clamp-1">
-                    {item.address}
+                  <div className="divide-y divide-[#282D34]/60">
+                    {matchingStationSuggestions.map(st => {
+                      const dispName = st.referenceName || st.name;
+                      const dispCoords =
+                        st.exactLocationCoordinates ||
+                        `${st.latitude.toFixed(6)}, ${st.longitude.toFixed(6)}`;
+                      const dispType = formatMinimalChargerType(
+                        st.rawChargerType ?? st.chargerDetails ?? st.chargerType
+                      );
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          data-testid={`search-result-station-${st.id}`}
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            handleFocusStationOnMap(st);
+                            setIsMapDropdownOpen(false);
+                          }}
+                          className="w-full text-left p-2.5 hover:bg-[#191D22] transition-colors flex items-start justify-between gap-2 cursor-pointer"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <Zap className="w-3.5 h-3.5 text-[#42B883] shrink-0" />
+                              <span className="text-xs font-bold text-[#F1F3F5] truncate">
+                                {dispName}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-[#E8AA45] font-mono pl-5 truncate mt-0.5">
+                              GPS: {dispCoords}
+                            </div>
+                            <div className="text-[11px] text-[#A0A7B0] font-sans pl-5 truncate">
+                              Charger: {dispType}
+                            </div>
+                          </div>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-[#42B883]/15 border border-[#42B883]/40 text-[#42B883] font-bold shrink-0">
+                            Select
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#0D0F12] border border-[#282D34] text-[#E8AA45] shrink-0">
-                  {item.category}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
 
-        {searchedPlaceSummary && (
-          <div className="mt-2 px-3 py-1.5 rounded bg-[#13161A] border border-[#E8AA45]/40 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-            <div className="flex items-center gap-1.5 text-[#F1F3F5]">
-              <MapPin className="w-3.5 h-3.5 text-[#E8AA45] shrink-0" />
-              <span className="font-bold">{searchedPlaceSummary.name}</span>
-              <span className="text-[#A0A7B0]">({searchedPlaceSummary.locality})</span>
+              {matchingStationSuggestions.length === 0 &&
+                !isMapSearching &&
+                mapSearchSuggestions.length === 0 && (
+                  <div className="p-3 text-xs text-[#A0A7B0]">
+                    No matching stations or places found for &ldquo;{effectiveSearchQuery}&rdquo;.
+                  </div>
+                )}
+
+              {mapSearchSuggestions.map((item, idx) => (
+                <div
+                  key={item.id}
+                  role="option"
+                  aria-selected={idx === mapHighlightIdx}
+                  onMouseEnter={() => setMapHighlightIdx(idx)}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    handleSelectMapPlace(item);
+                  }}
+                  className={`p-2.5 cursor-pointer flex items-start justify-between gap-2 transition-colors ${
+                    idx === mapHighlightIdx ? 'bg-[#191D22]' : 'hover:bg-[#191D22]/70'
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-[#E8AA45] shrink-0" />
+                      <span className="text-xs font-bold text-[#F1F3F5] truncate">{item.name}</span>
+                    </div>
+                    <div className="text-[11px] text-[#707883] font-sans pl-5 truncate">
+                      {item.locality} • {item.address}
+                    </div>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#0D0F12] border border-[#282D34] text-[#E8AA45] shrink-0">
+                    {item.category}
+                  </span>
+                </div>
+              ))}
             </div>
-            <span className="text-[10px] text-[#42B883] font-mono">
-              Centered at {searchedPlaceSummary.latitude.toFixed(4)}°N, {searchedPlaceSummary.longitude.toFixed(4)}°E
-            </span>
-          </div>
-        )}
+          )}
+
+          {searchedPlaceSummary && (
+            <div className="mt-1.5 px-3 py-1.5 rounded-lg bg-[#131822] border border-[#E8AA45]/40 flex items-center justify-between gap-2 text-[11px]">
+              <div className="flex items-center gap-1.5 text-[#F1F3F5] truncate">
+                <MapPin className="w-3.5 h-3.5 text-[#E8AA45] shrink-0" />
+                <span className="font-bold truncate">{searchedPlaceSummary.name}</span>
+              </div>
+              <span className="text-[10px] text-[#42B883] shrink-0">
+                {searchedPlaceSummary.latitude.toFixed(3)}°N, {searchedPlaceSummary.longitude.toFixed(3)}°E
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Row 3: Charger Type Filter Bar (Clean 3x2 Mobile / 6-Col Desktop, Zero Truncation) */}
+        <div
+          data-testid="map-charger-type-filter-bar"
+          role="group"
+          aria-label="Filter charging stations on map by type"
+          className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 font-sans"
+        >
+          {MAP_STATION_FILTER_OPTIONS.map(opt => {
+            const isSelected =
+              currentStationFilter === opt.id ||
+              (opt.id === 'SUPERNOVA' &&
+                (currentStationFilter === 'Supernova' || currentStationFilter === 'UV_SUPERNOVA')) ||
+              (opt.id === 'Community Provided Chargers' &&
+                (currentStationFilter === 'COMMUNITY' || currentStationFilter === 'OWNERS')) ||
+              (opt.id === 'BOLT_TYPE_6' &&
+                (currentStationFilter === 'Type 6' || currentStationFilter === 'TYPE_6')) ||
+              (opt.id === 'TYPE_2' && currentStationFilter === 'Type 2') ||
+              (opt.id === 'SOCKET' &&
+                (currentStationFilter === 'Socket' || currentStationFilter === 'SOCKETS'));
+            const count = filterCounts[opt.id] ?? 0;
+
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                data-testid={`map-filter-chip-${opt.id.toLowerCase().replace(/\s+/g, '-')}`}
+                aria-pressed={isSelected}
+                onClick={() => handleSelectStationFilter(opt.id)}
+                className={`px-1.5 sm:px-2.5 py-1.5 sm:py-2 rounded-xl text-[9.5px] sm:text-xs font-bold whitespace-nowrap transition-all flex items-center justify-between gap-0.5 sm:gap-1 border cursor-pointer ${
+                  isSelected
+                    ? opt.activeStyle
+                    : 'bg-[#12161F] hover:bg-[#181E2A] text-[#E2E8F0] border-[#242B38]'
+                }`}
+              >
+                <span className="flex items-center gap-1 min-w-0">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      isSelected ? 'bg-[#08090B]' : opt.dotColor
+                    }`}
+                  />
+                  <span className="tracking-tight">{opt.shortLabel}</span>
+                </span>
+                <span
+                  className={`px-1 py-0.5 rounded-full text-[8.5px] sm:text-[10px] font-mono font-bold shrink-0 ${
+                    isSelected
+                      ? 'bg-[#08090B]/20 text-[#08090B]'
+                      : 'bg-[#1C222E] text-[#94A3B8]'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Row 4: Quick Region Jump Bar */}
+        <div className="grid grid-cols-5 sm:flex sm:flex-wrap items-center gap-1 sm:gap-1.5">
+          <button
+            type="button"
+            data-testid="fit-all-stations-btn"
+            onClick={handleFitAllStationsOnMap}
+            className={`px-1 sm:px-2.5 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold text-center whitespace-nowrap transition-colors border cursor-pointer ${
+              activeRegionPreset === 'all_markers'
+                ? 'bg-[#42B883]/20 text-[#42B883] border-[#42B883]/50'
+                : 'bg-[#12161F] hover:bg-[#181E2A] text-[#42B883] border-[#242B38]'
+            }`}
+          >
+            FIT ALL
+          </button>
+          {REGION_PRESETS.map(preset => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => handleFlyToPreset(preset)}
+              className={`px-1 sm:px-2.5 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold text-center whitespace-nowrap transition-colors border cursor-pointer ${
+                activeRegionPreset === preset.id
+                  ? 'bg-[#38BDF8]/20 text-[#38BDF8] border-[#38BDF8]/50'
+                  : 'bg-[#12161F] hover:bg-[#181E2A] text-[#94A3B8] hover:text-[#F8FAFC] border-[#242B38]'
+              }`}
+            >
+              <span className="sm:hidden">{preset.shortLabel}</span>
+              <span className="hidden sm:inline">{preset.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Full-Width Geographical Map Canvas followed immediately below by ALL Selected Charger Details */}
-      <div className="space-y-4">
-        {/* 1. Full-Width Map Canvas (Switches to Fixed Full-Screen in View Full Navigation mode) */}
+      {/* Map Canvas + Selected Charger Details */}
+      <div className="space-y-3">
         <div
           data-testid={isFullNavigation ? 'charging-map-fullscreen-overlay' : undefined}
           className={`transition-all duration-200 ${
             isFullNavigation
               ? 'fixed inset-0 z-[9999] bg-[#08090B] flex flex-col w-screen h-screen'
-              : 'relative rounded-lg overflow-hidden border border-[#282D34] bg-[#08090B]'
+              : 'relative rounded-2xl overflow-hidden border border-[#242B38] bg-[#08090B] shadow-inner'
           }`}
           style={isFullNavigation ? { paddingTop: 'max(env(safe-area-inset-top), 12px)' } : undefined}
         >
-          {/* Full Navigation HUD Header Bar (Only visible in Full Navigation mode) */}
+          {/* Full Navigation HUD Header Bar */}
           {isFullNavigation && (
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#0D1015] border-b border-[#282D34] shrink-0 z-30">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-2 px-3 py-2 bg-[#0D1015] border-b border-[#282D34] shrink-0 z-30">
+              <div className="flex items-center justify-between gap-2">
                 <button
                   type="button"
                   data-testid="exit-full-navigation-btn"
@@ -873,33 +1306,54 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
                     playTacticalClick();
                     setIsFullNavigation(false);
                   }}
-                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-[#191D22] hover:bg-[#252A30] border border-[#E8AA45] text-[#E8AA45] hover:text-[#F1F3F5] font-mono font-bold text-xs uppercase transition-all cursor-pointer shadow-md"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#191D22] hover:bg-[#252A30] border border-[#E8AA45] text-[#E8AA45] font-mono font-bold text-xs uppercase transition-all cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  <span>Exit Full Navigation</span>
+                  <span>Exit Full Map</span>
                 </button>
-                <div className="hidden sm:flex flex-col">
-                  <span className="font-mono font-bold text-xs text-[#F1F3F5] tracking-wide">
-                    FULL MAP NAVIGATION & CHARGER EXPLORER
-                  </span>
-                  <span className="font-mono text-[10px] text-[#A0A7B0]">
-                    {visibleStations.length} STATIONS LOADED • TAP ANY CHARGER TO INSPECT
-                  </span>
+
+                <div className="flex flex-wrap items-center gap-1">
+                  {REGION_PRESETS.map(preset => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => handleFlyToPreset(preset)}
+                      className="px-2 py-1 rounded bg-[#13161A] hover:bg-[#252A30] border border-[#282D34] text-[#D4D8DE] text-[10px] font-bold uppercase whitespace-nowrap"
+                    >
+                      {preset.shortLabel}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Quick Regional Jumps */}
-              <div className="flex items-center gap-1.5 text-xs font-mono overflow-x-auto">
-                {REGION_PRESETS.map(preset => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => handleFlyToPreset(preset)}
-                    className="px-2.5 py-1 rounded bg-[#13161A] hover:bg-[#252A30] border border-[#414851] text-[#D4D8DE] hover:text-[#F1F3F5] text-[10px] font-bold uppercase whitespace-nowrap transition-colors"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
+              {/* Filter chips inside Full Screen Map too */}
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                {MAP_STATION_FILTER_OPTIONS.map(opt => {
+                  const isSelected = currentStationFilter === opt.id;
+                  const count = filterCounts[opt.id] ?? 0;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => handleSelectStationFilter(opt.id)}
+                      className={`px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap flex items-center justify-between gap-1 border cursor-pointer ${
+                        isSelected
+                          ? opt.activeStyle
+                          : 'bg-[#13161A] text-[#D4D8DE] border-[#282D34]'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1 truncate">
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            isSelected ? 'bg-[#08090B]' : opt.dotColor
+                          }`}
+                        />
+                        <span className="truncate">{opt.shortLabel}</span>
+                      </span>
+                      <span className="opacity-80">({count})</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -908,332 +1362,599 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
             ref={mapContainerRef}
             data-testid="leaflet-charging-map"
             className={`w-full z-10 transition-all ${
-              isFullNavigation ? 'h-full flex-1' : 'h-[380px] sm:h-[480px]'
+              isFullNavigation ? 'h-full flex-1' : 'h-[370px] sm:h-[450px]'
             }`}
           />
 
-          {/* Legend Overlay */}
-          <div className="bg-[#13161A]/95 border-t border-[#282D34] px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[10px] z-20">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="flex items-center gap-1 text-[#42B883]">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#42B883] inline-block" />
+          {/* Clean Circular Icon Legend & Full Screen Footer Bar */}
+          <div className="bg-[#0E131B] border-t border-[#222936] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-[11px] font-sans z-20">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <span className="flex items-center gap-1.5 text-[#42B883] font-medium">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#091512] border-2 border-[#42B883] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
                 Supernova
               </span>
-              <span className="flex items-center gap-1 text-[#729BCB]">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#729BCB] inline-block" />
+              <span className="flex items-center gap-1.5 text-[#E8AA45] font-medium">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#191309] border-2 border-[#E8AA45] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
+                Community
+              </span>
+              <span className="flex items-center gap-1.5 text-[#729BCB] font-medium">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#0B1420] border-2 border-[#729BCB] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
                 Type 6
               </span>
-              <span className="flex items-center gap-1 text-[#E8AA45]">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#E8AA45] inline-block" />
+              <span className="flex items-center gap-1.5 text-[#38BDF8] font-medium">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#0A1622] border-2 border-[#38BDF8] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
                 Type 2
               </span>
-              <span className="flex items-center gap-1 text-[#D4D8DE]">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#D4D8DE] inline-block" />
+              <span className="flex items-center gap-1.5 text-[#D4D8DE] font-medium">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#14181F] border-2 border-[#D4D8DE] inline-flex items-center justify-center text-[8px] shadow-sm">•</span>
                 Socket
               </span>
-              <span className="flex items-center gap-1 text-[#E8AA45]">
-                <span className="px-1 rounded border border-[#E8AA45] text-[#F1F3F5] text-[9px]">
-                  N
-                </span>
-                Cluster Group
+              <span className="flex items-center gap-1.5 text-[#F8FAFC] font-medium">
+                <span className="w-4 h-4 rounded-full bg-[#0E1726] border-2 border-[#38BDF8] inline-flex items-center justify-center text-[8px] text-[#E8AA45] font-mono font-bold shadow-sm">3</span>
+                Multi-Charger Circle
               </span>
             </div>
-            <span className="text-[#707883]">ZOOM: {currentZoom}x</span>
+            <button
+              type="button"
+              data-testid="charging-map-view-full-navigation-btn"
+              onClick={() => {
+                playTacticalClick();
+                setIsFullNavigation(prev => !prev);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#161D2A] hover:bg-[#38BDF8] text-[#38BDF8] hover:text-[#08090B] border border-[#38BDF8]/40 font-mono font-bold text-[10px] uppercase transition-colors cursor-pointer shrink-0"
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span>{isFullNavigation ? 'Exit Full Map' : 'Full Screen Map'}</span>
+            </button>
           </div>
 
           {/* Full Navigation Interactive Slide-Up Charger Details Drawer */}
           {isFullNavigation && selectedStation && (
             <div
               data-testid="fullscreen-charger-details-drawer"
-              className="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-md max-h-[80vh] overflow-y-auto z-[1000] bg-[#0D1117]/95 backdrop-blur-md border-2 border-[#E8AA45] rounded-xl p-4 sm:p-5 shadow-2xl space-y-3 font-mono text-xs"
+              className="absolute bottom-4 left-3 right-3 sm:left-auto sm:right-5 sm:bottom-5 sm:max-w-sm max-h-[75vh] overflow-y-auto z-[1000] bg-[#0D1117]/95 backdrop-blur-md border border-[#E8AA45] rounded-xl p-4 shadow-2xl space-y-3 font-mono text-xs"
             >
-              {/* Header with Badges & Close Button */}
-              <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-[#282D34]">
+              <div className="flex items-start justify-between gap-2 pb-2 border-b border-[#282D34]">
                 <div>
                   <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                    <span className="px-2 py-0.5 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40 text-[9px] font-bold uppercase">
-                      STATION DETAILS
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-[#42B883]/20 text-[#42B883] border border-[#42B883]/40 text-[9px] font-bold uppercase flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" />
-                      {selectedStation.operatingStatus.toUpperCase()}
+                    <span className="px-2 py-0.5 rounded bg-[#42B883]/20 text-[#42B883] text-[9px] font-bold uppercase">
+                      {selectedStation.operatingStatus}
                     </span>
                     <span className={`px-2 py-0.5 rounded border text-[9px] font-bold uppercase ${selectedBadgeStyle.bg} ${selectedBadgeStyle.text} ${selectedBadgeStyle.border}`}>
-                      {effectiveSelectedType}
+                      {effectiveSelectedType} • {selectedStation.powerOutputKw} kW
                     </span>
                   </div>
-                  <h3 className="text-sm sm:text-base font-bold text-[#F1F3F5] leading-snug">
+                  <h3 className="text-sm font-bold text-[#F1F3F5] leading-snug">
                     {selectedStation.name}
                   </h3>
                 </div>
                 <button
                   type="button"
                   data-testid="close-fullscreen-drawer-btn"
-                  onClick={(e) => {
+                  onClick={e => {
                     e.stopPropagation();
                     playTacticalClick();
                     onSelectStation(null as any);
                   }}
-                  className="p-1 rounded bg-[#191D22] hover:bg-[#252A30] text-[#A0A7B0] hover:text-white cursor-pointer"
+                  className="p-1.5 rounded-lg bg-[#191D22] hover:bg-[#252A30] text-[#A0A7B0] hover:text-white cursor-pointer"
                   title="Close station details"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Full Address */}
+              {activeLocationStations.length >= 2 && (
+                <div
+                  data-testid="fullscreen-co-located-chargers-list"
+                  className="p-2.5 rounded-lg bg-[#13171F] border border-[#E8AA45]/60 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-[10px] font-bold text-[#E8AA45] uppercase">
+                    <span>{activeLocationStations.length} Chargers in {activeClusterLocationLabel}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playTacticalClick();
+                        setIsFullNavigation(false);
+                      }}
+                      className="underline text-[#F1F3F5] hover:text-[#E8AA45] cursor-pointer"
+                    >
+                      View All Below Map
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
+                    {activeLocationStations.map((st, idx) => {
+                      const isCurr = st.id === selectedStation.id;
+                      const stType: ChargerPlugType =
+                        st.chargerType || (st.isSupernova ? 'Supernova' : 'Socket');
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => {
+                            playTacticalClick();
+                            onSelectStation(st);
+                          }}
+                          className={`text-left px-2 py-1.5 rounded border text-[10px] flex items-center justify-between gap-2 cursor-pointer ${
+                            isCurr
+                              ? 'bg-[#E8AA45]/15 border-[#E8AA45] text-[#F1F3F5] font-bold'
+                              : 'bg-[#0D1117] border-[#282D34] text-[#A0A7B0] hover:text-white'
+                          }`}
+                        >
+                          <span className="truncate">
+                            #{idx + 1} {st.name}
+                          </span>
+                          <span className="shrink-0 text-[#E8AA45]">
+                            {stType} • {st.powerOutputKw}kW
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="text-[11px] text-[#A0A7B0] flex items-start gap-1.5 font-sans">
                 <MapPin className="w-3.5 h-3.5 text-[#E8AA45] shrink-0 mt-0.5" />
                 <span>{selectedStation.location}</span>
               </div>
 
-              {/* Specifications Grid */}
-              <div className="grid grid-cols-2 gap-2 text-[10px] p-2.5 rounded bg-[#13171F] border border-[#282D34]">
+              <div className="grid grid-cols-2 gap-2 text-[10px] p-2.5 rounded-lg bg-[#13171F] border border-[#282D34]">
                 <div>
-                  <span className="text-[#707883] block">CHARGER SOURCE</span>
-                  <span className="font-bold text-[#F1F3F5]">{selectedStation.chargerSource || (selectedStation.isSupernova ? 'Supernova' : 'Community')}</span>
-                </div>
-                <div>
-                  <span className="text-[#707883] block">POWER OUTPUT</span>
-                  <span className="font-bold text-[#42B883]">{selectedStation.powerOutputKw} kW</span>
-                </div>
-                <div>
-                  <span className="text-[#707883] block">ACCESS CONDITIONS</span>
+                  <span className="text-[#707883] block">ACCESS</span>
                   <span className="font-bold text-[#D4D8DE]">{selectedStation.accessConditions}</span>
                 </div>
                 <div>
                   <span className="text-[#707883] block">PRICING</span>
-                  <span className="font-bold text-[#E8AA45]">{selectedStation.pricing || 'Free / Commercial'}</span>
+                  <span className="font-bold text-[#E8AA45]">{selectedStation.pricing || 'Standard'}</span>
                 </div>
               </div>
 
-              {/* Submitter & Host Contact */}
-              {selectedStation.submittedByPhone && (
-                <div className="flex items-center justify-between p-2 rounded bg-[#1A1811] border border-[#E8AA45]/30 text-[11px]">
-                  <span className="text-[#E8AA45] font-bold flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>{selectedStation.reportedBy || 'Pilot Host'}: {selectedStation.submittedByPhone}</span>
-                  </span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={buildChargerNavigationUrl(selectedStation, userOrigin)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={e => {
+                    e.preventDefault();
+                    playTacticalClick();
+                    openInGoogleMaps(
+                      buildChargerNavigationUrl(selectedStation, userOrigin),
+                      selectedStation.latitude,
+                      selectedStation.longitude,
+                      `${selectedStation.name} ${selectedStation.location}`
+                    );
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#42B883] hover:bg-[#349e6f] text-[#08090B] font-mono font-bold text-xs uppercase tracking-wider shadow-lg transition-colors cursor-pointer"
+                >
+                  <NavIcon className="w-3.5 h-3.5" />
+                  <span>Navigate in Google Maps</span>
+                </a>
+                {selectedStation.submittedByPhone && (
                   <a
-                    href={`tel:${selectedStation.submittedByPhone}`}
-                    className="px-2.5 py-1 rounded bg-[#E8AA45] text-[#08090B] font-bold text-[10px] uppercase hover:bg-white"
+                    href={buildPhoneDialIntentUri(selectedStation.submittedByPhone)}
+                    onClick={e => {
+                      e.preventDefault();
+                      playTacticalClick();
+                      openPhoneDialer(selectedStation.submittedByPhone);
+                    }}
+                    className="px-3 py-2.5 rounded-lg bg-[#E8AA45] text-[#08090B] font-bold text-xs uppercase hover:bg-white shrink-0"
                   >
-                    Call Host
+                    Call
                   </a>
-                </div>
-              )}
-
-              {/* Vehicle Compatibility & User Notes */}
-              {selectedStation.userNotes && (
-                <div className="p-2 rounded bg-[#13171F] border border-[#282D34] text-[10px] text-[#A0A7B0]">
-                  <span className="text-[#D4D8DE] font-bold block mb-0.5">PILOT NOTES:</span>
-                  {selectedStation.userNotes}
-                </div>
-              )}
-
-              {/* Primary Action Button: Open in Google Maps */}
-              <a
-                href={buildChargerNavigationUrl(selectedStation, userOrigin)}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={e => {
-                  e.preventDefault();
-                  playTacticalClick();
-                  openInGoogleMaps(
-                    buildChargerNavigationUrl(selectedStation, userOrigin),
-                    selectedStation.latitude,
-                    selectedStation.longitude,
-                    `${selectedStation.name} ${selectedStation.location}`
-                  );
-                }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#42B883] hover:bg-[#349e6f] text-[#08090B] font-mono font-bold text-xs uppercase tracking-wider shadow-lg transition-colors cursor-pointer"
-              >
-                <NavIcon className="w-3.5 h-3.5" />
-                <span>Navigate in Google Maps</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        {/* View Full Navigation Launch Bar (Positioned Right Below the Map) */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-lg bg-[#0D1015] border border-[#282D34]">
-          <div className="flex items-center gap-2 text-xs font-mono text-[#D4D8DE]">
-            <Compass className="w-4 h-4 text-[#E8AA45] shrink-0 animate-spin" style={{ animationDuration: '16s' }} />
-            <div>
-              <span className="font-bold text-[#F1F3F5] uppercase">Immersive Full Screen Navigation</span>
-              <span className="hidden sm:inline text-[#707883] ml-2">• Explore all charging stations with full details</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            data-testid="charging-map-view-full-navigation-btn"
-            onClick={() => {
-              playTacticalClick();
-              setIsFullNavigation(true);
-            }}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#191D22] to-[#252A30] hover:from-[#E8AA45] hover:to-[#E8AA45] text-[#E8AA45] hover:text-[#08090B] border border-[#E8AA45] font-mono font-bold text-xs uppercase tracking-wider transition-all shadow-md cursor-pointer group"
-          >
-            <Maximize2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
-            <span>View Full Navigation</span>
-          </button>
-        </div>
-
-        {/* 2. IMMEDIATELY RIGHT BELOW THE MAP: Selected Charger Details Panel */}
+        {/* Selected Charger Details Panel (Only shown when a charger pin, cluster, or card is selected) */}
         <div id="selected-charger-details-anchor">
           {selectedStation ? (
             <div
               data-testid="selected-charger-info-panel"
-              className="bg-[#13161A] border border-[#414851] rounded-lg p-4 sm:p-5 space-y-5 shadow-xl"
+              className="bg-[#13161A] border border-[#414851] rounded-xl p-4 space-y-4 shadow-xl"
             >
-              {/* Status & Charger Type Header */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#282D34]">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#252A30] text-[#E8AA45] border border-[#E8AA45]/40 uppercase">
-                    SELECTED MAP CHARGER DETAILS
-                  </span>
-                  {selectedStation.chargerSource === 'Supernova' ||
-                  selectedStation.isSupernova ||
-                  selectedStation.chargerType === 'Supernova' ? (
-                    <span className="px-2 py-0.5 rounded bg-[#42B883]/20 text-[#42B883] border border-[#42B883]/40 text-[10px] font-bold uppercase">
-                      SUPERNOVA STATION
-                    </span>
-                  ) : resolveChargerSubmitterInfo(selectedStation).isCommunityProvided ? (
-                    <span className="px-2 py-0.5 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40 text-[10px] font-bold uppercase">
-                      COMMUNITY PROVIDED CHARGER
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded bg-[#252A30] text-[#729BCB] border border-[#729BCB]/40 text-[10px] font-bold uppercase">
-                      3RD PARTY STATION
-                    </span>
-                  )}
-                  <span
-                    className={`px-2.5 py-0.5 rounded border text-[11px] font-bold uppercase ${selectedBadgeStyle.bg} ${selectedBadgeStyle.text} ${selectedBadgeStyle.border}`}
+              {/* Multi-Charger Location Cluster Panel: Shows ALL chargers in this exact location/city */}
+              {activeLocationStations.length >= 2 && (
+                <div
+                  data-testid="co-located-chargers-hub"
+                  className="bg-[#0B0E14] border-2 border-[#E8AA45]/70 rounded-xl p-3.5 sm:p-4 space-y-3.5 shadow-lg"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#282D34]">
+                    <div className="space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          data-testid="co-located-chargers-count-badge"
+                          className="px-2.5 py-0.5 rounded-full bg-[#E8AA45] text-[#08090B] font-mono text-[11px] font-extrabold uppercase tracking-wider"
+                        >
+                          {activeLocationStations.length} CHARGERS IN THIS LOCATION
+                        </span>
+                        <span className="font-mono text-xs font-bold text-[#F1F3F5]">
+                          {activeClusterLocationLabel}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#A0A7B0] font-sans">
+                        All chargers registered at this location are listed below. Choose any charger to navigate, call the host, or book a charging slot.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    data-testid="co-located-chargers-list"
+                    className="grid grid-cols-1 md:grid-cols-2 gap-3"
                   >
-                    {effectiveSelectedType}
-                  </span>
-                  <span className="text-[#42B883] font-bold flex items-center gap-1 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    {selectedStation.operatingStatus.toUpperCase()}
-                  </span>
-                </div>
+                    {activeLocationStations.map((st, idx) => {
+                      const isCurrentSelected = st.id === selectedStation.id;
+                      const stEffectiveType: ChargerPlugType =
+                        st.chargerType || (st.isSupernova ? 'Supernova' : 'Socket');
+                      const stBadge = getChargerTypeBadgeStyle(stEffectiveType);
+                      const stSubmitter = resolveChargerSubmitterInfo(st);
+                      const stTerms = resolveCommunityChargerTerms(st);
+                      const stCanModify = canModifyChargerRecord(st, currentUser);
+                      const stCoords =
+                        st.exactLocationCoordinates ||
+                        `${st.latitude.toFixed(6)}, ${st.longitude.toFixed(6)}`;
+                      const stPhone = stSubmitter.submitterPhone || st.submittedByPhone || '';
 
-                <div className="flex flex-wrap items-center gap-3 text-[10px] text-[#707883]">
-                  <span>
-                    COORDINATES: {selectedStation.latitude.toFixed(4)}°N, {selectedStation.longitude.toFixed(4)}°E
-                  </span>
-                  <span>•</span>
-                  <span>LAST VERIFIED: {selectedStation.lastVerifiedDate}</span>
-                </div>
-              </div>
+                      return (
+                        <div
+                          key={st.id}
+                          data-testid={`co-located-charger-card-${st.id}`}
+                          onClick={() => {
+                            playTacticalClick();
+                            onSelectStation(st);
+                          }}
+                          className={`rounded-xl p-3.5 border transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                            isCurrentSelected
+                              ? 'bg-[#141C26] border-[#42B883] shadow-[0_0_18px_rgba(66,184,131,0.2)]'
+                              : 'bg-[#0F1319] border-[#282D34] hover:border-[#E8AA45]/70'
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 rounded bg-[#1E2631] text-[#D4D8DE] font-mono text-[10px] font-bold">
+                                  #{idx + 1}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded border text-[10px] font-mono font-bold uppercase ${stBadge.bg} ${stBadge.text} ${stBadge.border}`}
+                                >
+                                  {stEffectiveType} • {st.powerOutputKw} kW
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-[#13161A] border border-[#282D34] text-[10px] font-mono text-[#A0A7B0]">
+                                  {st.chargerSource || (st.isSupernova ? 'Supernova' : 'Station')}
+                                </span>
+                              </div>
 
-              {/* Station Name & Full Address */}
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-[#F1F3F5] leading-snug">
-                    {selectedStation.name}
-                  </h3>
-                  <div className="text-xs text-[#A0A7B0] flex items-start gap-1.5 mt-1 font-sans">
-                    <MapPin className="w-3.5 h-3.5 text-[#E8AA45] shrink-0 mt-0.5" />
-                    <span>{selectedStation.location}</span>
+                              {isCurrentSelected ? (
+                                <span className="px-2 py-0.5 rounded bg-[#42B883]/20 border border-[#42B883] text-[#42B883] font-mono text-[10px] font-bold uppercase">
+                                  ACTIVE / SELECTED
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded bg-[#191D22] border border-[#414851] text-[#E8AA45] font-mono text-[10px] font-bold uppercase">
+                                  TAP TO SELECT
+                                </span>
+                              )}
+                            </div>
+
+                            <div>
+                              <h4 className="text-sm font-bold text-[#F8FAFC] leading-snug">
+                                {st.referenceName || st.name}
+                              </h4>
+                              <div className="text-[11px] text-[#A0A7B0] font-sans mt-0.5">
+                                {st.location}
+                              </div>
+                              <div className="text-[10px] font-mono text-[#38BDF8] mt-0.5">
+                                GPS: {stCoords}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono bg-[#090C10] border border-[#1E2631] rounded-lg p-2">
+                              <div>
+                                <span className="text-[#707883] block">HOURS / ACCESS</span>
+                                <span className="text-[#F1F3F5] font-semibold truncate block">
+                                  {stTerms.isCommunityProvided
+                                    ? stTerms.availabilityTimeText
+                                    : st.accessConditions || 'Public 24/7'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[#707883] block">PRICING</span>
+                                <span className="text-[#E8AA45] font-bold truncate block">
+                                  {stTerms.isCommunityProvided
+                                    ? stTerms.formattedPricingBadge
+                                    : st.pricing || 'Standard'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {(stSubmitter.isCommunityProvided || st.reportedBy || stPhone) && (
+                              <div className="px-2.5 py-1.5 rounded bg-[#16130D] border border-[#E8AA45]/30 flex flex-wrap items-center justify-between gap-1.5 text-[11px] font-mono">
+                                <span className="text-[#D4D8DE]">
+                                  Host/Contact:{' '}
+                                  <strong className="text-[#F8FAFC]">
+                                    {stSubmitter.submitterName || st.reportedBy || 'Squadron Host'}
+                                  </strong>
+                                </span>
+                                {stPhone && (
+                                  <span className="text-[#42B883] font-bold">{stPhone}</span>
+                                )}
+                              </div>
+                            )}
+
+                            {st.userNotes && (
+                              <div className="text-[11px] text-[#CBD5E1] font-sans bg-[#090C10] border border-[#1E2631] rounded px-2.5 py-1.5">
+                                {st.userNotes}
+                              </div>
+                            )}
+                          </div>
+
+                          <div
+                            className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#1E2631]"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              data-testid={`select-co-located-charger-${st.id}`}
+                              onClick={() => {
+                                playTacticalClick();
+                                onSelectStation(st);
+                              }}
+                              className={`px-3 py-2 rounded-lg font-mono text-[10px] font-bold uppercase cursor-pointer transition-colors ${
+                                isCurrentSelected
+                                  ? 'bg-[#42B883] text-[#08090B]'
+                                  : 'bg-[#191D22] hover:bg-[#252A30] text-[#F1F3F5] border border-[#414851]'
+                              }`}
+                            >
+                              {isCurrentSelected ? 'Selected Below' : 'Choose Charger'}
+                            </button>
+
+                            <a
+                              href={buildChargerNavigationUrl(st, userOrigin)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              data-testid={`navigate-co-located-charger-${st.id}`}
+                              onClick={e => {
+                                e.preventDefault();
+                                playTacticalClick();
+                                openInGoogleMaps(
+                                  buildChargerNavigationUrl(st, userOrigin),
+                                  st.latitude,
+                                  st.longitude,
+                                  st.referenceName || st.name
+                                );
+                              }}
+                              className="flex-1 px-3 py-2 rounded-lg bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-mono text-[10px] font-bold uppercase flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <NavIcon className="w-3.5 h-3.5" />
+                              <span>Navigate</span>
+                            </a>
+
+                            {stPhone && (
+                              <a
+                                href={buildPhoneDialIntentUri(stPhone)}
+                                data-testid={`call-co-located-charger-${st.id}`}
+                                onClick={e => {
+                                  e.preventDefault();
+                                  playTacticalClick();
+                                  openPhoneDialer(stPhone);
+                                }}
+                                className="px-3 py-2 rounded-lg bg-[#42B883]/20 hover:bg-[#42B883]/30 border border-[#42B883]/60 text-[#42B883] font-mono text-[10px] font-bold uppercase flex items-center gap-1 transition-colors cursor-pointer"
+                              >
+                                <Phone className="w-3 h-3" />
+                                <span>Call</span>
+                              </a>
+                            )}
+
+                            {stCanModify && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  playTacticalClick();
+                                  onEditStation(st);
+                                }}
+                                className="p-2 rounded-lg bg-[#191D22] hover:bg-[#252A30] text-[#E8AA45] border border-[#414851] cursor-pointer"
+                                title="Edit Charger"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
+              )}
 
-                {canModifySelected && (
+              {/* Compact Marker Information Panel (Station/Reference Name, Exact GPS Coordinates, Charger Type, Navigate) */}
+              <div
+                data-testid="compact-marker-info-panel"
+                className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-3.5 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1.5 min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded bg-[#42B883]/20 text-[#42B883] border border-[#42B883]/40 text-[10px] font-bold uppercase">
+                        CHARGING STATION
+                      </span>
+                      { effectiveSelectedType && (
+                        <span
+                          className={`px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${selectedBadgeStyle.bg} ${selectedBadgeStyle.text} ${selectedBadgeStyle.border}`}
+                        >
+                          {effectiveSelectedType}
+                        </span>
+                      )}
+                      {selectedStation.isUnverifiedAssociation && (
+                        <span
+                          data-testid="marker-unverified-association-badge"
+                          className="px-2 py-0.5 rounded bg-[#E8AA45]/15 text-[#E8AA45] border border-[#E8AA45]/40 text-[10px] font-bold flex items-center gap-1"
+                        >
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          <span>{selectedStation.locationStatus || 'Verify coordinate association'}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] text-[#707883] uppercase">
+                        Station / Reference Name
+                      </div>
+                      <h3
+                        data-testid="marker-panel-reference-name"
+                        className="text-sm sm:text-base font-bold text-[#F1F3F5] leading-snug"
+                      >
+                        {selectedStation.referenceName || selectedStation.name}
+                      </h3>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-1.5 shrink-0">
+                    {canModifySelected && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playTacticalClick();
+                            onEditStation(selectedStation);
+                          }}
+                          className="p-2 rounded-lg bg-[#191D22] hover:bg-[#252A30] text-[#D4D8DE] border border-[#414851] cursor-pointer"
+                          title="Edit Charger"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-[#E8AA45]" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playTacticalClick();
+                            onDeleteStation(selectedStation);
+                          }}
+                          className="p-2 rounded-lg bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 text-[#E04F5F] border border-[#E04F5F]/40 cursor-pointer"
+                          title="Delete Charger"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
                         playTacticalClick();
-                        onEditStation(selectedStation);
+                        onSelectStation(null as any);
                       }}
-                      className="px-3 py-1.5 rounded bg-[#191D22] hover:bg-[#252A30] text-[#D4D8DE] border border-[#414851] flex items-center gap-1.5 text-[11px] font-bold cursor-pointer"
+                      className="p-2 rounded-lg bg-[#191D22] hover:bg-[#252A30] text-[#A0A7B0] hover:text-[#F1F3F5] border border-[#282D34] cursor-pointer"
+                      title="Close details"
                     >
-                      <Edit3 className="w-3.5 h-3.5 text-[#E8AA45]" />
-                      <span>Edit</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playTacticalClick();
-                        onDeleteStation(selectedStation);
-                      }}
-                      className="px-3 py-1.5 rounded bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 text-[#E04F5F] border border-[#E04F5F]/40 flex items-center gap-1.5 text-[11px] font-bold cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete</span>
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
-                )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
+                    <div className="text-[10px] text-[#707883] uppercase">
+                      Exact GPS Coordinates
+                    </div>
+                    <div
+                      data-testid="marker-panel-coordinates"
+                      className="text-xs font-bold text-[#42B883] font-mono mt-0.5 select-all"
+                    >
+                      {selectedStation.exactLocationCoordinates ||
+                        `${selectedStation.latitude.toFixed(6)}, ${selectedStation.longitude.toFixed(6)}`}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
+                    <div className="text-[10px] text-[#707883] uppercase">
+                      Charger Type
+                    </div>
+                    <div
+                      data-testid="marker-panel-charger-type"
+                      className="text-xs font-bold text-[#E8AA45] font-sans mt-0.5 break-words"
+                    >
+                      {formatMinimalChargerType(
+                        selectedStation.rawChargerType ??
+                          selectedStation.chargerDetails ??
+                          selectedStation.chargerType
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary Action CTA: Direct Google Maps Navigation */}
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <a
+                    href={buildChargerNavigationUrl(selectedStation, userOrigin)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="marker-panel-navigate-btn"
+                    onClick={e => {
+                      e.preventDefault();
+                      playTacticalClick();
+                      openInGoogleMaps(
+                        buildChargerNavigationUrl(selectedStation, userOrigin),
+                        selectedStation.latitude,
+                        selectedStation.longitude,
+                        selectedStation.referenceName || selectedStation.name
+                      );
+                    }}
+                    className="flex-1 px-4 py-3 rounded-lg bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md"
+                  >
+                    <NavIcon className="w-4 h-4" />
+                    <span>Navigate (Google Maps Directions)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+
+                  {(() => {
+                    const submitterInfo = resolveChargerSubmitterInfo(selectedStation);
+                    if (!submitterInfo.isCommunityProvided || !submitterInfo.submitterPhone) return null;
+                    return (
+                      <a
+                        href={submitterInfo.telHref}
+                        data-testid="selected-charger-call-submitter-btn"
+                        className="px-4 py-3 rounded-lg bg-[#42B883]/20 hover:bg-[#42B883]/30 border border-[#42B883]/50 text-[#42B883] font-bold text-xs inline-flex items-center justify-center gap-1.5 shrink-0 transition-colors"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>Call Host ({submitterInfo.submitterPhone})</span>
+                      </a>
+                    );
+                  })()}
+                </div>
               </div>
 
-              {/* 4-Column Key Specifications Grid */}
+              {/* Compact 4-Metric Key Strip */}
               {(() => {
                 const selectedTerms = resolveCommunityChargerTerms(selectedStation);
                 return (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
-                      <div className="text-[10px] text-[#707883]">CHARGER TYPE</div>
-                      <div className="text-[#E8AA45] font-bold text-sm mt-0.5 flex items-center gap-1.5">
-                        {selectedStation.chargerType === 'Supernova' ||
-                        selectedStation.isSupernova ||
-                        selectedStation.chargerSource === 'Supernova' ? (
-                          <>
-                            <img
-                              src="/assets/aistudio/87f724dd-d91d-4b81-9fca-91a11dc2cbec_40fb2a9f.png"
-                              alt="Supernova"
-                              className="w-5 h-5 object-contain shrink-0"
-                            />
-                            <span>Supernova</span>
-                          </>
-                        ) : selectedStation.chargerType === 'Type 6' ? (
-                          <>
-                            <img
-                              src="/assets/aistudio/type6_transparent.png"
-                              alt="Type 6"
-                              className="w-5 h-5 object-contain shrink-0"
-                            />
-                            <span className="text-[#10B981]">Type 6</span>
-                          </>
-                        ) : selectedStation.chargerType === 'Socket' ? (
-                          <>
-                            <img
-                              src="/assets/aistudio/socket_icon.svg"
-                              alt="Socket"
-                              className="w-5 h-5 object-contain shrink-0"
-                            />
-                            <span className="text-[#F8FAFC]">Socket (15A/16A)</span>
-                          </>
-                        ) : (
-                          selectedStation.chargerType || 'Socket'
-                        )}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="p-2.5 rounded-lg bg-[#0D0F12] border border-[#282D34]">
+                      <div className="text-[10px] text-[#707883]">CONNECTOR</div>
+                      <div className="text-[#E8AA45] font-bold text-xs mt-0.5 truncate">
+                        {selectedStation.chargerType || 'Socket'} ({selectedStation.connectorTypes.join(', ')})
                       </div>
                     </div>
 
-                    <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
+                    <div className="p-2.5 rounded-lg bg-[#0D0F12] border border-[#282D34]">
                       <div className="text-[10px] text-[#707883]">MAX POWER</div>
-                      <div className="text-[#42B883] font-bold text-sm mt-0.5">
+                      <div className="text-[#42B883] font-bold text-xs mt-0.5">
                         {selectedStation.powerOutputKw} kW
                       </div>
                     </div>
 
-                    <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
-                      <div className="text-[10px] text-[#707883]">AVAILABILITY TIME</div>
+                    <div className="p-2.5 rounded-lg bg-[#0D0F12] border border-[#282D34]">
+                      <div className="text-[10px] text-[#707883]">HOURS</div>
                       <div
                         data-testid="selected-charger-availability-time"
-                        className="text-[#F1F3F5] font-semibold text-xs truncate mt-0.5 flex items-center gap-1"
+                        className="text-[#F1F3F5] font-semibold text-xs truncate mt-0.5"
                       >
-                        <Clock className="w-3 h-3 text-[#729BCB] shrink-0" />
-                        <span className="truncate">
-                          {selectedTerms.isCommunityProvided
-                            ? selectedTerms.availabilityTimeText
-                            : selectedStation.accessConditions}
-                        </span>
+                        {selectedTerms.isCommunityProvided
+                          ? selectedTerms.availabilityTimeText
+                          : selectedStation.accessConditions}
                       </div>
                     </div>
 
-                    <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
-                      <div className="text-[10px] text-[#707883]">PRICING &amp; COST</div>
+                    <div className="p-2.5 rounded-lg bg-[#0D0F12] border border-[#282D34]">
+                      <div className="text-[10px] text-[#707883]">PRICING</div>
                       <div
                         data-testid="selected-charger-pricing-badge"
                         className={`font-bold text-xs truncate mt-0.5 ${
@@ -1246,300 +1967,67 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
                       >
                         {selectedTerms.isCommunityProvided
                           ? selectedTerms.formattedPricingBadge
-                          : selectedStation.pricing || 'Commercial Standard'}
+                          : selectedStation.pricing || 'Commercial'}
                       </div>
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Submitted-by Info & Contact Owner Card — ONLY FOR COMMUNITY PROVIDED CHARGERS */}
+              {/* Community Host Info Strip (Only for Community Chargers) */}
               {(() => {
                 const submitterInfo = resolveChargerSubmitterInfo(selectedStation);
                 if (!submitterInfo.isCommunityProvided) return null;
                 return (
                   <div
                     data-testid="selected-charger-submitter-card"
-                    className="p-3.5 rounded border bg-[#191610] border-[#E8AA45]/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    className="px-3 py-2.5 rounded-lg border bg-[#191610] border-[#E8AA45]/40 flex flex-wrap items-center justify-between gap-2 text-xs"
                   >
-                    <div
-                      data-testid="map-selected-submitter-panel"
-                      className="space-y-1"
-                    >
-                      <div className="text-[10px] font-bold tracking-wider uppercase flex items-center gap-1.5 text-[#E8AA45]">
-                        <UserIcon className="w-3.5 h-3.5" />
-                        <span>COMMUNITY PROVIDED CHARGER — SUBMITTED BY</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#191D22] text-[#AEB5BE] border border-[#282D34]">
-                          {selectedStation.submittedByRole === 'admin' ? 'ADMIN' : 'COMMUNITY'}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                        <div>
-                          <span className="text-[#A0A7B0]">Name: </span>
-                          <span
-                            data-testid="selected-charger-submitter-name"
-                            className="font-bold text-[#F1F3F5]"
+                    <div data-testid="map-selected-submitter-panel" className="flex flex-wrap items-center gap-2">
+                      <UserIcon className="w-3.5 h-3.5 text-[#E8AA45]" />
+                      <span className="text-[#A0A7B0]">Host:</span>
+                      <span data-testid="selected-charger-submitter-name" className="font-bold text-[#F1F3F5]">
+                        <span data-testid="map-selected-submitter-name">{submitterInfo.submitterName}</span>
+                      </span>
+                      {submitterInfo.submitterPhone && (
+                        <>
+                          <span className="text-[#707883]">•</span>
+                          <a
+                            href={submitterInfo.telHref}
+                            data-testid="map-selected-submitter-phone"
+                            className="font-bold text-[#42B883] hover:underline"
                           >
-                            <span data-testid="map-selected-submitter-name">
-                              {submitterInfo.submitterName}
+                            <span data-testid="selected-charger-submitter-phone">
+                              {submitterInfo.submitterPhone}
                             </span>
-                          </span>
-                        </div>
-                        {submitterInfo.submitterPhone && (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[#A0A7B0]">Contact Number: </span>
-                            <a
-                              href={submitterInfo.telHref}
-                              data-testid="map-selected-submitter-phone"
-                              className="font-bold text-[#42B883] hover:underline"
-                            >
-                              <span data-testid="selected-charger-submitter-phone">
-                                {submitterInfo.submitterPhone}
-                              </span>
-                            </a>
-                          </div>
-                        )}
-                      </div>
+                          </a>
+                        </>
+                      )}
                     </div>
-
-                    {submitterInfo.submitterPhone && (
-                      <a
-                        href={submitterInfo.telHref}
-                        data-testid="selected-charger-call-submitter-btn"
-                        className="px-3.5 py-2 rounded bg-[#42B883]/20 hover:bg-[#42B883]/30 border border-[#42B883]/50 text-[#42B883] font-bold text-xs inline-flex items-center justify-center gap-1.5 shrink-0 transition-colors"
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                        <span>Call {submitterInfo.submitterPhone}</span>
-                      </a>
+                    {selectedStation.userNotes && (
+                      <span className="text-[11px] text-[#D4D8DE] font-sans">
+                        {selectedStation.userNotes}
+                      </span>
                     )}
                   </div>
                 );
               })()}
 
-              {/* Interactive Reservation System & Charger Intelligence Slot (Injected from ChargingNetwork) */}
+              {/* Non-community station notes if present */}
+              {!resolveChargerSubmitterInfo(selectedStation).isCommunityProvided && selectedStation.userNotes && (
+                <div className="px-3 py-2 rounded-lg bg-[#0D0F12] border border-[#282D34] text-xs text-[#D4D8DE] font-sans">
+                  <span className="text-[10px] font-mono text-[#707883] uppercase mr-2">Notes:</span>
+                  {selectedStation.userNotes}
+                </div>
+              )}
+
+              {/* Interactive Reservation System & Charger Intelligence Slot */}
               {selectedChargerReservationAndIntelSlot}
-
-              {/* Charger Type Hardware, Compatibility, Connectors & Link Requirements Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <div className="p-3.5 rounded bg-[#0D0F12] border border-[#282D34] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-[#707883] uppercase">
-                      CHARGER / CONNECTOR REQUIREMENT &amp; COMPATIBILITY:
-                    </span>
-                    <span className="text-[10px] font-bold text-[#E8AA45]">
-                      {effectiveSelectedType}
-                    </span>
-                  </div>
-
-                  <div className="text-xs text-[#F1F3F5] font-sans leading-relaxed">
-                    {selectedStation.chargerDetails ||
-                      selectedTypeSpec?.requirementSummary ||
-                      'Standard connector verification recommended.'}
-                  </div>
-
-                  <div className="text-[11px] text-[#A0A7B0] font-sans">
-                    Compatible Vehicles:{' '}
-                    <span className="text-[#D4D8DE]">
-                      {selectedStation.vehicleCompatibility ||
-                        'Check connector & model compatibility before charging'}
-                    </span>
-                  </div>
-
-                  {selectedStation.uvChargingLink && (
-                    <div className="pt-1.5 border-t border-[#282D34]">
-                      <div className="text-[10px] text-[#707883] mb-1">
-                        REQUIRED ULTRAVIOLETTE (UV) CHARGING LINK:
-                      </div>
-                      <a
-                        href={selectedStation.uvChargingLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs text-[#E8AA45] hover:underline break-all font-semibold"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                        <span>{selectedStation.uvChargingLink}</span>
-                      </a>
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-3.5 rounded bg-[#0D0F12] border border-[#282D34] space-y-3">
-                  <div>
-                    <div className="text-[10px] text-[#707883] mb-1.5">
-                      SUPPORTED CONNECTOR INTERFACES:
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedStation.connectorTypes.map((c, i) => (
-                        <span
-                          key={i}
-                          className="px-2.5 py-1 rounded bg-[#13161A] border border-[#414851] text-[#F1F3F5] text-xs font-semibold"
-                        >
-                          {c}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {selectedStation.userNotes && (
-                    <div className="pt-2 border-t border-[#282D34]">
-                      <div className="text-[10px] text-[#707883] mb-1">
-                        OPERATIONAL / AMENITY NOTES:
-                      </div>
-                      <div className="text-xs text-[#D4D8DE] font-sans leading-relaxed">
-                        {selectedStation.userNotes}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Primary CTA: Navigate to Charger */}
-              <div className="pt-2 border-t border-[#282D34] space-y-3">
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playTacticalClick();
-                      setShowNavDrawer(true);
-                      openInGoogleMaps(
-                        buildChargerNavigationUrl(selectedStation, userOrigin),
-                        selectedStation.latitude,
-                        selectedStation.longitude,
-                        `${selectedStation.name} ${selectedStation.location}`
-                      );
-                    }}
-                    className="flex-1 px-4 py-2.5 rounded bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow"
-                  >
-                    <NavIcon className="w-4 h-4" />
-                    <span>Navigate to Charger</span>
-                  </button>
-
-                  <a
-                    href={buildChargerNavigationUrl(selectedStation, userOrigin)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3.5 py-2.5 rounded bg-[#252A30] hover:bg-[#414851] text-[#F1F3F5] border border-[#414851] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5 text-[#E8AA45]" />
-                    <span>Directions</span>
-                  </a>
-
-                  <a
-                    href={buildGoogleMapsUrl(
-                      selectedStation.latitude,
-                      selectedStation.longitude,
-                      `${selectedStation.name} ${selectedStation.location}`
-                    )}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3.5 py-2.5 rounded bg-[#191D22] hover:bg-[#252A30] text-[#F1F3F5] border border-[#414851] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5 text-[#729BCB]" />
-                    <span>Open in Google Maps</span>
-                  </a>
-                </div>
-
-                {/* Navigation & Location Permission Drawer */}
-                {showNavDrawer && (
-                  <div
-                    data-testid="navigate-to-charger-drawer"
-                    className="p-3.5 rounded bg-[#08090B] border border-[#E8AA45]/50 space-y-3"
-                  >
-                    <div className="flex items-center justify-between pb-1.5 border-b border-[#282D34]">
-                      <span className="text-[#E8AA45] font-bold flex items-center gap-1.5">
-                        <NavIcon className="w-3.5 h-3.5" />
-                        <span>ROUTE NAVIGATION TO CHARGER</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowNavDrawer(false)}
-                        aria-label="Close navigation panel"
-                        className="text-[#707883] hover:text-[#F1F3F5]"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="text-[11px] text-[#A0A7B0] font-sans leading-relaxed">
-                      Destination coordinates:{' '}
-                      <span className="font-mono text-[#F1F3F5] font-semibold">
-                        {selectedStation.latitude.toFixed(5)}°N, {selectedStation.longitude.toFixed(5)}°E
-                      </span>{' '}
-                      ({selectedStation.location}).
-                    </div>
-
-                    <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34] space-y-2">
-                      <div className="text-[10px] text-[#AEB5BE] font-sans">
-                        <strong>Why location permission is optional:</strong> Requesting your current location sets your exact starting point for turn-by-turn directions. If you prefer not to share location access, Google Maps will still open directly to the charger&apos;s destination coordinates.
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={handleRequestCurrentLocation}
-                          disabled={locatingOrigin}
-                          className="px-3 py-1.5 rounded bg-[#191D22] hover:bg-[#252A30] text-[#D4D8DE] border border-[#414851] text-[11px] font-semibold flex items-center gap-1.5"
-                        >
-                          <LocateFixed className="w-3.5 h-3.5 text-[#42B883]" />
-                          <span>
-                            {locatingOrigin
-                              ? 'Requesting GPS...'
-                              : userOrigin
-                              ? 'Update Current Location Origin'
-                              : 'Use My Current Location'}
-                          </span>
-                        </button>
-
-                        {userOrigin && directDistanceKm !== null && (
-                          <span className="text-[11px] text-[#42B883] font-semibold">
-                            Direct Geodesic Distance: {directDistanceKm} km
-                          </span>
-                        )}
-                      </div>
-
-                      {locationFallbackMsg && (
-                        <div
-                          role="status"
-                          className="p-2 rounded bg-[#E8AA45]/10 border border-[#E8AA45]/40 text-[11px] text-[#E8AA45] font-sans"
-                        >
-                          {locationFallbackMsg}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-                      <a
-                        href={buildChargerNavigationUrl(selectedStation, userOrigin)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        data-testid="launch-google-maps-directions"
-                        onClick={e => {
-                          e.preventDefault();
-                          playTacticalClick();
-                          openInGoogleMaps(
-                            buildChargerNavigationUrl(selectedStation, userOrigin),
-                            selectedStation.latitude,
-                            selectedStation.longitude,
-                            `${selectedStation.name} ${selectedStation.location}`
-                          );
-                        }}
-                        className="w-full sm:w-auto px-4 py-2 rounded bg-[#42B883] hover:bg-[#389d6f] text-[#08090B] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>
-                          {userOrigin
-                            ? 'Open Turn-by-Turn Directions from My Location'
-                            : 'Open Destination in Google Maps Directions'}
-                        </span>
-                      </a>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           ) : (
-            <div className="bg-[#13161A] border border-[#282D34] rounded-lg p-10 text-center text-[#707883]">
-              Select a charger marker on the India map to inspect connector requirements, compatibility, reservation options, and navigation.
+            <div className="bg-[#13161A]/60 border border-[#282D34] rounded-xl px-4 py-3 text-center text-xs text-[#A0A7B0] flex items-center justify-center gap-2">
+              <MapPin className="w-4 h-4 text-[#E8AA45] shrink-0" />
+              <span>Tap any charger pin on the map to view details or launch Google Maps navigation.</span>
             </div>
           )}
         </div>
