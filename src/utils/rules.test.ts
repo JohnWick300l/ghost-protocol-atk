@@ -1988,10 +1988,10 @@ test('Interactive Cockpit Red-Glow Zone Registry: rotary hit-testing, directiona
 test('Cockpit Core-to-Full-Interface Transforming Boot Animation: phase timeline, iris expansion specs, and radial rays', () => {
   // Phase timeline resolution
   assert.equal(resolveCockpitBootPhase(0, false), 'core_logo');
-  assert.equal(resolveCockpitBootPhase(300, false), 'core_logo');
-  assert.equal(resolveCockpitBootPhase(700, false), 'dial_expand');
-  assert.equal(resolveCockpitBootPhase(1500, false), 'full_deploy');
-  assert.equal(resolveCockpitBootPhase(2500, false), 'ready');
+  assert.equal(resolveCockpitBootPhase(120, false), 'core_logo');
+  assert.equal(resolveCockpitBootPhase(300, false), 'dial_expand');
+  assert.equal(resolveCockpitBootPhase(550, false), 'full_deploy');
+  assert.equal(resolveCockpitBootPhase(800, false), 'ready');
 
   // Reduced motion immediately resolves to ready
   assert.equal(resolveCockpitBootPhase(0, true), 'ready');
@@ -2180,6 +2180,48 @@ test('Squadron Assist Call 112 & Phone Dialer Android WebView Protection: buildP
   assert.ok(mailIntent.includes('S.browser_fallback_url=mailto%3Apilot%40ghostprotocol.io'));
   assert.equal(openMailClient('mailto:pilot@ghostprotocol.io?subject=SOS', 'Mozilla/5.0 (X11; Linux x86_64)'), mailIntent);
 });
+
+test('Android Direct Media/Photo/Files Picker Intent: buildAndroidPhotoPickerIntentUri and openInAndroidPhotoPicker generate direct GET_CONTENT and IMAGE_CAPTURE intent:// URIs without opening Chrome or any website', async () => {
+  const {
+    isAndroidDevice,
+    buildAndroidPhotoPickerIntentUri,
+    openInAndroidPhotoPicker
+  } = await import('./rules.ts');
+
+  assert.equal(isAndroidDevice('Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UQ1A; wv)'), true);
+  assert.equal(isAndroidDevice('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'), false);
+
+  const galleryIntent = buildAndroidPhotoPickerIntentUri({
+    mode: 'gallery',
+    target: 'modifications'
+  });
+  assert.equal(
+    galleryIntent,
+    'intent://#Intent;action=android.intent.action.GET_CONTENT;category=android.intent.category.OPENABLE;type=image/*;B.android.intent.extra.ALLOW_MULTIPLE=true;end'
+  );
+  assert.ok(!galleryIntent.includes('com.android.chrome'));
+  assert.ok(!galleryIntent.includes('http'));
+
+  const cameraIntent = buildAndroidPhotoPickerIntentUri({
+    mode: 'camera',
+    target: 'modifications'
+  });
+  assert.equal(
+    cameraIntent,
+    'intent://#Intent;action=android.media.action.IMAGE_CAPTURE;end'
+  );
+  assert.ok(!cameraIntent.includes('com.android.chrome'));
+  assert.ok(!cameraIntent.includes('http'));
+
+  assert.equal(
+    openInAndroidPhotoPicker(
+      { mode: 'gallery', target: 'modifications' },
+      'Mozilla/5.0 (X11; Linux x86_64)'
+    ),
+    galleryIntent
+  );
+});
+
 
 test('Charging Network Co-Located & Same-City Clustering: groups 2+ chargers sharing exact coordinates, same address, or same city/town across Community, Supernova, Type 6, Type 2, and Socket types', async () => {
   const {

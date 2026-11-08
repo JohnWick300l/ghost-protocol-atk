@@ -170,6 +170,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
   const [searchQuery, setSearchQuery] = useState('');
   const [submissionNotice, setSubmissionNotice] = useState<string | null>(null);
   const [isBreakdownSyncExpanded, setIsBreakdownSyncExpanded] = useState<boolean>(false);
+  const [isAllChargersExpanded, setIsAllChargersExpanded] = useState<boolean>(false);
   const [isSkippedDrawerOpen, setIsSkippedDrawerOpen] = useState<boolean>(false);
   const [skippedMinimalRecords, setSkippedMinimalRecords] = useState<SkippedMinimalStationRecord[]>([]);
   const [minimalDbStats, setMinimalDbStats] = useState<{
@@ -1333,16 +1334,16 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
             playTacticalClick();
             setIsBreakdownSyncExpanded(prev => !prev);
           }}
-          className="w-full px-3.5 py-3 flex items-center justify-between gap-2 text-left hover:bg-[#13171F] transition-colors cursor-pointer"
+          className="w-full px-3 py-2 flex items-center justify-between gap-2 text-left hover:bg-[#13171F] transition-colors cursor-pointer text-xs"
         >
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <BarChart3 className="w-4 h-4 text-[#42B883] shrink-0" />
-            <span className="text-xs font-bold text-[#F1F3F5] tracking-wider uppercase">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            <BarChart3 className="w-3.5 h-3.5 text-[#42B883] shrink-0" />
+            <span className="font-bold text-[#F1F3F5] tracking-wider uppercase text-[11px]">
               NETWORK BREAKDOWN &amp; SYNC
             </span>
             <span
               data-testid="charging-connection-badge"
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
+              className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold border ${
                 isNetworkOffline
                   ? 'bg-[#E8AA45]/20 border-[#E8AA45]/50 text-[#E8AA45]'
                   : 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
@@ -1360,23 +1361,18 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 </>
               )}
             </span>
-            <span className="text-[11px] text-[#A0A7B0] hidden sm:inline">
-              {composition.totalCount} Stations • {composition.totalCapacityKw} kW
+            <span className="text-[10px] text-[#A0A7B0] hidden sm:inline">
+              ({composition.totalCount} Stations • {composition.totalCapacityKw} kW)
             </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[10px] text-[#A0A7B0] sm:hidden">
-              {composition.totalCount} • {composition.totalCapacityKw}kW
-            </span>
-            <span className="p-1 rounded-md bg-[#191D22] border border-[#282D34] text-[#E8AA45] flex items-center gap-1 text-[10px] font-bold px-2">
-              <span>{isBreakdownSyncExpanded ? 'Hide' : 'View'}</span>
-              {isBreakdownSyncExpanded ? (
-                <ChevronUp className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5" />
-              )}
-            </span>
+          <div className="flex items-center gap-1 shrink-0 text-[10px] text-[#E8AA45] font-bold">
+            <span>{isBreakdownSyncExpanded ? 'Hide' : 'Expand'}</span>
+            {isBreakdownSyncExpanded ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
           </div>
         </button>
 
@@ -1497,7 +1493,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
             >
               <div
                 style={{ width: `${Math.max(8, composition.segments.uvSupernova.percentage)}%` }}
-                className="h-full rounded-l-full bg-[#42B883] hover:opacity-90 transition-all duration-500 cursor-pointer"
+                className="h-full rounded-l-full bg-[#3B82F6] hover:opacity-90 transition-all duration-500 cursor-pointer"
                 onClick={() => {
                   playTacticalClick();
                   setFilterType(prev => (prev === 'SUPERNOVA' ? 'ALL' : 'SUPERNOVA'));
@@ -1515,7 +1511,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
               />
               <div
                 style={{ width: `${Math.max(8, composition.segments.boltType6.percentage)}%` }}
-                className="h-full rounded-r-full bg-[#729BCB] hover:opacity-90 transition-all duration-500 cursor-pointer"
+                className="h-full rounded-r-full bg-[#42B883] hover:opacity-90 transition-all duration-500 cursor-pointer"
                 onClick={() => {
                   playTacticalClick();
                   setFilterType(prev => (prev === 'BOLT_TYPE_6' ? 'ALL' : 'BOLT_TYPE_6'));
@@ -1536,13 +1532,13 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 }}
                 className={`p-2.5 sm:p-3 rounded-lg border transition-all cursor-pointer ${
                   filterType === 'SUPERNOVA'
-                    ? 'bg-[#42B883]/15 border-[#42B883] ring-1 ring-[#42B883]'
-                    : 'bg-[#11151C] border-[#282D34] hover:border-[#42B883]/60'
+                    ? 'bg-[#3B82F6]/15 border-[#3B82F6] ring-1 ring-[#3B82F6]'
+                    : 'bg-[#11151C] border-[#282D34] hover:border-[#3B82F6]/60'
                 }`}
               >
                 <div className="flex items-center justify-between text-[10px] mb-1">
-                  <span className="text-[#42B883] font-bold truncate">SUPERNOVA</span>
-                  <span className="text-[#42B883] font-bold hidden sm:inline">
+                  <span className="text-[#3B82F6] font-bold truncate">SUPERNOVA</span>
+                  <span className="text-[#3B82F6] font-bold hidden sm:inline">
                     {composition.segments.uvSupernova.percentage}%
                   </span>
                 </div>
@@ -1596,13 +1592,13 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 }}
                 className={`p-2.5 sm:p-3 rounded-lg border transition-all cursor-pointer ${
                   filterType === 'BOLT_TYPE_6'
-                    ? 'bg-[#729BCB]/15 border-[#729BCB] ring-1 ring-[#729BCB]'
-                    : 'bg-[#11151C] border-[#282D34] hover:border-[#729BCB]/60'
+                    ? 'bg-[#42B883]/15 border-[#42B883] ring-1 ring-[#42B883]'
+                    : 'bg-[#11151C] border-[#282D34] hover:border-[#42B883]/60'
                 }`}
               >
                 <div className="flex items-center justify-between text-[10px] mb-1">
-                  <span className="text-[#729BCB] font-bold truncate">TYPE 6</span>
-                  <span className="text-[#729BCB] font-bold hidden sm:inline">
+                  <span className="text-[#42B883] font-bold truncate">TYPE 6</span>
+                  <span className="text-[#42B883] font-bold hidden sm:inline">
                     {composition.segments.boltType6.percentage}%
                   </span>
                 </div>
@@ -2277,24 +2273,32 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 </AnimatePresence>
 
                 {/* ========================================================= */}
-                {/* CLEAN STATIONS DIRECTORY GRID */}
+                {/* SECTION BELOW MAP: ONLY SELECTED CHARGER OR EXPANDABLE ALL CHARGERS */}
                 {/* ========================================================= */}
-                <section aria-label="Charging Stations Directory" className="space-y-3">
-                  <div className="flex items-center justify-between text-xs font-mono text-[#A0A7B0]">
-                    <span className="font-bold text-[#F1F3F5]">
-                      CHARGING STATIONS ({filteredStations.length})
-                    </span>
-                    <span className="text-[10px] text-[#707883]">TAP TO INSPECT OR NAVIGATE</span>
-                  </div>
+                <section aria-label="Charging Station Details and Directory" className="space-y-3">
+                  {selectedStation ? (
+                    <div id="selected-charger-details-anchor" className="space-y-3">
+                      <div className="flex items-center justify-between text-xs font-mono text-[#A0A7B0] pb-1 border-b border-[#282D34]">
+                        <span className="font-bold text-[#42B883] uppercase flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-[#42B883]" />
+                          SELECTED CHARGER DETAILS
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playTacticalClick();
+                            setSelectedStation(null);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-[#191D22] hover:bg-[#252A30] text-[#E8AA45] hover:text-white border border-[#E8AA45]/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Deselect / View All Chargers</span>
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
 
-                  {filteredStations.length === 0 ? (
-                    <div className="bg-[#0D0F12] border border-[#282D34] rounded-xl p-8 text-center text-xs font-mono text-[#707883]">
-                      No charging stations match this filter.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {filteredStations.map(cs => {
-                        const isSelected = selectedStation?.id === cs.id;
+                      {/* Display ONLY the selected charger card */}
+                      {(() => {
+                        const cs = selectedStation;
                         const plugType =
                           cs.rawChargerType !== undefined
                             ? formatMinimalChargerType(cs.rawChargerType)
@@ -2305,85 +2309,54 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                         const exactCoordsDisplay =
                           cs.exactLocationCoordinates ||
                           `${Number(cs.latitude).toFixed(6)}, ${Number(cs.longitude).toFixed(6)}`;
+
                         return (
-                          <div
-                            key={cs.id}
-                            data-testid={`charger-directory-card-${cs.id}`}
-                            onClick={() => {
-                              playTacticalClick();
-                              setSelectedStation(cs);
-                              const anchor = document.getElementById('selected-charger-details-anchor');
-                              if (anchor) {
-                                anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                              }
-                            }}
-                            className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-3 ${
-                              isSelected
-                                ? 'bg-[#191D22] border-[#E8AA45] shadow-lg'
-                                : 'bg-[#0D0F12] border-[#282D34] hover:border-[#414851]'
-                            }`}
-                          >
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between text-[10px] font-mono">
-                                <div className="flex items-center gap-1.5 flex-wrap">
+                          <div className="p-4 rounded-xl border bg-[#13171F] border-[#E8AA45] shadow-xl space-y-3 font-mono text-xs">
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   {getStationSourceBadge(cs)}
                                   {plugType.toLowerCase() !== 'supernova' && (
-                                    <span className="px-2 py-0.5 rounded bg-[#13161A] border border-[#414851] text-[#E8AA45] font-bold">
+                                    <span className="px-2 py-0.5 rounded bg-[#191D22] border border-[#E8AA45]/50 text-[#E8AA45] font-bold">
                                       {plugType}
                                     </span>
                                   )}
-                                  {cs.isUnverifiedAssociation && (
-                                    <span
-                                      className="px-1.5 py-0.5 rounded bg-[#E8AA45]/15 border border-[#E8AA45]/40 text-[#E8AA45] text-[9px] font-bold"
-                                      title={cs.locationStatus}
-                                    >
-                                      UNVERIFIED ASSOC.
-                                    </span>
-                                  )}
                                   {isChargerAddedInLast24Hours(cs) && (
-                                    <span
-                                      data-testid={`charger-new-24h-badge-${cs.id}`}
-                                      className="px-1.5 py-0.5 rounded bg-[#42B883]/20 border border-[#42B883]/50 text-[#42B883] text-[9px] font-bold"
-                                    >
+                                    <span className="px-2 py-0.5 rounded bg-[#42B883]/20 border border-[#42B883]/50 text-[#42B883] font-bold">
                                       NEW
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-[#42B883] font-bold">{cs.powerOutputKw} kW</span>
+                                <span className="text-[#42B883] font-bold text-sm">{cs.powerOutputKw} kW</span>
                               </div>
 
-                              <div className="text-sm sm:text-base font-bold text-[#F8FAFC] line-clamp-1">
+                              <div className="text-base sm:text-lg font-bold text-[#F8FAFC]">
                                 {cs.referenceName || cs.name}
                               </div>
-                              <div className="text-[11px] font-mono text-[#38BDF8] truncate">
+                              <div className="text-xs text-[#38BDF8]">
                                 GPS: {exactCoordsDisplay}
                               </div>
-                              <div className="text-xs text-[#A0A7B0] truncate font-sans">
+                              <div className="text-xs text-[#A0A7B0] font-sans">
                                 {cs.location}
                               </div>
 
                               {submitterInfo.isCommunityProvided && (
-                                <div
-                                  data-testid={`charger-card-submitter-${cs.id}`}
-                                  className="pt-1.5 flex flex-wrap items-center justify-between gap-1.5 text-[10px] font-mono text-[#D4D8DE]"
-                                >
-                                  <span className="truncate">
+                                <div className="pt-2 border-t border-[#282D34] flex flex-wrap items-center justify-between gap-2 text-xs text-[#D4D8DE]">
+                                  <span>
                                     Host: <strong className="text-[#F1F3F5]">{submitterInfo.submitterName}</strong>
                                   </span>
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded font-bold border ${
-                                      cardTerms.pricingType === 'Free'
-                                        ? 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
-                                        : 'bg-[#E8AA45]/15 border-[#E8AA45]/40 text-[#E8AA45]'
-                                    }`}
-                                  >
+                                  <span className="px-2 py-0.5 rounded font-bold border bg-[#E8AA45]/15 border-[#E8AA45]/40 text-[#E8AA45]">
                                     {cardTerms.formattedPricingBadge}
                                   </span>
                                 </div>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-2 pt-2 border-t border-[#282D34] font-mono">
+                            <div className="pt-2 border-t border-[#282D34]">
+                              {renderSelectedChargerReservationAndIntel()}
+                            </div>
+
+                            <div className="flex items-center gap-2 pt-2 border-t border-[#282D34]">
                               <a
                                 href={navUrl}
                                 target="_blank"
@@ -2392,35 +2365,164 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                                   e.stopPropagation();
                                   playTacticalClick();
                                 }}
-                                className="flex-1 py-2 px-3 rounded-lg bg-[#191D22] hover:bg-[#E8AA45] text-[#E8AA45] hover:text-[#08090B] border border-[#E8AA45]/50 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
+                                className="flex-1 py-2.5 px-4 rounded-lg bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold text-xs flex items-center justify-center gap-2 transition-colors"
                               >
-                                <NavIcon className="w-3 h-3" />
-                                <span>Navigate</span>
+                                <NavIcon className="w-4 h-4" />
+                                <span>Navigate to Charger</span>
                               </a>
-
-                              {submitterInfo.isCommunityProvided && (
-                                <button
-                                  type="button"
-                                  data-testid={`directory-reserve-btn-${cs.id}`}
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    playTacticalClick();
-                                    setSelectedStation(cs);
-                                    const anchor = document.getElementById('selected-charger-details-anchor');
-                                    if (anchor) {
-                                      anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                    }
-                                  }}
-                                  className="py-2 px-3 rounded-lg bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                                >
-                                  <Calendar className="w-3 h-3" />
-                                  <span>Reserve</span>
-                                </button>
-                              )}
                             </div>
                           </div>
                         );
-                      })}
+                      })()}
+                    </div>
+                  ) : (
+                    /* When NO charger is selected, show "View All Chargers" section (collapsible/expandable style) */
+                    <div className="space-y-3">
+                      <button
+                        type="button"
+                        data-testid="toggle-view-all-chargers-btn"
+                        aria-expanded={isAllChargersExpanded}
+                        onClick={() => {
+                          playTacticalClick();
+                          setIsAllChargersExpanded(prev => !prev);
+                        }}
+                        className="w-full p-3.5 sm:p-4 rounded-xl bg-[#0D1015] hover:bg-[#13171F] border border-[#282D34] hover:border-[#E8AA45] flex items-center justify-between text-xs font-mono transition-all cursor-pointer shadow-lg"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Zap className="w-4 h-4 text-[#E8AA45]" />
+                          <span className="font-bold text-[#F1F3F5] text-xs sm:text-sm uppercase tracking-wider">
+                            VIEW ALL CHARGERS ({filteredStations.length} Active Stations)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#191D22] border border-[#282D34] text-[#E8AA45] font-bold text-[11px]">
+                          <span>{isAllChargersExpanded ? 'Hide Chargers' : 'View All Chargers'}</span>
+                          {isAllChargersExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </div>
+                      </button>
+
+                      {isAllChargersExpanded && (
+                        <div className="pt-2 space-y-3">
+                          {filteredStations.length === 0 ? (
+                            <div className="bg-[#0D0F12] border border-[#282D34] rounded-xl p-8 text-center text-xs font-mono text-[#707883]">
+                              No charging stations match this filter.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {filteredStations.map(cs => {
+                                const plugType =
+                                  cs.rawChargerType !== undefined
+                                    ? formatMinimalChargerType(cs.rawChargerType)
+                                    : cs.chargerType || (cs.isSupernova ? 'Supernova' : 'Socket');
+                                const submitterInfo = resolveChargerSubmitterInfo(cs);
+                                const cardTerms = resolveCommunityChargerTerms(cs);
+                                const navUrl = buildChargerNavigationUrl(cs as any, null);
+                                const exactCoordsDisplay =
+                                  cs.exactLocationCoordinates ||
+                                  `${Number(cs.latitude).toFixed(6)}, ${Number(cs.longitude).toFixed(6)}`;
+                                return (
+                                  <div
+                                    key={cs.id}
+                                    data-testid={`charger-directory-card-${cs.id}`}
+                                    onClick={() => {
+                                      playTacticalClick();
+                                      setSelectedStation(cs);
+                                      const anchor = document.getElementById('selected-charger-details-anchor');
+                                      if (anchor) {
+                                        anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                      }
+                                    }}
+                                    className="p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-3 bg-[#0D0F12] border-[#282D34] hover:border-[#E8AA45]"
+                                  >
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between text-[10px] font-mono">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          {getStationSourceBadge(cs)}
+                                          {plugType.toLowerCase() !== 'supernova' && (
+                                            <span className="px-2 py-0.5 rounded bg-[#13161A] border border-[#414851] text-[#E8AA45] font-bold">
+                                              {plugType}
+                                            </span>
+                                          )}
+                                          {isChargerAddedInLast24Hours(cs) && (
+                                            <span
+                                              data-testid={`charger-new-24h-badge-${cs.id}`}
+                                              className="px-1.5 py-0.5 rounded bg-[#42B883]/20 border border-[#42B883]/50 text-[#42B883] text-[9px] font-bold"
+                                            >
+                                              NEW
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span className="text-[#42B883] font-bold">{cs.powerOutputKw} kW</span>
+                                      </div>
+
+                                      <div className="text-sm sm:text-base font-bold text-[#F8FAFC] line-clamp-1">
+                                        {cs.referenceName || cs.name}
+                                      </div>
+                                      <div className="text-[11px] font-mono text-[#38BDF8] truncate">
+                                        GPS: {exactCoordsDisplay}
+                                      </div>
+                                      <div className="text-xs text-[#A0A7B0] truncate font-sans">
+                                        {cs.location}
+                                      </div>
+
+                                      {submitterInfo.isCommunityProvided && (
+                                        <div
+                                          data-testid={`charger-card-submitter-${cs.id}`}
+                                          className="pt-1.5 flex flex-wrap items-center justify-between gap-1.5 text-[10px] font-mono text-[#D4D8DE]"
+                                        >
+                                          <span className="truncate">
+                                            Host: <strong className="text-[#F1F3F5]">{submitterInfo.submitterName}</strong>
+                                          </span>
+                                          <span
+                                            className={`px-1.5 py-0.5 rounded font-bold border ${
+                                              cardTerms.pricingType === 'Free'
+                                                ? 'bg-[#42B883]/15 border-[#42B883]/40 text-[#42B883]'
+                                                : 'bg-[#E8AA45]/15 border-[#E8AA45]/40 text-[#E8AA45]'
+                                            }`}
+                                          >
+                                            {cardTerms.formattedPricingBadge}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2 pt-2 border-t border-[#282D34] font-mono">
+                                      <a
+                                        href={navUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          playTacticalClick();
+                                        }}
+                                        className="flex-1 py-2 px-3 rounded-lg bg-[#191D22] hover:bg-[#E8AA45] text-[#E8AA45] hover:text-[#08090B] border border-[#E8AA45]/50 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors"
+                                      >
+                                        <NavIcon className="w-3 h-3" />
+                                        <span>Navigate</span>
+                                      </a>
+
+                                      {submitterInfo.isCommunityProvided && (
+                                        <button
+                                          type="button"
+                                          data-testid={`directory-reserve-btn-${cs.id}`}
+                                          onClick={e => {
+                                            e.stopPropagation();
+                                            playTacticalClick();
+                                            setSelectedStation(cs);
+                                          }}
+                                          className="py-2 px-3 rounded-lg bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                        >
+                                          <Calendar className="w-3 h-3" />
+                                          <span>Reserve</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </section>

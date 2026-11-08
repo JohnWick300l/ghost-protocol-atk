@@ -178,30 +178,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const deletedSet = new Set(getDeletedIds());
     return PUBLIC_FALLBACK_ACCOUNTS.filter(u => !deletedSet.has(u.id));
   });
-  const [loading, setLoading] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      const autostartMode = new URLSearchParams(window.location.search).get('autostart');
-      if (autostartMode === 'admin' || autostartMode === '1') {
-        return false;
-      }
-      const stored = localStorage.getItem('ghost_protocol_current_user_obj');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const deletedSet = new Set(getDeletedIds());
-        if (parsed && parsed.id && !deletedSet.has(parsed.id)) {
-          return false;
-        }
-      }
-      const hasSessionToken = Boolean(localStorage.getItem('ghost_protocol_session_token'));
-      if (!hasSessionToken) {
-        return false;
-      }
-    } catch {
-      return false;
-    }
-    return true;
-  });
+  // Non-blocking authentication initialization: Never delay initial app start
+  const [loading, setLoading] = useState(false);
 
   // Authentication & Account Switch Modal State (Decision 2A & 1A)
   const [authModalOpen, setAuthModalOpen] = useState(false);

@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Upload,
+  Camera,
   Trash2,
   Edit2,
   CloudOff,
@@ -37,7 +38,8 @@ import {
   getAuctionBidSummary,
   validateAndPlaceAuctionBid,
   selectAuctionWinner,
-  createMarketplacePresetIllustration
+  createMarketplacePresetIllustration,
+  processUploadedDevicePhoto
 } from '../utils/rules';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -318,22 +320,19 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach(file => {
-      if (!file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = event => {
-        if (event.target?.result && typeof event.target.result === 'string') {
-          setPhotoList(prev => [...prev, event.target!.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
-
+    const fileList = Array.from(files);
     e.target.value = '';
+
+    for (const file of fileList) {
+      const processed = await processUploadedDevicePhoto(file);
+      if (processed && processed.length > 0) {
+        setPhotoList(prev => [...prev, processed]);
+      }
+    }
   };
 
   const handleAddPhotoUrl = () => {
@@ -2507,34 +2506,50 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="flex items-center justify-center gap-2 p-3 bg-zinc-900 border border-dashed border-zinc-700 hover:border-amber-500/60 text-zinc-300 hover:text-amber-400 rounded-lg cursor-pointer transition-colors text-xs font-semibold">
-                    <Upload className="w-4 h-4" />
-                    Upload Photo Files
+                  {/* Select Photos (Gallery) - direct native touch overlay */}
+                  <div className="relative overflow-hidden flex items-center justify-center gap-2 p-3 bg-zinc-900 border border-dashed border-zinc-700 hover:border-amber-500/60 text-zinc-300 hover:text-amber-400 rounded-lg cursor-pointer transition-colors text-xs font-semibold">
+                    <Upload className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Select Photos (Gallery)</span>
                     <input
                       type="file"
                       accept="image/*"
                       multiple
                       onChange={handleFileUpload}
-                      className="hidden"
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-20"
+                      aria-label="Select Photos From Device"
                     />
-                  </label>
-
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      placeholder="Or paste image URL..."
-                      value={photoUrlInput}
-                      onChange={e => setPhotoUrlInput(e.target.value)}
-                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddPhotoUrl}
-                      className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                    >
-                      Add
-                    </button>
                   </div>
+
+                  {/* Take Photo (Camera) - direct native touch overlay */}
+                  <div className="relative overflow-hidden flex items-center justify-center gap-2 p-3 bg-zinc-900 border border-dashed border-zinc-700 hover:border-sky-500/60 text-zinc-300 hover:text-sky-400 rounded-lg cursor-pointer transition-colors text-xs font-semibold">
+                    <Camera className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span>Take Photo (Camera)</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleFileUpload}
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-20"
+                      aria-label="Take Photo with Camera"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="Or paste image URL..."
+                    value={photoUrlInput}
+                    onChange={e => setPhotoUrlInput(e.target.value)}
+                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddPhotoUrl}
+                    className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                  >
+                    Add URL
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-2 overflow-x-auto py-1">

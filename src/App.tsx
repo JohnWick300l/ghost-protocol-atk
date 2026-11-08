@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AudioProvider, useAudio } from './context/AudioContext';
 import { Navigation } from './components/Navigation';
-import { TacticalDashboard } from './components/TacticalDashboard';
 import { CockpitDashboard } from './components/CockpitDashboard';
 import { MissionMode } from './components/MissionMode';
 import { JetEngineer } from './components/JetEngineer';
@@ -18,6 +17,7 @@ import { AdminCentre } from './components/AdminCentre';
 import { ContributionHub } from './components/ContributionHub';
 import { GlobalSearch } from './components/GlobalSearch';
 import { PilotWelcomeScreen } from './components/PilotWelcomeScreen';
+import { AndroidPhotoBridge } from './components/AndroidPhotoBridge';
 import { AvionicsPageTransition, AnimatePresence, motion } from './components/AvionicsTransition';
 import { Ride, EmergencyRequest, ProblemReport, DiscussionPost, ChargingStation, NotificationItem } from './types';
 import {
@@ -27,7 +27,7 @@ import {
 } from './utils/rules';
 import { Shield, Radio, Lock, AlertTriangle, X } from 'lucide-react';
 
-const SquadronShowdownGame = React.lazy(() => import('./games/squadron-showdown/SquadronShowdownGame'));
+import { SquadronShowdownGame } from './games/squadron-showdown/SquadronShowdownGame';
 
 import {
   CACHE_KEYS,
@@ -56,7 +56,25 @@ const AppContent: React.FC = () => {
 
   const [tabHistory, setTabHistory] = useState<string[]>(['dashboard']);
   const [showExitToast, setShowExitToast] = useState<boolean>(false);
-  const [hasCompletedInitialBoot, setHasCompletedInitialBoot] = useState<boolean>(false);
+  const [hasCompletedInitialBoot, setHasCompletedInitialBoot] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return sessionStorage.getItem('ghost_protocol_initial_boot_done') === 'true';
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
+
+  const handleCompleteInitialBoot = useCallback(() => {
+    setHasCompletedInitialBoot(true);
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('ghost_protocol_initial_boot_done', 'true');
+      } catch {}
+    }
+  }, []);
   const lastBackPressRef = useRef<number>(0);
 
   const [currentTab, setCurrentTabState] = useState<string>(() => {
@@ -634,6 +652,16 @@ const AppContent: React.FC = () => {
   }, []);
 
   const handleMarkNotificationRead = async (id: string) => {
+    // Optimistic local state update so unread count updates immediately
+    setNotifications(prev => {
+      const next = prev.map(n => (n.id === id ? { ...n, read: true } : n));
+      const cached = loadCachedTelemetry();
+      if (cached) {
+        saveCachedTelemetry({ ...cached.data, notifications: next });
+      }
+      return next;
+    });
+
     if (!currentUser) return;
     try {
       await fetch(`/api/notifications/${id}/read`, {
@@ -641,15 +669,22 @@ const AppContent: React.FC = () => {
         credentials: 'same-origin',
         headers: getSessionAuthHeaders()
       });
-      setNotifications(prev =>
-        prev.map(n => (n.id === id ? { ...n, read: true } : n))
-      );
     } catch (err) {
       console.error('Failed to mark notification read:', err);
     }
   };
 
   const handleMarkAllNotificationsRead = async () => {
+    // Optimistic local state update so unread count updates immediately
+    setNotifications(prev => {
+      const next = prev.map(n => ({ ...n, read: true }));
+      const cached = loadCachedTelemetry();
+      if (cached) {
+        saveCachedTelemetry({ ...cached.data, notifications: next });
+      }
+      return next;
+    });
+
     if (!currentUser) return;
     try {
       await fetch('/api/notifications/read-all', {
@@ -657,9 +692,49 @@ const AppContent: React.FC = () => {
         credentials: 'same-origin',
         headers: getSessionAuthHeaders()
       });
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     } catch (err) {
       console.error('Failed to mark all read:', err);
+    }
+  };
+
+  const handleClearAllNotifications = async () => {
+    setNotifications([]);
+    const cached = loadCachedTelemetry();
+    if (cached) {
+      saveCachedTelemetry({ ...cached.data, notifications: [] });
+    }
+
+    if (!currentUser) return;
+    try {
+      await fetch('/api/notifications/clear-all', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: getSessionAuthHeaders()
+      });
+    } catch (err) {
+      console.error('Failed to clear all notifications:', err);
+    }
+  };
+
+  const handleClearNotification = async (id: string) => {
+    setNotifications(prev => {
+      const next = prev.filter(n => n.id !== id);
+      const cached = loadCachedTelemetry();
+      if (cached) {
+        saveCachedTelemetry({ ...cached.data, notifications: next });
+      }
+      return next;
+    });
+
+    if (!currentUser) return;
+    try {
+      await fetch(`/api/notifications/${id}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: getSessionAuthHeaders()
+      });
+    } catch (err) {
+      console.error('Failed to delete notification:', err);
     }
   };
 
@@ -672,21 +747,27 @@ const AppContent: React.FC = () => {
     }
   }, [currentUser?.role, currentTab]);
 
-  if (currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown') {
-    return (
-      <React.Suspense
-        fallback={
-          <div className="min-h-screen w-full bg-[#050811] flex flex-col items-center justify-center text-cyan-400 font-mono text-sm">
-            INITIALIZING SQUADRON SHOWDOWN ARENA...
-          </div>
-        }
-      >
-        <SquadronShowdownGame onExitToGhostProtocol={() => setCurrentTab('dashboard')} />
-      </React.Suspense>
-    );
+  if (typeof window !== 'undefined') {
+    const bridgeParams = new URLSearchParams(window.location.search);
+    const photoBridgeSession = bridgeParams.get('photoBridge');
+    if (photoBridgeSession) {
+      const bridgeMode = bridgeParams.get('mode') === 'camera' ? 'camera' : 'gallery';
+      const bridgeTarget = bridgeParams.get('target') || 'modifications';
+      return (
+        <AndroidPhotoBridge
+          sessionId={photoBridgeSession}
+          initialMode={bridgeMode}
+          target={bridgeTarget}
+        />
+      );
+    }
   }
 
-  if (loading) {
+  if (currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown') {
+    return <SquadronShowdownGame onExitToGhostProtocol={() => setCurrentTab('dashboard')} />;
+  }
+
+  if (loading && !currentUser) {
     return (
       <div className="min-h-screen bg-[#010204] flex flex-col items-center justify-center font-mono text-xs text-[#94A3B8] p-6 relative overflow-hidden select-none">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(56,189,248,0.08)_0%,rgba(1,2,4,0.98)_70%)] pointer-events-none" />
@@ -764,6 +845,8 @@ const AppContent: React.FC = () => {
                 notifications={notifications}
                 onMarkNotificationRead={handleMarkNotificationRead}
                 onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+                onClearAllNotifications={handleClearAllNotifications}
+                onClearNotification={handleClearNotification}
                 isOffline={effectiveOffline}
                 cacheAge={cacheAge}
                 queuedActionCount={queuedActions.length}
@@ -772,8 +855,8 @@ const AppContent: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* Global Priority SOS Alert Banner for Registered City Riders & Admins */}
-        {notifications.filter(n => !n.read && n.type === 'emergency').length > 0 && (
+        {/* Global Priority SOS Alert Banner for Registered City Riders & Admins (on subpages) */}
+        {currentTab !== 'dashboard' && currentTab !== 'system_controls' && notifications.filter(n => !n.read && n.type === 'emergency').length > 0 && (
           <div className="bg-[#1A090D] border-b-2 border-[#E04F5F] px-4 py-2.5 z-40 shadow-[0_6px_24px_rgba(224,79,95,0.35)]">
             <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 font-mono text-xs">
               {(() => {
@@ -835,15 +918,7 @@ const AppContent: React.FC = () => {
       <main className={`flex-1 w-full mx-auto ${currentTab === 'dashboard' || currentTab === 'system_controls' || currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown' ? 'p-0 max-w-none' : 'max-w-7xl px-4 sm:px-6 py-6'}`}>
         <AvionicsPageTransition activeKey={currentTab} reducedMotion={reducedMotion}>
           {(currentTab === 'squadron-showdown' || currentTab === 'squadron_showdown') && (
-            <React.Suspense
-              fallback={
-                <div className="min-h-screen w-full bg-[#050811] flex flex-col items-center justify-center text-cyan-400 font-mono text-sm">
-                  INITIALIZING SQUADRON SHOWDOWN ARENA...
-                </div>
-              }
-            >
-              <SquadronShowdownGame onExitToGhostProtocol={() => setCurrentTab('dashboard')} />
-            </React.Suspense>
+            <SquadronShowdownGame onExitToGhostProtocol={() => setCurrentTab('dashboard')} />
           )}
           {(currentTab === 'dashboard' || currentTab === 'system_controls') && (
             <CockpitDashboard
@@ -854,6 +929,7 @@ const AppContent: React.FC = () => {
               chargingStations={chargingStations}
               initialShowSystemControls={currentTab === 'system_controls'}
               skipBootAnimation={hasCompletedInitialBoot}
+              onCompleteBoot={handleCompleteInitialBoot}
               onNavigate={(tabId, options) => {
                 if (options?.jetMode) {
                   setJetEngineerTab(options.jetMode);
@@ -878,6 +954,8 @@ const AppContent: React.FC = () => {
               notifications={notifications}
               onMarkNotificationRead={handleMarkNotificationRead}
               onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+              onClearAllNotifications={handleClearAllNotifications}
+              onClearNotification={handleClearNotification}
               openSearch={() => setSearchOpen(true)}
             />
           )}

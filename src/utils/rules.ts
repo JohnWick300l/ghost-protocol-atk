@@ -4634,6 +4634,86 @@ export function openMailClient(
   return targetUrl;
 }
 
+export type AndroidPhotoPickerMode = 'gallery' | 'camera';
+
+export interface AndroidPhotoPickerParams {
+  originUrl?: string | null;
+  sessionId?: string;
+  mode?: AndroidPhotoPickerMode;
+  target?: string;
+}
+
+/**
+ * Detects whether the current runtime is an Android device (WebView APK or mobile browser).
+ */
+export function isAndroidDevice(userAgentOverride?: string): boolean {
+  const ua =
+    userAgentOverride !== undefined
+      ? userAgentOverride
+      : typeof navigator !== 'undefined'
+      ? navigator.userAgent || ''
+      : '';
+  return /Android/i.test(ua);
+}
+
+/**
+ * Builds an Android `intent://` URI that opens the phone's native Media / Photos / Files picker
+ * (`android.intent.action.GET_CONTENT` with `image/*`) or Camera (`android.media.action.IMAGE_CAPTURE`)
+ * directly on the device WITHOUT ever opening Chrome or entering any website.
+ */
+export function buildAndroidPhotoPickerIntentUri(params?: AndroidPhotoPickerParams): string {
+  const mode: AndroidPhotoPickerMode = params?.mode === 'camera' ? 'camera' : 'gallery';
+  if (mode === 'camera') {
+    return 'intent://#Intent;action=android.media.action.IMAGE_CAPTURE;end';
+  }
+  return 'intent://#Intent;action=android.intent.action.GET_CONTENT;category=android.intent.category.OPENABLE;type=image/*;B.android.intent.extra.ALLOW_MULTIPLE=true;end';
+}
+
+/**
+ * Alias kept for backward compatibility; returns the direct Android Media / Files `intent://` URI.
+ */
+export function buildAndroidPhotoBridgeUrl(params?: AndroidPhotoPickerParams): string {
+  return buildAndroidPhotoPickerIntentUri(params);
+}
+
+/**
+ * Launches the phone's native Android Media / Photos / Files picker or Camera directly
+ * via `buildAndroidPhotoPickerIntentUri` without opening any external browser or website.
+ */
+export function openInAndroidPhotoPicker(
+  params?: AndroidPhotoPickerParams,
+  userAgentOverride?: string
+): string {
+  const targetUrl = buildAndroidPhotoPickerIntentUri(params);
+  const ua =
+    userAgentOverride !== undefined
+      ? userAgentOverride
+      : typeof navigator !== 'undefined'
+      ? navigator.userAgent || ''
+      : '';
+
+  if (typeof window !== 'undefined' && /Android/i.test(ua)) {
+    try {
+      const a = document.createElement('a');
+      a.href = targetUrl;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try {
+          a.remove();
+        } catch {}
+      }, 500);
+    } catch {
+      try {
+        window.location.assign(targetUrl);
+      } catch {}
+    }
+  }
+
+  return targetUrl;
+}
+
 /**
  * Validates a user's contribution submission. Supports the 3 options:
  * - 'chai' (20 Rs)
@@ -8369,9 +8449,9 @@ export function cycleCockpitSector(
 export type CockpitBootPhase = 'core_logo' | 'dial_expand' | 'full_deploy' | 'ready';
 
 export const COCKPIT_BOOT_TIMELINE_MS = {
-  CORE_LOGO_END: 650,
-  DIAL_EXPAND_END: 1450,
-  FULL_DEPLOY_END: 2200
+  CORE_LOGO_END: 180,
+  DIAL_EXPAND_END: 420,
+  FULL_DEPLOY_END: 680
 } as const;
 
 export interface CockpitBootTransformSpec {
@@ -8652,4 +8732,107 @@ export const COCKPIT_COMMUNITY_DISCLAIMER_TEXT =
 
 export const COCKPIT_COMMUNITY_DISCLAIMER_TAGLINE =
   'COMMUNITY PLATFORM • NOT AN OFFICIAL APP';
+
+/**
+ * Reads and compresses any photo file picked from device media (Android, iOS, Desktop).
+ * Handles missing MIME types (""), application/octet-stream, HEIC/HEIF, camera photos,
+ * and high-resolution images, producing a normalized JPEG Data URL (data:image/jpeg;base64,...)
+ * for instant preview and persistent sharing to all users.
+ */
+export async function processUploadedDevicePhoto(file: File): Promise<string> {
+  if (!file) return '';
+
+  const drawToJpegDataUrl = (
+    source: HTMLImageElement | ImageBitmap,
+    sw: number,
+    sh: number
+  ): string => {
+    try {
+      const MAX_DIM = 1200;
+      let width = sw || 800;
+      let height = sh || 600;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        if (width > height) {
+          height = Math.round((height * MAX_DIM) / width);
+          width = MAX_DIM;
+        } else {
+          width = Math.round((width * MAX_DIM) / height);
+          height = MAX_DIM;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return '';
+      ctx.drawImage(source as CanvasImageSource, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', 0.82);
+    } catch {
+      return '';
+    }
+  };
+
+  // 1. Direct pass-through for SVG or GIF animations
+  if (file.type === 'image/svg+xml' || file.type === 'image/gif') {
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string) || '');
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 2. Fast native ImageBitmap path (if supported and valid)
+  if (typeof window !== 'undefined' && typeof window.createImageBitmap === 'function') {
+    try {
+      const bitmap = await window.createImageBitmap(file);
+      const dataUrl = drawToJpegDataUrl(bitmap, bitmap.width, bitmap.height);
+      if (typeof bitmap.close === 'function') {
+        bitmap.close();
+      }
+      if (dataUrl && dataUrl.startsWith('data:image/')) {
+        return dataUrl;
+      }
+    } catch {
+      // Fall through to FileReader
+    }
+  }
+
+  // 3. FileReader fallback with MIME normalization & Canvas compression
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      let rawResult = (e.target?.result as string) || '';
+      if (!rawResult) {
+        resolve('');
+        return;
+      }
+
+      if (rawResult.startsWith('data:application/octet-stream;base64,')) {
+        rawResult = rawResult.replace('data:application/octet-stream;base64,', 'data:image/jpeg;base64,');
+      } else if (rawResult.startsWith('data:;base64,')) {
+        rawResult = rawResult.replace('data:;base64,', 'data:image/jpeg;base64,');
+      } else if (!rawResult.startsWith('data:image/')) {
+        const commaIdx = rawResult.indexOf(',');
+        if (commaIdx !== -1) {
+          rawResult = 'data:image/jpeg;base64' + rawResult.slice(commaIdx);
+        } else {
+          rawResult = 'data:image/jpeg;base64,' + rawResult;
+        }
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        const compressed = drawToJpegDataUrl(img, img.naturalWidth || img.width, img.naturalHeight || img.height);
+        resolve(compressed || rawResult);
+      };
+      img.onerror = () => {
+        resolve(rawResult);
+      };
+      img.src = rawResult;
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+}
 

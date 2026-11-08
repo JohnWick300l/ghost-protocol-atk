@@ -839,15 +839,15 @@ export const ProblemTracker: React.FC = () => {
             )}
 
             <div className="flex items-center justify-between gap-2">
-              <label className="text-[10px] text-[#A0A7B0] hover:text-[#42B883] cursor-pointer flex items-center gap-1 font-mono">
-                <Upload className="w-3 h-3 text-[#42B883]" />
+              <label className="relative overflow-hidden text-[10px] text-[#A0A7B0] hover:text-[#42B883] cursor-pointer flex items-center gap-1 font-mono">
+                <Upload className="w-3 h-3 text-[#42B883] shrink-0" />
                 <span>+ Attach Photo / Video</span>
                 <input
                   type="file"
                   accept="image/*,video/*"
                   multiple
                   onChange={e => handleMediaUpload(e, true)}
-                  className="hidden"
+                  className="sr-only"
                 />
               </label>
             </div>
@@ -1376,8 +1376,8 @@ export const ProblemTracker: React.FC = () => {
                   </div>
                 )}
 
-                <label className="flex items-center justify-center gap-2 p-2.5 rounded bg-[#13161A] border border-dashed border-[#282D34] hover:border-[#E8AA45]/60 cursor-pointer transition-colors text-center block">
-                  <Upload className="w-3.5 h-3.5 text-[#E8AA45]" />
+                <label className="relative overflow-hidden flex items-center justify-center gap-2 p-2.5 rounded bg-[#13161A] border border-dashed border-[#282D34] hover:border-[#E8AA45]/60 cursor-pointer transition-colors text-center block">
+                  <Upload className="w-3.5 h-3.5 text-[#E8AA45] shrink-0" />
                   <span className="text-xs text-[#D4D8DE] font-semibold">
                     + {formMediaUrls.length > 0 ? 'ADD MORE PHOTOS / VIDEOS' : 'UPLOAD PHOTOS OR VIDEOS'}
                   </span>
@@ -1386,7 +1386,7 @@ export const ProblemTracker: React.FC = () => {
                     accept="image/*,video/*"
                     multiple
                     onChange={e => handleMediaUpload(e, false)}
-                    className="hidden"
+                    className="sr-only"
                   />
                 </label>
               </div>

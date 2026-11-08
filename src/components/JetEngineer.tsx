@@ -1248,8 +1248,8 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                   </div>
                 )}
 
-                <label className="flex items-center justify-center gap-2 p-3 rounded bg-[#08090B] border border-dashed border-[#282D34] hover:border-[#42B883]/60 cursor-pointer transition-colors text-center block">
-                  <Upload className="w-4 h-4 text-[#42B883]" />
+                <label className="relative overflow-hidden flex items-center justify-center gap-2 p-3 rounded bg-[#08090B] border border-dashed border-[#282D34] hover:border-[#42B883]/60 cursor-pointer transition-colors text-center block">
+                  <Upload className="w-4 h-4 text-[#42B883] shrink-0" />
                   <span className="text-xs text-[#D4D8DE] font-semibold">
                     + {trainForm.stepPhotos && trainForm.stepPhotos.length > 0 ? 'ADD MORE STEP PHOTOS' : 'UPLOAD STEP-BY-STEP PHOTOS'}
                   </span>
@@ -1258,7 +1258,7 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                     accept="image/*"
                     multiple
                     onChange={handleStepPhotosUpload}
-                    className="hidden"
+                    className="sr-only"
                   />
                 </label>
               </div>

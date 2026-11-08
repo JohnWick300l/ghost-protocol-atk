@@ -7049,6 +7049,310 @@ app.post('/api/problems/:id/updates', (req: Request, res: Response) => {
   res.json({ problem: prob });
 });
 
+// Android Photo & Gallery Picker Bridge Store (syncs photos selected via intent:// external Android picker back into the WebView)
+interface PhotoBridgeEntry {
+  sessionId: string;
+  target: string;
+  mode: string;
+  images: string[];
+  updatedAt: number;
+}
+const photoBridgeStore = new Map<string, PhotoBridgeEntry>();
+
+function prunePhotoBridgeStore() {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [k, v] of photoBridgeStore.entries()) {
+    if (v.updatedAt < cutoff) {
+      photoBridgeStore.delete(k);
+    }
+  }
+}
+
+app.post('/api/photo-bridge/:sessionId', (req: Request, res: Response) => {
+  prunePhotoBridgeStore();
+  const sessionId = String(req.params.sessionId || '').trim();
+  if (!sessionId) {
+    return res.status(400).json({ error: 'Missing photoBridge sessionId' });
+  }
+  const rawImages = Array.isArray(req.body?.images)
+    ? req.body.images
+    : typeof req.body?.image === 'string'
+    ? [req.body.image]
+    : [];
+
+  const validImages = rawImages
+    .filter((img: unknown): img is string => typeof img === 'string' && img.trim().length > 0)
+    .map((img: string) => img.trim())
+    .filter((img: string) => img.startsWith('data:image/') || /^https?:\/\//i.test(img));
+
+  if (validImages.length === 0) {
+    return res.status(400).json({ error: 'No valid image data provided' });
+  }
+
+  const target = typeof req.body?.target === 'string' && req.body.target.trim() ? req.body.target.trim() : 'modifications';
+  const mode = typeof req.body?.mode === 'string' && req.body.mode.trim() ? req.body.mode.trim() : 'gallery';
+
+  const existing = photoBridgeStore.get(sessionId);
+  const combined = existing ? [...existing.images, ...validImages].slice(0, 16) : validImages.slice(0, 16);
+  const entry: PhotoBridgeEntry = {
+    sessionId,
+    target,
+    mode,
+    images: combined,
+    updatedAt: Date.now()
+  };
+  photoBridgeStore.set(sessionId, entry);
+
+  res.json({
+    ok: true,
+    sessionId,
+    target,
+    count: entry.images.length,
+    images: entry.images,
+    updatedAt: entry.updatedAt
+  });
+});
+
+app.get('/api/photo-bridge/:sessionId', (req: Request, res: Response) => {
+  prunePhotoBridgeStore();
+  const sessionId = String(req.params.sessionId || '').trim();
+  const entry = photoBridgeStore.get(sessionId);
+  if (!entry || entry.images.length === 0) {
+    return res.json({ ok: true, sessionId, images: [], count: 0, updatedAt: entry?.updatedAt || 0 });
+  }
+
+  const images = [...entry.images];
+  const updatedAt = entry.updatedAt;
+  if (req.query.consume === '1' || req.query.consume === 'true') {
+    entry.images = [];
+    photoBridgeStore.set(sessionId, entry);
+  }
+
+  res.json({
+    ok: true,
+    sessionId,
+    target: entry.target,
+    images,
+    count: images.length,
+    updatedAt
+  });
+});
+
+app.delete('/api/photo-bridge/:sessionId', (req: Request, res: Response) => {
+  const sessionId = String(req.params.sessionId || '').trim();
+  photoBridgeStore.delete(sessionId);
+  res.json({ ok: true, sessionId });
+});
+
+app.get('/api/photo-bridge-latest', (req: Request, res: Response) => {
+  prunePhotoBridgeStore();
+  const target = typeof req.query.target === 'string' && req.query.target.trim() ? req.query.target.trim() : 'modifications';
+  let latest: PhotoBridgeEntry | null = null;
+  for (const entry of photoBridgeStore.values()) {
+    if (entry.target === target && entry.images.length > 0) {
+      if (!latest || entry.updatedAt > latest.updatedAt) {
+        latest = entry;
+      }
+    }
+  }
+  if (!latest) {
+    return res.json({ ok: true, images: [], count: 0 });
+  }
+  const images = [...latest.images];
+  const sessionId = latest.sessionId;
+  if (req.query.consume === '1' || req.query.consume === 'true') {
+    latest.images = [];
+    photoBridgeStore.set(sessionId, latest);
+  }
+  res.json({
+    ok: true,
+    sessionId,
+    target: latest.target,
+    images,
+    count: images.length,
+    updatedAt: latest.updatedAt
+  });
+});
+
+app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => {
+  const sessionId = String(req.params.sessionId || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
+  const target = typeof req.query.target === 'string' ? req.query.target.replace(/[^a-zA-Z0-9_-]/g, '') : 'modifications';
+  const mode = req.query.mode === 'camera' ? 'camera' : 'gallery';
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Android Media Picker</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: #000000; color: #f4f4f5;
+    font-family: -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
+    min-height: 100dvh; display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 16px;
+  }
+  .sheet {
+    background: #18181b; border: 1px solid #27272a; border-radius: 24px;
+    padding: 20px; width: 100%; max-width: 420px; margin: 0 auto 12px auto;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.9);
+  }
+  .handle { width: 40px; height: 4px; background: #3f3f46; border-radius: 99px; margin: 0 auto 16px auto; }
+  .title { font-size: 16px; font-weight: 700; color: #ffffff; margin: 0 0 6px 0; text-align: center; }
+  .sub { font-size: 12px; color: #a1a1aa; margin: 0 0 18px 0; text-align: center; }
+  .btn {
+    position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center;
+    gap: 10px; width: 100%; padding: 16px; border-radius: 14px; font-size: 14px; font-weight: 700;
+    cursor: pointer; margin-bottom: 10px; border: none; text-align: center;
+  }
+  .btn-primary { background: #f59e0b; color: #09090b; }
+  .btn-secondary { background: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; }
+  .btn input[type="file"] {
+    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+  }
+  .status {
+    display: none; margin-top: 12px; padding: 12px; border-radius: 12px;
+    background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4);
+    color: #34d399; font-size: 13px; font-weight: 600; text-align: center;
+  }
+  .err {
+    display: none; margin-top: 12px; padding: 12px; border-radius: 12px;
+    background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #f87171; font-size: 12px; text-align: center;
+  }
+  .cancel {
+    background: transparent; color: #a1a1aa; border: none; width: 100%;
+    padding: 12px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="handle"></div>
+    <div class="title">Select Photo from Device</div>
+    <div class="sub">Choose a photo from your phone Gallery, Files, or Camera. It will automatically appear in the app.</div>
+
+    <label class="btn btn-primary" id="galleryBtn">
+      <span id="galleryLabel">Open Phone Gallery / Files</span>
+      <input id="galleryInput" type="file" accept="image/*" multiple />
+    </label>
+
+    <label class="btn btn-secondary" id="cameraBtn">
+      <span>Take Photo (Camera)</span>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" />
+    </label>
+
+    <div id="statusBox" class="status">Attaching photo to app...</div>
+    <div id="errBox" class="err"></div>
+
+    <button type="button" class="cancel" id="cancelBtn">Return to App</button>
+  </div>
+
+<script>
+(function() {
+  var sessionId = ${JSON.stringify(sessionId)};
+  var target = ${JSON.stringify(target)};
+  var mode = ${JSON.stringify(mode)};
+  var returnIntent = "intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.ghostprotocol.atk;launchFlags=0x10200000;end";
+
+  function returnToApp() {
+    try {
+      window.location.replace(returnIntent);
+    } catch (e) {}
+    setTimeout(function() {
+      try { window.close(); } catch (e) {}
+      try { history.back(); } catch (e) {}
+    }, 350);
+  }
+
+  document.getElementById('cancelBtn').addEventListener('click', returnToApp);
+
+  function compressFile(file) {
+    return new Promise(function(resolve) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var raw = e.target && e.target.result ? String(e.target.result) : '';
+        if (!raw) { resolve(''); return; }
+        var img = new Image();
+        img.onload = function() {
+          try {
+            var maxDim = 1280;
+            var w = img.naturalWidth || img.width || 800;
+            var h = img.naturalHeight || img.height || 600;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.max(1, Math.round(h * maxDim / w)); w = maxDim; }
+              else { w = Math.max(1, Math.round(w * maxDim / h)); h = maxDim; }
+            }
+            var c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            var ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(c.toDataURL('image/jpeg', 0.82));
+          } catch (err) {
+            resolve(raw);
+          }
+        };
+        img.onerror = function() { resolve(raw); };
+        img.src = raw;
+      };
+      reader.onerror = function() { resolve(''); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleFiles(fileList) {
+    if (!fileList || fileList.length === 0) return;
+    var statusBox = document.getElementById('statusBox');
+    var errBox = document.getElementById('errBox');
+    var galleryLabel = document.getElementById('galleryLabel');
+    errBox.style.display = 'none';
+    statusBox.style.display = 'block';
+    statusBox.textContent = 'Reading ' + fileList.length + ' photo(s) from device...';
+    galleryLabel.textContent = 'Processing...';
+
+    try {
+      var images = [];
+      for (var i = 0; i < fileList.length; i++) {
+        var dataUrl = await compressFile(fileList[i]);
+        if (dataUrl && dataUrl.indexOf('data:image/') === 0) {
+          images.push(dataUrl);
+        }
+      }
+      if (images.length === 0) {
+        throw new Error('Could not decode selected image.');
+      }
+      statusBox.textContent = 'Syncing photo to app...';
+      var res = await fetch('/api/photo-bridge/' + encodeURIComponent(sessionId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: images, target: target, mode: mode })
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      statusBox.textContent = '✓ Photo attached! Returning to app...';
+      setTimeout(returnToApp, 150);
+    } catch (err) {
+      statusBox.style.display = 'none';
+      errBox.style.display = 'block';
+      errBox.textContent = 'Failed to attach photo. Please tap again.';
+      galleryLabel.textContent = 'Open Phone Gallery / Files';
+    }
+  }
+
+  document.getElementById('galleryInput').addEventListener('change', function(e) {
+    handleFiles(e.target.files);
+  });
+  document.getElementById('cameraInput').addEventListener('change', function(e) {
+    handleFiles(e.target.files);
+  });
+})();
+</script>
+</body>
+</html>`);
+});
+
 // 7. Modifications Lab
 app.get('/api/modifications', (_req: Request, res: Response) => {
   const db = readDb();
@@ -9989,8 +10293,38 @@ app.post('/api/notifications/read-all', (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Authentication required.' });
   }
   (db.notifications || []).forEach((n: any) => {
-    if (n.userId === targetUserId) n.read = true;
+    if (n.userId === targetUserId || n.userId === 'all') n.read = true;
   });
+  writeDb(db);
+  res.json({ success: true });
+});
+
+app.post('/api/notifications/clear-all', (req: Request, res: Response) => {
+  const db = readDb();
+  const caller = resolveRequestUser(req, db);
+  const headerUserId =
+    typeof req.headers['x-user-id'] === 'string' ? req.headers['x-user-id'].trim() : '';
+  const targetUserId = caller.userId || headerUserId;
+  if (!targetUserId) {
+    return res.status(401).json({ error: 'Authentication required.' });
+  }
+  db.notifications = (db.notifications || []).filter(
+    (n: any) => n.userId !== targetUserId && n.userId !== 'all'
+  );
+  writeDb(db);
+  res.json({ success: true });
+});
+
+app.delete('/api/notifications/:id', (req: Request, res: Response) => {
+  const db = readDb();
+  const caller = resolveRequestUser(req, db);
+  const headerUserId =
+    typeof req.headers['x-user-id'] === 'string' ? req.headers['x-user-id'].trim() : '';
+  const targetUserId = caller.userId || headerUserId;
+  if (!targetUserId) {
+    return res.status(401).json({ error: 'Authentication required.' });
+  }
+  db.notifications = (db.notifications || []).filter((n: any) => n.id !== req.params.id);
   writeDb(db);
   res.json({ success: true });
 });
