@@ -50,24 +50,20 @@ import {
 } from './utils/telemetryCache';
 import { initHybridDatabaseEngine, runHybridSyncCycle } from './utils/firebaseHybridSync';
 
+let hasBootedInCurrentAppInstance = false;
+
 const AppContent: React.FC = () => {
   const { currentUser, loading, authModalOpen, closeAuthModal } = useAuth();
   const { playTacticalClick, playChime, reducedMotion } = useAudio();
 
   const [tabHistory, setTabHistory] = useState<string[]>(['dashboard']);
   const [showExitToast, setShowExitToast] = useState<boolean>(false);
-  const [hasCompletedInitialBoot, setHasCompletedInitialBoot] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        return sessionStorage.getItem('ghost_protocol_initial_boot_done') === 'true';
-      } catch {
-        return false;
-      }
-    }
-    return false;
-  });
+  const [hasCompletedInitialBoot, setHasCompletedInitialBoot] = useState<boolean>(
+    () => hasBootedInCurrentAppInstance
+  );
 
   const handleCompleteInitialBoot = useCallback(() => {
+    hasBootedInCurrentAppInstance = true;
     setHasCompletedInitialBoot(true);
     if (typeof window !== 'undefined') {
       try {
@@ -173,7 +169,7 @@ const AppContent: React.FC = () => {
   const setCurrentTab = (tab: string, isBackAction = false) => {
     if (tab === currentTab) return;
 
-    setHasCompletedInitialBoot(true);
+    handleCompleteInitialBoot();
 
     if (!isBackAction) {
       setTabHistory(h => [...h, currentTab]);

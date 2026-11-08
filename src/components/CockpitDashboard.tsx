@@ -194,6 +194,171 @@ export const DASHBOARD_TRANSPARENT_HOTSPOTS: TransparentHotspot[] = [
   }
 ];
 
+interface CockpitTransformSectorSpec {
+  id: string;
+  label: string;
+  points: string;
+  conduitPath: string;
+  centerX: number;
+  centerY: number;
+  delayMs: number;
+  accent: '#38BDF8' | '#EF4444' | '#F59E0B';
+}
+
+/**
+ * Exact 941x1672 polygonal geometries & power conduits for all 9 cockpit modules
+ * so each module visibly transforms, receives core power, traces its perimeter,
+ * and locks into place during the initial app startup sequence.
+ */
+const COCKPIT_TRANSFORM_SECTORS: readonly CockpitTransformSectorSpec[] = [
+  {
+    id: 'transform_charging_network',
+    label: 'CHARGING RADAR // ONLINE',
+    points: '342,762 608,762 666,942 602,1034 348,1034 283,942',
+    conduitPath: 'M 474.5 898 L 474.5 762',
+    centerX: 474.5,
+    centerY: 898,
+    delayMs: 0,
+    accent: '#38BDF8'
+  },
+  {
+    id: 'transform_jet_engineer',
+    label: 'JET ENGINEER // ARMED',
+    points: '32,750 252,750 268,776 268,976 248,1002 32,1002 16,976 16,776',
+    conduitPath: 'M 312 898 L 268 876 L 141 876',
+    centerX: 141,
+    centerY: 876,
+    delayMs: 120,
+    accent: '#38BDF8'
+  },
+  {
+    id: 'transform_priority_issues',
+    label: 'PRIORITY ISSUES // ARMED',
+    points: '689,750 909,750 925,776 925,976 909,1002 693,1002 673,976 673,776',
+    conduitPath: 'M 636 898 L 673 876 L 800 876',
+    centerX: 800,
+    centerY: 876,
+    delayMs: 120,
+    accent: '#EF4444'
+  },
+  {
+    id: 'transform_squadron_assist',
+    label: 'SQUADRON SOS // ARMED',
+    points: '42,1056 308,1056 325,1080 325,1205 308,1226 42,1226 24,1205 24,1080',
+    conduitPath: 'M 348 1010 L 290 1056 L 174 1141',
+    centerX: 174,
+    centerY: 1141,
+    delayMs: 240,
+    accent: '#EF4444'
+  },
+  {
+    id: 'transform_marketplace',
+    label: 'MARKETPLACE // ARMED',
+    points: '633,1056 899,1056 917,1080 917,1205 899,1226 633,1226 616,1205 616,1080',
+    conduitPath: 'M 602 1010 L 650 1056 L 766 1141',
+    centerX: 766,
+    centerY: 1141,
+    delayMs: 240,
+    accent: '#38BDF8'
+  },
+  {
+    id: 'transform_mod_lab',
+    label: 'MOD LAB // ARMED',
+    points: '76,1248 415,1248 433,1268 433,1360 415,1378 76,1378 56,1360 56,1268',
+    conduitPath: 'M 410 1034 L 360 1248 L 244 1313',
+    centerX: 244,
+    centerY: 1313,
+    delayMs: 360,
+    accent: '#38BDF8'
+  },
+  {
+    id: 'transform_discussions',
+    label: 'DISCUSSIONS // ARMED',
+    points: '526,1248 865,1248 885,1268 885,1360 865,1378 526,1378 508,1360 508,1268',
+    conduitPath: 'M 540 1034 L 585 1248 L 696 1313',
+    centerX: 696,
+    centerY: 1313,
+    delayMs: 360,
+    accent: '#38BDF8'
+  },
+  {
+    id: 'transform_all_systems',
+    label: 'ALL SYSTEMS // LINKED',
+    points: '185,1398 756,1398 776,1418 776,1462 756,1478 185,1478 165,1462 165,1418',
+    conduitPath: 'M 474.5 1034 L 474.5 1438',
+    centerX: 474.5,
+    centerY: 1438,
+    delayMs: 470,
+    accent: '#38BDF8'
+  },
+  {
+    id: 'transform_mission_mode',
+    label: 'MISSION MODE // LOCKED',
+    points: '240,1490 701,1490 725,1525 705,1606 236,1606 216,1525',
+    conduitPath: 'M 474.5 1478 L 474.5 1548',
+    centerX: 474.5,
+    centerY: 1548,
+    delayMs: 560,
+    accent: '#F59E0B'
+  }
+];
+
+/**
+ * Generates an SVG pie/sector wedge path centered at (0,0) of radius R from startAngleDeg to endAngleDeg
+ * (where 0 deg is 3 o'clock / positive X axis, matching standard SVG polar coordinates).
+ */
+function buildRadarPhosphorSlicePath(radius: number, startDeg: number, endDeg: number): string {
+  const startRad = (startDeg * Math.PI) / 180;
+  const endRad = (endDeg * Math.PI) / 180;
+  const x1 = (Math.cos(startRad) * radius).toFixed(2);
+  const y1 = (Math.sin(startRad) * radius).toFixed(2);
+  const x2 = (Math.cos(endRad) * radius).toFixed(2);
+  const y2 = (Math.sin(endRad) * radius).toFixed(2);
+  return `M 0 0 L ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2} Z`;
+}
+
+/**
+ * 14 graduated angular phosphor trail slices (-84 deg to 0 deg) for a smooth,
+ * authentic fighter-jet AESA radar sweep that reaches the full Charging Network button boundaries.
+ */
+const RADAR_PHOSPHOR_TRAIL_SLICES = Array.from({ length: 14 }, (_, idx) => {
+  const sliceSpan = 6;
+  const startDeg = -84 + idx * sliceSpan;
+  const endDeg = startDeg + sliceSpan + 0.4; // slight overlap prevents subpixel seams
+  const progress = (idx + 1) / 14; // 0.07 -> 1.0
+  const opacity = Number((0.025 + Math.pow(progress, 2.15) * 0.52).toFixed(3));
+  const color =
+    idx >= 12 ? '#E0F2FE' : idx >= 9 ? '#38BDF8' : idx >= 5 ? '#0EA5E9' : '#0284C7';
+  return {
+    id: `phosphor_slice_${idx}`,
+    d: buildRadarPhosphorSlicePath(252, startDeg, endDeg),
+    color,
+    opacity
+  };
+});
+
+/**
+ * 36 azimuth compass ticks around the radar perimeter (every 10 degrees).
+ */
+const RADAR_AZIMUTH_TICKS = Array.from({ length: 36 }, (_, idx) => {
+  const angleDeg = idx * 10;
+  const rad = (angleDeg * Math.PI) / 180;
+  const isCardinal = angleDeg % 90 === 0;
+  const isMajor = angleDeg % 30 === 0;
+  const outerR = 192;
+  const innerR = isCardinal ? 174 : isMajor ? 180 : 185;
+  return {
+    angleDeg,
+    x1: Number((474.5 + Math.cos(rad) * innerR).toFixed(1)),
+    y1: Number((898 + Math.sin(rad) * innerR).toFixed(1)),
+    x2: Number((474.5 + Math.cos(rad) * outerR).toFixed(1)),
+    y2: Number((898 + Math.sin(rad) * outerR).toFixed(1)),
+    strokeWidth: isCardinal ? 2.2 : isMajor ? 1.5 : 1,
+    opacity: isCardinal ? 0.8 : isMajor ? 0.55 : 0.32,
+    color: isCardinal ? '#E0F2FE' : '#38BDF8'
+  };
+});
+
 export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
   onNavigate,
   selectedJetModel = 'F77',
@@ -222,14 +387,14 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
   const [showPersonaMenu, setShowPersonaMenu] = useState(false);
   const personaRef = useRef<HTMLDivElement>(null);
 
-  // Session-persisted initial boot spatial cockpit formation transformation
+  // Initial / First-Time App Startup Cockpit Transforming & Activation Sequence
   const [isBooting, setIsBooting] = useState<boolean>(() => !skipBootAnimation);
-  const [bootPhase, setBootPhase] = useState<number>(skipBootAnimation ? 3 : 1);
+  const [bootPhase, setBootPhase] = useState<number>(skipBootAnimation ? 4 : 1);
 
   useEffect(() => {
     if (skipBootAnimation) {
       setIsBooting(false);
-      setBootPhase(3);
+      setBootPhase(4);
       return;
     }
 
@@ -238,17 +403,22 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
 
     const t1 = setTimeout(() => {
       setBootPhase(2);
-    }, 450);
+    }, 520);
 
     const t2 = setTimeout(() => {
       setBootPhase(3);
+    }, 1280);
+
+    const t3 = setTimeout(() => {
+      setBootPhase(4);
       setIsBooting(false);
       onCompleteBoot?.();
-    }, 1250);
+    }, 2100);
 
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
+      clearTimeout(t3);
     };
   }, [skipBootAnimation, onCompleteBoot]);
 
@@ -302,7 +472,7 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
 
     if (isBooting) {
       setIsBooting(false);
-      setBootPhase(3);
+      setBootPhase(4);
       onCompleteBoot?.();
     }
 
@@ -393,7 +563,9 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
           ===================================================================== */}
       <div
         data-testid="cockpit-rotary-stage"
-        className="relative w-full h-full max-w-lg mx-auto select-none overflow-hidden"
+        className={`relative w-full h-full max-w-lg mx-auto select-none overflow-hidden ${
+          isBooting ? 'animate-cockpit-stage-unfold' : ''
+        }`}
       >
         {/* 1. Exact Attached Dashboard Image Rendered Pristine Filling Full Screen */}
         <img
@@ -403,110 +575,474 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
           decoding="sync"
           fetchPriority="high"
           draggable={false}
-          className={`absolute inset-0 w-full h-full object-fill pointer-events-none select-none ${
-            isBooting
-              ? `transition-all duration-700 ease-out ${
-                  bootPhase === 1
-                    ? 'scale-[1.12] opacity-40 blur-[3px] brightness-75'
-                    : 'scale-[1.02] opacity-90 blur-[0.5px] brightness-110'
-                }`
-              : ''
-          }`}
+          className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none"
         />
 
-        {/* 2. Precision SVG Overlay for Interactive HUD & Center Console Radar */}
+        {/* 2. Precision SVG Overlay for AESA Tactical Radar & Initial Cockpit Transformation */}
         <svg
           viewBox="0 0 941 1672"
           data-testid="cockpit-interactive-hud-svg"
           className="absolute inset-0 w-full h-full pointer-events-none select-none z-10"
         >
           <defs>
-            <radialGradient id="cockpit-radar-sweep-grad" cx="0%" cy="0%" r="100%">
-              <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.55" />
-              <stop offset="50%" stopColor="#38BDF8" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#38BDF8" stopOpacity="0.06" />
+            <radialGradient id="cockpit-radar-core-glow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.42" />
+              <stop offset="55%" stopColor="#0284C7" stopOpacity="0.14" />
+              <stop offset="100%" stopColor="#020617" stopOpacity="0" />
             </radialGradient>
+            <linearGradient id="cockpit-beam-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="1" />
+              <stop offset="35%" stopColor="#E0F2FE" stopOpacity="0.98" />
+              <stop offset="100%" stopColor="#38BDF8" stopOpacity="0.85" />
+            </linearGradient>
+            <linearGradient id="cockpit-laser-scan-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#38BDF8" stopOpacity="0" />
+              <stop offset="20%" stopColor="#38BDF8" stopOpacity="0.85" />
+              <stop offset="50%" stopColor="#E0F2FE" stopOpacity="1" />
+              <stop offset="80%" stopColor="#38BDF8" stopOpacity="0.85" />
+              <stop offset="100%" stopColor="#38BDF8" stopOpacity="0" />
+            </linearGradient>
             {/* Exact polygon clip-path matching the full inner boundaries of the Charging Network hexagon button */}
             <clipPath id="charging-network-hex-clip">
               <polygon points="342,762 608,762 666,942 602,1034 348,1034 283,942" />
             </clipPath>
           </defs>
 
-          {/* Center Console (Charging Network) Full-Boundary 360° Radar Sweep Overlay */}
+          {/* =================================================================
+              CENTER CONSOLE (CHARGING NETWORK) FULL-BOUNDARY AESA RADAR SWEEP
+              Covers the entire hexagonal button up to its boundaries with
+              14-layer angular phosphor decay, counter-rotating azimuth rings,
+              pulse-doppler wavefronts, and laser leading beam (zero balls).
+              ================================================================= */}
           <g
             data-testid="cockpit-center-console-radar"
             clipPath="url(#charging-network-hex-clip)"
             className="pointer-events-none select-none"
           >
-            {/* Subtle Radar Distance Rings extending across the full Charging Network button */}
+            {/* Ambient AESA CRT/Hologram Backlight Glow */}
             <circle
               cx="474.5"
               cy="898"
-              r="185"
-              fill="none"
-              stroke="#38BDF8"
-              strokeWidth="1.2"
-              strokeDasharray="6 4"
-              opacity="0.35"
-            />
-            <circle
-              cx="474.5"
-              cy="898"
-              r="125"
-              fill="none"
-              stroke="#38BDF8"
-              strokeWidth="1.2"
-              opacity="0.3"
-            />
-            <circle
-              cx="474.5"
-              cy="898"
-              r="65"
-              fill="none"
-              stroke="#38BDF8"
-              strokeWidth="1"
-              opacity="0.25"
+              r="225"
+              fill="url(#cockpit-radar-core-glow)"
             />
 
-            {/* Full-Span Radar Crosshairs reaching button boundaries */}
+            {/* Hexagonal Inner Boundary Precision Frame & Corner Lock Chevrons */}
+            <polygon
+              points="345,765 605,765 662,942 599,1031 351,1031 287,942"
+              fill="none"
+              stroke="#38BDF8"
+              strokeWidth="1.6"
+              strokeDasharray="18 6 4 6"
+              opacity="0.45"
+            />
+            <polyline
+              points="336,784 346,766 368,766"
+              fill="none"
+              stroke="#E0F2FE"
+              strokeWidth="2.4"
+              opacity="0.8"
+            />
+            <polyline
+              points="582,766 604,766 614,784"
+              fill="none"
+              stroke="#E0F2FE"
+              strokeWidth="2.4"
+              opacity="0.8"
+            />
+            <polyline
+              points="651,920 661,942 646,962"
+              fill="none"
+              stroke="#E0F2FE"
+              strokeWidth="2.4"
+              opacity="0.8"
+            />
+            <polyline
+              points="612,1012 598,1030 574,1030"
+              fill="none"
+              stroke="#E0F2FE"
+              strokeWidth="2.4"
+              opacity="0.8"
+            />
+            <polyline
+              points="376,1030 352,1030 338,1012"
+              fill="none"
+              stroke="#E0F2FE"
+              strokeWidth="2.4"
+              opacity="0.8"
+            />
+            <polyline
+              points="304,962 289,942 299,920"
+              fill="none"
+              stroke="#E0F2FE"
+              strokeWidth="2.4"
+              opacity="0.8"
+            />
+
+            {/* Expanding Pulse-Doppler Wavefront Rings (Pure Radar Waves, Zero Balls) */}
+            <circle
+              cx="474.5"
+              cy="898"
+              r="220"
+              fill="none"
+              stroke="#38BDF8"
+              strokeWidth="1.8"
+              className="radar-wavefront-1"
+            />
+            <circle
+              cx="474.5"
+              cy="898"
+              r="220"
+              fill="none"
+              stroke="#7DD3FC"
+              strokeWidth="1.4"
+              className="radar-wavefront-2"
+            />
+
+            {/* Outer Boundary Range Ring (r=192) & 36 Azimuth Degree Compass Ticks */}
+            <circle
+              cx="474.5"
+              cy="898"
+              r="192"
+              fill="none"
+              stroke="#38BDF8"
+              strokeWidth="1.2"
+              opacity="0.38"
+            />
+            {RADAR_AZIMUTH_TICKS.map(tick => (
+              <line
+                key={tick.angleDeg}
+                x1={tick.x1}
+                y1={tick.y1}
+                x2={tick.x2}
+                y2={tick.y2}
+                stroke={tick.color}
+                strokeWidth={tick.strokeWidth}
+                opacity={tick.opacity}
+              />
+            ))}
+
+            {/* Counter-Rotating Segmented Tactical Avionics Ring (r=154) */}
+            <g className="radar-ring-reverse">
+              <circle
+                cx="474.5"
+                cy="898"
+                r="154"
+                fill="none"
+                stroke="#38BDF8"
+                strokeWidth="2"
+                strokeDasharray="28 14 6 14"
+                opacity="0.48"
+              />
+              <circle
+                cx="474.5"
+                cy="898"
+                r="146"
+                fill="none"
+                stroke="#0EA5E9"
+                strokeWidth="1"
+                strokeDasharray="4 12"
+                opacity="0.35"
+              />
+            </g>
+
+            {/* Slow Clockwise Bearing Ring (r=110) & Inner Lock Ring (r=62) */}
+            <g className="radar-ring-slow">
+              <circle
+                cx="474.5"
+                cy="898"
+                r="110"
+                fill="none"
+                stroke="#38BDF8"
+                strokeWidth="1.3"
+                strokeDasharray="16 8 3 8"
+                opacity="0.38"
+              />
+            </g>
+            <circle
+              cx="474.5"
+              cy="898"
+              r="62"
+              fill="none"
+              stroke="#7DD3FC"
+              strokeWidth="1.2"
+              opacity="0.36"
+            />
+
+            {/* Full-Span Tactical Split Crosshairs & Range Scale Graduations */}
             <line
               x1="474.5"
-              y1="740"
+              y1="752"
               x2="474.5"
-              y2="1055"
+              y2="876"
               stroke="#38BDF8"
-              strokeWidth="1"
-              opacity="0.25"
+              strokeWidth="1.2"
+              opacity="0.38"
             />
             <line
-              x1="270"
+              x1="474.5"
+              y1="920"
+              x2="474.5"
+              y2="1044"
+              stroke="#38BDF8"
+              strokeWidth="1.2"
+              opacity="0.38"
+            />
+            <line
+              x1="276"
               y1="898"
-              x2="680"
+              x2="452.5"
               y2="898"
               stroke="#38BDF8"
-              strokeWidth="1"
-              opacity="0.25"
+              strokeWidth="1.2"
+              opacity="0.38"
+            />
+            <line
+              x1="496.5"
+              y1="898"
+              x2="673"
+              y2="898"
+              stroke="#38BDF8"
+              strokeWidth="1.2"
+              opacity="0.38"
+            />
+            {/* Diagonal 45° Reference Hairlines */}
+            <line
+              x1="335"
+              y1="758"
+              x2="614"
+              y2="1038"
+              stroke="#38BDF8"
+              strokeWidth="0.8"
+              strokeDasharray="5 7"
+              opacity="0.22"
+            />
+            <line
+              x1="614"
+              y1="758"
+              x2="335"
+              y2="1038"
+              stroke="#38BDF8"
+              strokeWidth="0.8"
+              strokeDasharray="5 7"
+              opacity="0.22"
             />
 
-            {/* 360-degree Rotating Radar Sweep Cone reaching all corners of the Charging Network button */}
+            {/* 360-Degree Rotating Multi-Slice Angular Phosphor Radar Sweep */}
             <g transform="translate(474.5, 898)">
               <g className="radar-sweep" style={{ transformOrigin: '0 0' }}>
+                {/* 14 Graduated Angular Phosphor Trail Wedges (-84° to 0°) */}
+                {RADAR_PHOSPHOR_TRAIL_SLICES.map(slice => (
+                  <path
+                    key={slice.id}
+                    d={slice.d}
+                    fill={slice.color}
+                    opacity={slice.opacity}
+                  />
+                ))}
+
+                {/* Secondary 180° Counter-Vane Echo Trail (-204° to -180°) */}
                 <path
-                  d="M 0 0 L 0 -240 A 240 240 0 0 1 240 0 Z"
-                  fill="url(#cockpit-radar-sweep-grad)"
+                  d={buildRadarPhosphorSlicePath(248, -204, -180)}
+                  fill="#0EA5E9"
+                  opacity="0.14"
                 />
                 <line
                   x1="0"
                   y1="0"
-                  x2="240"
+                  x2="-248"
                   y2="0"
                   stroke="#38BDF8"
-                  strokeWidth="2.5"
-                  opacity="0.9"
+                  strokeWidth="1.3"
+                  strokeDasharray="10 6"
+                  opacity="0.45"
+                />
+
+                {/* Leading-Edge Arc Highlights where Sweep Beam Intersects Range Rings */}
+                <path
+                  d="M 154 0 A 154 154 0 0 0 144.7 -52.7"
+                  fill="none"
+                  stroke="#E0F2FE"
+                  strokeWidth="2.8"
+                  opacity="0.85"
+                />
+                <path
+                  d="M 110 0 A 110 110 0 0 0 103.4 -37.6"
+                  fill="none"
+                  stroke="#7DD3FC"
+                  strokeWidth="2.2"
+                  opacity="0.75"
+                />
+                <path
+                  d="M 62 0 A 62 62 0 0 0 58.3 -21.2"
+                  fill="none"
+                  stroke="#E0F2FE"
+                  strokeWidth="2"
+                  opacity="0.8"
+                />
+
+                {/* Outer Glow Halo Along Leading Radar Beam */}
+                <line
+                  x1="0"
+                  y1="0"
+                  x2="252"
+                  y2="0"
+                  stroke="#38BDF8"
+                  strokeWidth="7"
+                  strokeLinecap="round"
+                  opacity="0.35"
+                />
+                {/* Razor-Sharp Core Plasma Leading Beam */}
+                <line
+                  x1="0"
+                  y1="0"
+                  x2="252"
+                  y2="0"
+                  stroke="url(#cockpit-beam-grad)"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                  opacity="0.98"
                 />
               </g>
+
+              {/* Center AESA Emitter Lock Hub */}
+              <circle
+                cx="0"
+                cy="0"
+                r="16"
+                fill="none"
+                stroke="#38BDF8"
+                strokeWidth="1.5"
+                opacity="0.65"
+              />
+              <circle
+                cx="0"
+                cy="0"
+                r="7"
+                fill="#38BDF8"
+                opacity="0.45"
+              />
+              <circle
+                cx="0"
+                cy="0"
+                r="3.2"
+                fill="#F0F9FF"
+              />
             </g>
           </g>
+
+          {/* =================================================================
+              INITIAL / FIRST-TIME STARTUP COCKPIT TRANSFORMATION & ACTIVATION
+              Sequentially powers up, unfolds, traces, and arms every cockpit
+              module from the central reactor core outward.
+              ================================================================= */}
+          {isBooting && (
+            <g
+              data-testid="cockpit-svg-transform-activation"
+              className="pointer-events-none select-none"
+            >
+              {/* Expanding Reactor Core Shockwaves from Center Console (474.5, 898) */}
+              <circle
+                cx="474.5"
+                cy="898"
+                r="240"
+                fill="none"
+                stroke="#38BDF8"
+                className="animate-cockpit-shockwave"
+              />
+              <polygon
+                points="342,762 608,762 666,942 602,1034 348,1034 283,942"
+                fill="none"
+                stroke="#E0F2FE"
+                strokeWidth="4"
+                className="animate-cockpit-shockwave"
+                style={{ animationDelay: '180ms' }}
+              />
+
+              {/* Energy Conduits Radiating from Center Core to All 9 Cockpit Modules & Canopy */}
+              <path
+                d="M 474.5 762 L 474.5 495"
+                fill="none"
+                stroke="#38BDF8"
+                strokeWidth="2.5"
+                className="animate-cockpit-conduit"
+              />
+              {COCKPIT_TRANSFORM_SECTORS.map(sector => (
+                <g key={sector.id}>
+                  {/* Power Conduit Circuit Line */}
+                  <path
+                    d={sector.conduitPath}
+                    fill="none"
+                    stroke={sector.accent}
+                    strokeWidth="2.6"
+                    strokeLinecap="round"
+                    className="animate-cockpit-conduit"
+                    style={{ animationDelay: `${sector.delayMs}ms` }}
+                  />
+
+                  {/* Holographic Module Ignition Fill Pulse */}
+                  <polygon
+                    points={sector.points}
+                    fill={sector.accent}
+                    className="animate-cockpit-panel-fill"
+                    style={{ animationDelay: `${sector.delayMs + 60}ms` }}
+                  />
+
+                  {/* Laser Perimeter Trace Around Exact Module Polygon */}
+                  <polygon
+                    points={sector.points}
+                    fill="none"
+                    stroke={sector.accent}
+                    strokeWidth="3.2"
+                    strokeLinejoin="round"
+                    className="animate-cockpit-panel-trace"
+                    style={{ animationDelay: `${sector.delayMs}ms` }}
+                  />
+                  <polygon
+                    points={sector.points}
+                    fill="none"
+                    stroke="#E0F2FE"
+                    strokeWidth="1.4"
+                    strokeDasharray="16 10"
+                    className="animate-cockpit-panel-trace"
+                    style={{ animationDelay: `${sector.delayMs + 90}ms` }}
+                  />
+
+                  {/* Module Activation Lock Badge */}
+                  {bootPhase >= 2 && (
+                    <g
+                      transform={`translate(${sector.centerX}, ${sector.centerY})`}
+                      opacity={bootPhase === 2 ? 0.95 : 0.65}
+                    >
+                      <rect
+                        x="-92"
+                        y="-15"
+                        width="184"
+                        height="30"
+                        rx="6"
+                        fill="#020814"
+                        fillOpacity="0.88"
+                        stroke={sector.accent}
+                        strokeWidth="1.6"
+                      />
+                      <text
+                        x="0"
+                        y="5"
+                        textAnchor="middle"
+                        fill="#F0F9FF"
+                        fontSize="12.5"
+                        fontWeight="800"
+                        letterSpacing="1.6"
+                        fontFamily="JetBrains Mono, monospace"
+                      >
+                        {sector.label}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              ))}
+            </g>
+          )}
 
           {effectiveOffline && (
             <g data-testid="cockpit-capsule-offline-visual">
@@ -593,13 +1129,13 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
             top: '28.5%',
             width: '90.0%'
           }}
-          className={`absolute z-30 text-center pointer-events-auto select-none ${
+          className={`absolute z-30 text-center pointer-events-auto select-none transition-all duration-700 ease-out ${
             isBooting
-              ? `transition-all duration-700 ease-out ${
-                  bootPhase === 1
-                    ? 'opacity-0 translate-y-[-28px] scale-90'
-                    : 'opacity-85 translate-y-[-4px] scale-98'
-                }`
+              ? bootPhase === 1
+                ? 'opacity-0 -translate-y-8 scale-75'
+                : bootPhase === 2
+                ? 'opacity-90 -translate-y-1 scale-105'
+                : 'opacity-100 translate-y-0 scale-100'
               : ''
           }`}
         >
@@ -735,59 +1271,39 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
           )}
         </div>
 
-
-
-        {/* Spatial Cockpit Formation Transformation Curtain (Only on first app launch) */}
+        {/* Transparent Holographic Transformation HUD Frame (No opaque curtain — lets user watch every cockpit panel transform & lock in) */}
         {isBooting && (
           <div
             data-testid="cockpit-initial-boot-animation-overlay"
-            className="absolute inset-0 z-50 bg-[#01040A]/92 backdrop-blur-xl flex flex-col items-center justify-center p-6 transition-all duration-700 pointer-events-none select-none overflow-hidden"
+            className="absolute inset-0 z-40 pointer-events-none select-none overflow-hidden"
           >
-            {/* Tactical HUD Laser Scanline */}
-            <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-[#38BDF8] to-transparent shadow-[0_0_20px_#38BDF8] animate-hud-scanline pointer-events-none z-20" />
+            {/* Full-Cockpit Vertical Calibration Laser Sweep */}
+            <div className="absolute inset-x-0 h-1.5 bg-gradient-to-r from-transparent via-[#38BDF8] to-transparent shadow-[0_0_28px_#38BDF8] animate-hud-scanline pointer-events-none z-20" />
 
-            {/* Corner HUD Framing Brackets */}
-            <div className="absolute top-4 left-4 w-10 h-10 border-t-2 border-l-2 border-[#38BDF8] animate-hud-bracket-tl shadow-[0_0_12px_#38BDF8]" />
-            <div className="absolute top-4 right-4 w-10 h-10 border-t-2 border-r-2 border-[#38BDF8] animate-hud-bracket-tr shadow-[0_0_12px_#38BDF8]" />
-            <div className="absolute bottom-4 left-4 w-10 h-10 border-b-2 border-l-2 border-[#38BDF8] animate-hud-bracket-bl shadow-[0_0_12px_#38BDF8]" />
-            <div className="absolute bottom-4 right-4 w-10 h-10 border-b-2 border-r-2 border-[#38BDF8] animate-hud-bracket-br shadow-[0_0_12px_#38BDF8]" />
+            {/* Mechanical Corner Lock Brackets */}
+            <div className="absolute top-3 left-3 w-11 h-11 border-t-2 border-l-2 border-[#38BDF8] animate-hud-bracket-tl shadow-[0_0_14px_#38BDF8]" />
+            <div className="absolute top-3 right-3 w-11 h-11 border-t-2 border-r-2 border-[#38BDF8] animate-hud-bracket-tr shadow-[0_0_14px_#38BDF8]" />
+            <div className="absolute bottom-3 left-3 w-11 h-11 border-b-2 border-l-2 border-[#38BDF8] animate-hud-bracket-bl shadow-[0_0_14px_#38BDF8]" />
+            <div className="absolute bottom-3 right-3 w-11 h-11 border-b-2 border-r-2 border-[#38BDF8] animate-hud-bracket-br shadow-[0_0_14px_#38BDF8]" />
 
-            {/* Central Calibrating Tactical Optical Reticle */}
-            <div className="relative w-36 h-36 sm:w-44 sm:h-44 mb-6 flex items-center justify-center animate-hud-reticle">
-              {/* Outer compass ring */}
-              <div
-                className="absolute inset-0 rounded-full border-2 border-dashed border-[#38BDF8]/80 animate-spin"
-                style={{ animationDuration: '6s' }}
-              />
-              {/* Inner red ring */}
-              <div
-                className="absolute inset-3 rounded-full border-2 border-[#EF4444] animate-ping opacity-60"
-                style={{ animationDuration: '1.4s' }}
-              />
-              {/* Central core emblem */}
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#030A1C] border-2 border-[#38BDF8] shadow-[0_0_35px_#38BDF8] flex items-center justify-center animate-hud-lock-burst">
-                <Cpu className="w-8 h-8 sm:w-10 sm:h-10 text-[#38BDF8] animate-pulse" />
-              </div>
-            </div>
-
-            {/* HUD Status Telemetry Readout */}
-            <div className="text-center font-mono space-y-2 z-10">
-              <div className="text-xs sm:text-sm font-black text-[#38BDF8] tracking-[0.22em] uppercase font-['Orbitron',sans-serif] animate-hud-glitch-text">
-                {bootPhase === 1
-                  ? 'FORMING COCKPIT AVIONICS INTERFACE...'
-                  : bootPhase === 2
-                  ? 'LOCKING INSTRUMENT PANELS & HUD...'
-                  : 'HUD SYSTEM ONLINE • LOCKED'}
-              </div>
-              <div className="text-[10px] text-[#E8AA45] tracking-widest uppercase flex items-center justify-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8] animate-ping" />
-                <span>
+            {/* Top Canopy Transformation Telemetry Bar */}
+            <div className="absolute top-[14%] inset-x-6 flex flex-col items-center justify-center">
+              <div className="px-4 py-2 rounded-xl bg-[#020814]/88 backdrop-blur-md border border-[#38BDF8]/70 shadow-[0_0_30px_rgba(56,189,248,0.4)] text-center font-mono max-w-sm w-full">
+                <div className="text-[11px] sm:text-xs font-black text-[#E0F2FE] tracking-[0.2em] uppercase font-['Orbitron',sans-serif] animate-hud-glitch-text">
                   {bootPhase === 1
-                    ? '▶ POWER CORE: 100% • TELEMETRY SYNC'
+                    ? 'UNFOLDING COCKPIT CORE REACTOR...'
                     : bootPhase === 2
-                    ? '▶ HUD AVIONICS LINK: ACTIVE'
-                    : '▶ TARGET ACQUIRED :: SECTOR LOCKED'}
-                </span>
+                    ? 'ACTIVATING & TRANSFORMING 9 SECTORS...'
+                    : 'ALL AVIONICS LOCKED • SYSTEMS ONLINE'}
+                </div>
+                <div className="mt-1.5 w-full h-1.5 rounded-full bg-[#091526] overflow-hidden border border-[#38BDF8]/40">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#0284C7] via-[#38BDF8] to-[#E0F2FE] transition-all duration-500 ease-out shadow-[0_0_12px_#38BDF8]"
+                    style={{
+                      width: bootPhase === 1 ? '34%' : bootPhase === 2 ? '76%' : '100%'
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
