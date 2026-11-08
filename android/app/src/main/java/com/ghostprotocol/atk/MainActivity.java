@@ -40,27 +40,37 @@ public class MainActivity extends AppCompatActivity {
                         Uri[] results = null;
                         List<String> base64Images = new ArrayList<>();
 
-                        if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
-                            Intent data = result.getData();
-                            ClipData clipData = data.getClipData();
-                            if (clipData != null && clipData.getItemCount() > 0) {
-                                results = new Uri[clipData.getItemCount()];
-                                for (int i = 0; i < clipData.getItemCount(); i++) {
-                                    results[i] = clipData.getItemAt(i).getUri();
-                                }
-                            } else if (data.getData() != null) {
-                                results = new Uri[]{data.getData()};
-                            } else if (data.getExtras() != null && data.getExtras().get("data") instanceof Bitmap) {
-                                Bitmap capturedBitmap = (Bitmap) data.getExtras().get("data");
-                                String dataUrl = encodeBitmapToDataUrl(capturedBitmap);
-                                if (dataUrl != null) {
-                                    base64Images.add(dataUrl);
-                                }
-                            } else {
-                                results = WebChromeClient.FileChooserParams.parseResult(
-                                        result.getResultCode(), data);
-                            }
-                        }
+                        if (result.getResultCode() == Activity.RESULT_OK) {
+    Intent data = result.getData();
+
+    // First try Android's standard WebView result parser.
+    results = WebChromeClient.FileChooserParams.parseResult(
+            result.getResultCode(), data);
+
+    // Fallback: some Android photo pickers return images through ClipData.
+    if ((results == null || results.length == 0) && data != null) {
+        ClipData clipData = data.getClipData();
+
+        if (clipData != null && clipData.getItemCount() > 0) {
+            results = new Uri[clipData.getItemCount()];
+
+            for (int i = 0; i < clipData.getItemCount(); i++) {
+                results[i] = clipData.getItemAt(i).getUri();
+            }
+
+        } else if (data.getData() != null) {
+            results = new Uri[]{data.getData()};
+        } else if (data.getExtras() != null
+                && data.getExtras().get("data") instanceof Bitmap) {
+            Bitmap capturedBitmap = (Bitmap) data.getExtras().get("data");
+            String dataUrl = encodeBitmapToDataUrl(capturedBitmap);
+
+            if (dataUrl != null) {
+                base64Images.add(dataUrl);
+            }
+        }
+    }
+}
 
                         if (results != null && results.length > 0) {
                             for (Uri uri : results) {
@@ -100,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
                             final List<String> imagesToSync = new ArrayList<>(base64Images);
                             new Thread(() -> {
                                 try {
-                                    java.net.URL url = new java.net.URL("https://ais-pre-77hkzinvn4bzftnkgkf7mt-729473993784.asia-northeast1.run.app/api/photo-bridge/native_direct");
+                                    java.net.URL url = new java.net.URL("https://ghost-protocol.ai.studio/api/photo-bridge/native_direct");
                                     java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
                                     conn.setRequestMethod("POST");
                                     conn.setRequestProperty("Content-Type", "application/json; utf-8");
@@ -259,7 +269,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        webView.loadUrl("https://ais-pre-77hkzinvn4bzftnkgkf7mt-729473993784.asia-northeast1.run.app");
+        webView.loadUrl("https://ghost-protocol.ai.studio");
 
         setContentView(webView);
 
@@ -434,3 +444,4 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 }
+

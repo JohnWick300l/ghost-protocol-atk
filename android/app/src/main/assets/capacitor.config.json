@@ -3,7 +3,7 @@
 	"appName": "Ghost Protocol",
 	"webDir": "dist",
 	"server": {
-		"url": "https://ais-pre-77hkzinvn4bzftnkgkf7mt-729473993784.asia-northeast1.run.app",
+		"url": "https://ghost-protocol.ai.studio" ,
 		"cleartext": true
 	}
 }

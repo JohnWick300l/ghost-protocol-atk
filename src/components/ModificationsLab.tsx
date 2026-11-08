@@ -566,7 +566,8 @@ export const ModificationsLab: React.FC = () => {
 
   const prepareModPhotoPicker = (mode: 'gallery' | 'camera') => {
     setSubmitError(null);
-    setShowAddModal(true);
+    // The upload form is already open. Do not trigger another state transition
+    // before the native file input receives its trusted click.
     prepareNativePhotoPickerTarget('modifications', mode);
   };
 
@@ -1377,11 +1378,16 @@ export const ModificationsLab: React.FC = () => {
                 <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {/* Device Gallery / Photos Button */}
-                    <label
+                    <button
+                      type="button"
                       data-testid="mod-select-photos-button"
-                      onClick={() => prepareModPhotoPicker('gallery')}
-                      className={`relative overflow-hidden flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] border border-amber-500/50 hover:border-amber-500 text-white font-semibold text-xs transition-all shadow-sm cursor-pointer select-none ${
-                        isProcessingPhotos ? 'opacity-70 pointer-events-none' : ''
+                      disabled={isProcessingPhotos}
+                      onClick={() => {
+                        prepareModPhotoPicker('gallery');
+                        fileInputRef.current?.click();
+                      }}
+                      className={`flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] border border-amber-500/50 hover:border-amber-500 text-white font-semibold text-xs transition-all shadow-sm cursor-pointer select-none ${
+                        isProcessingPhotos ? 'opacity-70 cursor-not-allowed' : ''
                       }`}
                     >
                       {isProcessingPhotos ? (
@@ -1392,39 +1398,44 @@ export const ModificationsLab: React.FC = () => {
                       <span className="truncate">
                         {isProcessingPhotos ? 'Reading Photos...' : 'Select Photos (Gallery)'}
                       </span>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        disabled={isProcessingPhotos}
-                        className="sr-only"
-                        aria-label="Select Photos From Device"
-                      />
-                    </label>
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      disabled={isProcessingPhotos}
+                      className="sr-only"
+                      aria-label="Select Photos From Device"
+                    />
 
                     {/* Camera Button */}
-                    <label
+                    <button
+                      type="button"
                       data-testid="mod-camera-photos-button"
-                      onClick={() => prepareModPhotoPicker('camera')}
-                      className={`relative overflow-hidden flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white font-medium text-xs transition-all cursor-pointer select-none ${
-                        isProcessingPhotos ? 'opacity-70 pointer-events-none' : ''
+                      disabled={isProcessingPhotos}
+                      onClick={() => {
+                        prepareModPhotoPicker('camera');
+                        cameraInputRef.current?.click();
+                      }}
+                      className={`flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white font-medium text-xs transition-all cursor-pointer select-none ${
+                        isProcessingPhotos ? 'opacity-70 cursor-not-allowed' : ''
                       }`}
                     >
                       <Camera className="w-4 h-4 text-sky-400 shrink-0" />
                       <span className="truncate">Take Photo (Camera)</span>
-                      <input
-                        ref={cameraInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={handleImageUpload}
-                        disabled={isProcessingPhotos}
-                        className="sr-only"
-                        aria-label="Take Photo with Camera"
-                      />
-                    </label>
+                    </button>
+                    <input
+                      ref={cameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleImageUpload}
+                      disabled={isProcessingPhotos}
+                      className="sr-only"
+                      aria-label="Take Photo with Camera"
+                    />
 
                     {/* Paste Image URL Button */}
                     <button
