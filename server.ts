@@ -4,17 +4,6 @@ import os from 'os';
 import path from 'path';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import { initializeApp as initFirebaseServerApp, getApps as getFirebaseServerApps } from 'firebase/app';
-import {
-  getFirestore as getServerFirestore,
-  doc as fsDoc,
-  getDoc as fsGetDoc,
-  setDoc as fsSetDoc,
-  updateDoc as fsUpdateDoc,
-  serverTimestamp as fsServerTimestamp,
-  disableNetwork as fsDisableNetwork,
-  terminate as fsTerminate
-} from 'firebase/firestore';
 import firebaseServerConfig from './firebase-applet-config.json' with { type: 'json' };
 import { generateOfflineJetEngineerResponse } from './src/utils/telemetryCache.ts';
 import {
@@ -74,6 +63,8 @@ import {
   ALL_PRIORITY_ISSUES_SEED,
   resolveTrueWaypointCoordinates,
   buildGoogleMapsUrl,
+  parseMinimalChargingStationsDatabase,
+  type ParsedMinimalChargingDatabaseResult,
   type ChargerPlugType,
   type ChargerReservation,
   type CommunityChargerCostUnit,
@@ -87,8 +78,12 @@ import {
 } from './src/utils/rules.ts';
 import {
   isValidChargerReportCategory,
+  discoverRouteCorridorDefinitions,
+  buildCorridorPolylineFromWaypoints,
   type ChargerCommunityReport,
-  type AutoPilotMissionRecord
+  type AutoPilotMissionRecord,
+  type RouteCorridorDefinition,
+  type AutoPilotRouteCandidateGeometry
 } from './src/utils/autopilot.ts';
 import { searchAllIndiaLocations, INDIA_TOWN_PLACE_SUGGESTIONS } from './src/utils/indiaLocations.ts';
 import {
@@ -115,7 +110,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+// The dev server must always run on port 3000.
+// In Cloud Run environments where PORT=8080 is set, nginx listens on 8080 and proxies to 3000.
+const PORT = (process.env.PORT && process.env.PORT !== '8080') ? Number(process.env.PORT) : 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -170,10 +167,31 @@ const loginRateLimiter = new LoginRateLimiter({
   lockoutMs: 15 * 60 * 1000
 });
 
-// Precomputed dummy scrypt hash to prevent user-enumeration timing side-channels
-const DUMMY_PASSWORD_HASH = hashPassword('GhostProtocol_Dummy_Timing_Guard_2026!');
-const SEED_ADMIN_PASSWORD_HASH = hashPassword('GhostProtocol_F77_Pilot!');
-const SEED_EMPLOYEE_PASSWORD_HASH = hashPassword('UV_Employee_2026!');
+// Lazy scrypt hashes to avoid blocking server startup with synchronous scryptSync calls
+let _dummyPasswordHash: string | null = null;
+let _seedAdminPasswordHash: string | null = null;
+let _seedEmployeePasswordHash: string | null = null;
+
+function getDummyPasswordHash(): string {
+  if (!_dummyPasswordHash) {
+    _dummyPasswordHash = hashPassword('GhostProtocol_Dummy_Timing_Guard_2026!');
+  }
+  return _dummyPasswordHash;
+}
+
+function getSeedAdminPasswordHash(): string {
+  if (!_seedAdminPasswordHash) {
+    _seedAdminPasswordHash = hashPassword('GhostProtocol_F77_Pilot!');
+  }
+  return _seedAdminPasswordHash;
+}
+
+function getSeedEmployeePasswordHash(): string {
+  if (!_seedEmployeePasswordHash) {
+    _seedEmployeePasswordHash = hashPassword('UV_Employee_2026!');
+  }
+  return _seedEmployeePasswordHash;
+}
 
 // CSRF protection for state-changing API requests
 app.use('/api', (req: Request, res: Response, next) => {
@@ -184,6 +202,25 @@ app.use('/api', (req: Request, res: Response, next) => {
   next();
 });
 
+
+let cachedMinimalChargingDb: ParsedMinimalChargingDatabaseResult | null = null;
+
+function getServerMinimalChargingDatabase(): ParsedMinimalChargingDatabaseResult {
+  if (cachedMinimalChargingDb) {
+    return cachedMinimalChargingDb;
+  }
+  try {
+    const jsonPath = path.join(__dirname, 'public', 'data', 'charging_stations_minimal.json');
+    if (fs.existsSync(jsonPath)) {
+      const raw = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+      cachedMinimalChargingDb = parseMinimalChargingStationsDatabase(raw);
+      return cachedMinimalChargingDb;
+    }
+  } catch {
+    // Ignore file read error
+  }
+  return parseMinimalChargingStationsDatabase([]);
+}
 
 // Seed initial dataset if database file doesn't exist
 function getInitialData() {
@@ -221,7 +258,7 @@ function getInitialData() {
           showCity: true,
           showMotorcycleDetails: true
         },
-        passwordHash: SEED_ADMIN_PASSWORD_HASH
+        passwordHash: getSeedAdminPasswordHash()
       },
       {
         id: 'u_uv_employee',
@@ -256,7 +293,7 @@ function getInitialData() {
           showCity: true,
           showMotorcycleDetails: true
         },
-        passwordHash: SEED_EMPLOYEE_PASSWORD_HASH,
+        passwordHash: getSeedEmployeePasswordHash(),
         passwordUpdatedAt: '2024-01-15T08:00:00Z'
       },
       {
@@ -807,7 +844,7 @@ function getInitialData() {
         chargerType: 'Supernova',
         chargerDetails: 'No separate charger required — Integrated 30 kW Supernova DC Tether.',
         vehicleCompatibility: 'F77 MACH 2, F77 Recon, F77 Original (Supernova DC Port)',
-        connectorTypes: ['UV Supernova Dual DC (30 kW)', 'Type 2 AC (7.2 kW)', '15A Standard Socket'],
+        connectorTypes: ['UV Supernova Dual DC (30 kW)'],
         powerOutputKw: 30,
         chargerSource: 'Supernova',
         isSupernova: true,
@@ -950,7 +987,7 @@ function getInitialData() {
         chargerType: 'Supernova',
         chargerDetails: 'No separate charger required — Direct Supernova DC Fast Tether.',
         vehicleCompatibility: 'F77 MACH 2, F77 Recon, F77 Original',
-        connectorTypes: ['UV Supernova Dual DC (30 kW)', '15A Standard Socket'],
+        connectorTypes: ['UV Supernova Dual DC (30 kW)'],
         powerOutputKw: 30,
         chargerSource: 'Supernova',
         isSupernova: true,
@@ -1050,7 +1087,7 @@ function getInitialData() {
         uvChargingLink: 'https://www.ultraviolette.com/charging',
         chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charger (2 bays, 24/7 highway access)',
         vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-        connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', '15A 3-Pin Industrial Socket'],
+        connectorTypes: ['UV Supernova Dual DC (30 kW)'],
         powerOutputKw: 30.0,
         chargerSource: 'Supernova',
         isSupernova: true,
@@ -1103,7 +1140,7 @@ function getInitialData() {
         uvChargingLink: 'https://www.ultraviolette.com/charging',
         chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charging Hub on NH 75 Eastbound/Westbound access road',
         vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-        connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', '15A 3-Pin Socket'],
+        connectorTypes: ['UV Supernova Dual DC (30 kW)'],
         powerOutputKw: 30.0,
         chargerSource: 'Supernova',
         isSupernova: true,
@@ -1122,15 +1159,15 @@ function getInitialData() {
       },
       {
         id: 'cs_14',
-        name: 'Vellore Green Circle Supernova & Type 6 Hub (NH 48)',
+        name: 'UV Supernova Hub — Vellore Green Circle (NH 48)',
         location: 'NH 48 Service Road, Green Circle Junction, Vellore, Tamil Nadu 632004',
         latitude: 12.9349,
         longitude: 79.1469,
         chargerType: 'Supernova',
         uvChargingLink: 'https://www.ultraviolette.com/charging',
-        chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charger + Type 6 Ather Grid co-located bay',
+        chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charger (Dual Highway Bays)',
         vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-        connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', 'Type 2 AC (7.2 kW)'],
+        connectorTypes: ['UV Supernova Dual DC (30 kW)'],
         powerOutputKw: 30.0,
         chargerSource: 'Supernova',
         isSupernova: true,
@@ -1183,7 +1220,7 @@ function getInitialData() {
         uvChargingLink: 'https://www.ultraviolette.com/charging',
         chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charging Bay at highway food plaza',
         vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-        connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', '15A 3-Pin Socket'],
+        connectorTypes: ['UV Supernova Dual DC (30 kW)'],
         powerOutputKw: 30.0,
         chargerSource: 'Supernova',
         isSupernova: true,
@@ -1210,7 +1247,7 @@ function getInitialData() {
         uvChargingLink: 'https://www.ultraviolette.com/charging',
         chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charging Station (Dual Bay, 24/7 Highway Access)',
         vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-        connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', '15A 3-Pin Industrial Socket'],
+        connectorTypes: ['UV Supernova Dual DC (30 kW)'],
         powerOutputKw: 30.0,
         chargerSource: 'Supernova',
         isSupernova: true,
@@ -2043,8 +2080,55 @@ function markServerRecordDeleted(db: any, id: string | string[]) {
   }
 }
 
+const PURGED_DEMO_SEED_IDS: readonly string[] = [
+  'u_pilot_1',
+  'u_pilot07',
+  'u_phantom',
+  'u_rookie',
+  'u_uv_employee',
+  'mp_01',
+  'mp_02',
+  'mp_rent_01',
+  'mp_rent_02',
+  'mp_auc_01',
+  'mp_auc_02',
+  'mp_1792589692480',
+  'ride_01',
+  'ride_02',
+  'ride_1793297195274',
+  'ride_1793297046565',
+  'ride_1793296933377',
+  'dest_seed_chikmagalur',
+  'dest_seed_nandihills',
+  'dest_seed_coorg',
+  'apm_seed_01',
+  'mod_01',
+  'mod_02',
+  'mod_03',
+  'mod_04',
+  'mod_05',
+  'mod_06',
+  'mod_1792933695492',
+  'mod_1792930804163',
+  'sr_01',
+  'disc_01',
+  'disc_02',
+  'poll_01',
+  'poll_02',
+  'pet_01',
+  'pet_02',
+  'emg_01',
+  'emg_1792944682031',
+  'emg_1792401500873',
+  'contrib_01',
+  'contrib_02',
+  'contrib_1793002283910_0r2f',
+  'contrib_1792687028444_9gr7'
+];
+
 function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
   let mutated = false;
+  const isTestMode = process.env.GHOST_TEST_MODE === '1';
   const initial = getInitialData();
 
   if (!Array.isArray(parsed.deletedIds)) {
@@ -2052,6 +2136,15 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
     mutated = true;
   }
   const deletedSet = new Set<string>(parsed.deletedIds);
+  if (!isTestMode) {
+    for (const demoId of PURGED_DEMO_SEED_IDS) {
+      if (!deletedSet.has(demoId)) {
+        deletedSet.add(demoId);
+        parsed.deletedIds.push(demoId);
+        mutated = true;
+      }
+    }
+  }
 
   const arrayKeys = [
     'users',
@@ -2073,14 +2166,37 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
     'auditLogs'
   ] as const;
 
+  const noAutoSeedKeys = new Set<string>([
+    'emergencies',
+    'rides',
+    'visitedDestinations',
+    'modifications',
+    'autoPilotMissions',
+    'marketplace',
+    'serviceReviews',
+    'discussions',
+    'polls',
+    'petitions'
+  ]);
+
   for (const key of arrayKeys) {
     if (!Array.isArray(parsed[key])) {
-      parsed[key] = ((initial as any)[key] || []).filter((item: any) => !item?.id || !deletedSet.has(item.id));
+      if (!isTestMode && noAutoSeedKeys.has(key)) {
+        parsed[key] = [];
+      } else {
+        parsed[key] = ((initial as any)[key] || []).filter((item: any) => !item?.id || !deletedSet.has(item.id));
+      }
       mutated = true;
+    } else if (!isTestMode && noAutoSeedKeys.has(key)) {
+      const beforeLen = parsed[key].length;
+      parsed[key] = parsed[key].filter((item: any) => item && (!item.id || !deletedSet.has(item.id)));
+      if (parsed[key].length !== beforeLen) {
+        mutated = true;
+      }
     }
   }
 
-  if (Array.isArray(parsed.visitedDestinations) && parsed.visitedDestinations.length === 0) {
+  if (isTestMode && Array.isArray(parsed.visitedDestinations) && parsed.visitedDestinations.length === 0) {
     parsed.visitedDestinations = ((initial as any).visitedDestinations || []).filter(
       (item: any) => !item?.id || !deletedSet.has(item.id)
     );
@@ -2224,10 +2340,18 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
   }
 
   if (!Array.isArray(parsed.contributions)) {
-    parsed.contributions = ((initial as any).contributions || []).filter(
-      (item: any) => !item?.id || !deletedSet.has(item.id)
-    );
+    parsed.contributions = isTestMode
+      ? ((initial as any).contributions || []).filter((item: any) => !item?.id || !deletedSet.has(item.id))
+      : [];
     mutated = true;
+  } else if (!isTestMode) {
+    const beforeContribLen = parsed.contributions.length;
+    parsed.contributions = parsed.contributions.filter(
+      (item: any) => item && (!item.id || !deletedSet.has(item.id))
+    );
+    if (parsed.contributions.length !== beforeContribLen) {
+      mutated = true;
+    }
   }
 
   // Ensure chargingStations have chargerType, approvalStatus, published, and India-wide seed stations
@@ -2339,6 +2463,17 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
     for (const seedSt of seedStations) {
       if (!existingIds.has(seedSt.id) && !deletedSet.has(seedSt.id)) {
         parsed.chargingStations.push(seedSt);
+        existingIds.add(seedSt.id);
+        mutated = true;
+      }
+    }
+
+    // Merge all valid coordinate stations from public/data/charging_stations_minimal.json
+    const minimalDb = getServerMinimalChargingDatabase();
+    for (const minSt of minimalDb.validStations) {
+      if (!existingIds.has(minSt.id) && !deletedSet.has(minSt.id)) {
+        parsed.chargingStations.push(minSt);
+        existingIds.add(minSt.id);
         mutated = true;
       }
     }
@@ -2379,7 +2514,7 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
     }
   }
 
-  if (Array.isArray(parsed.polls)) {
+  if (isTestMode && Array.isArray(parsed.polls)) {
     const seedPolls = (initial as any).polls || [];
     const existingPollIds = new Set(parsed.polls.map((p: any) => p.id));
     for (const sp of seedPolls) {
@@ -2390,7 +2525,7 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
     }
   }
 
-  if (Array.isArray(parsed.petitions)) {
+  if (isTestMode && Array.isArray(parsed.petitions)) {
     const seedPetitions = (initial as any).petitions || [];
     const existingPetIds = new Set(parsed.petitions.map((p: any) => p.id));
     for (const sp of seedPetitions) {
@@ -2431,11 +2566,13 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
       return updated;
     });
 
-    const existingMpIds = new Set(parsed.marketplace.map((m: any) => m.id));
-    for (const sm of seedMarketplace) {
-      if (!existingMpIds.has(sm.id) && !deletedSet.has(sm.id)) {
-        parsed.marketplace.push(sm);
-        mutated = true;
+    if (isTestMode) {
+      const existingMpIds = new Set(parsed.marketplace.map((m: any) => m.id));
+      for (const sm of seedMarketplace) {
+        if (!existingMpIds.has(sm.id) && !deletedSet.has(sm.id)) {
+          parsed.marketplace.push(sm);
+          mutated = true;
+        }
       }
     }
   }
@@ -2800,10 +2937,10 @@ function recordServerQuotaExhausted(reason: string): void {
     console.warn('[GHOST VAULT] Failed writing quota status file:', err);
   }
 
-  if (serverFirestoreInstance) {
+  if (serverFirestoreInstance && cachedFirestoreSdk) {
     try {
-      void fsDisableNetwork(serverFirestoreInstance);
-      void fsTerminate(serverFirestoreInstance);
+      void cachedFirestoreSdk.disableNetwork(serverFirestoreInstance);
+      void cachedFirestoreSdk.terminate(serverFirestoreInstance);
     } catch {
       // Ignore cleanup error
     }
@@ -2811,7 +2948,8 @@ function recordServerQuotaExhausted(reason: string): void {
   }
 }
 
-let serverFirestoreInstance: ReturnType<typeof getServerFirestore> | null = null;
+let serverFirestoreInstance: any = null;
+let cachedFirestoreSdk: typeof import('firebase/firestore') | null = null;
 let lastVaultPullAtMs = 0;
 let vaultPullPromise: Promise<void> | null = null;
 let isApplyingVaultPull = false;
@@ -2855,14 +2993,24 @@ const VAULT_ARRAY_COLLECTIONS = [
   'contributions'
 ] as const;
 
-function getServerFirestoreDb() {
+async function getServerFirestoreDb(): Promise<{
+  db: any;
+  sdk: typeof import('firebase/firestore');
+} | null> {
   if (!isLiveVaultSyncEnabled()) return null;
-  if (serverFirestoreInstance) return serverFirestoreInstance;
+  if (serverFirestoreInstance && cachedFirestoreSdk) {
+    return { db: serverFirestoreInstance, sdk: cachedFirestoreSdk };
+  }
   try {
-    const existing = getFirebaseServerApps().find(a => a.name === 'ghost-server-vault');
-    const fbApp = existing || initFirebaseServerApp(firebaseServerConfig, 'ghost-server-vault');
-    serverFirestoreInstance = getServerFirestore(fbApp, firebaseServerConfig.firestoreDatabaseId);
-    return serverFirestoreInstance;
+    const [fbAppMod, fbFsMod] = await Promise.all([
+      import('firebase/app'),
+      import('firebase/firestore')
+    ]);
+    cachedFirestoreSdk = fbFsMod;
+    const existing = fbAppMod.getApps().find(a => a.name === 'ghost-server-vault');
+    const fbApp = existing || fbAppMod.initializeApp(firebaseServerConfig, 'ghost-server-vault');
+    serverFirestoreInstance = fbFsMod.getFirestore(fbApp, firebaseServerConfig.firestoreDatabaseId);
+    return { db: serverFirestoreInstance, sdk: fbFsMod };
   } catch (err) {
     console.warn('[GHOST VAULT] Failed to initialize Firestore client:', err);
     return null;
@@ -3170,15 +3318,16 @@ async function pushVaultToFirestore(db: any): Promise<boolean> {
       await pullVaultFromFirestore(true);
     }
 
-    const fsDb = getServerFirestoreDb();
-    if (!fsDb) return false;
+    const fsCtx = await getServerFirestoreDb();
+    if (!fsCtx) return false;
+    const { db: fsDb, sdk: fsSdk } = fsCtx;
 
     while (pendingVaultPushDb) {
       const targetDb = pendingVaultPushDb;
       pendingVaultPushDb = null;
 
-      const ref = fsDoc(fsDb, 'server_vault', SERVER_VAULT_DOC_ID);
-      const existingSnap = await fsGetDoc(ref);
+      const ref = fsSdk.doc(fsDb, 'server_vault', SERVER_VAULT_DOC_ID);
+      const existingSnap = await fsSdk.getDoc(ref);
       const existingData = existingSnap.exists() ? existingSnap.data() : null;
 
       const localDeleted: string[] = Array.isArray(targetDb.deletedIds)
@@ -3224,27 +3373,27 @@ async function pushVaultToFirestore(db: any): Promise<boolean> {
       const revision = Math.max(1, Math.min(1000000000, typeof targetDb.revision === 'number' ? targetDb.revision : 1));
 
       if (!existingSnap.exists()) {
-        await fsSetDoc(ref, {
+        await fsSdk.setDoc(ref, {
           vaultId: SERVER_VAULT_DOC_ID,
           serverKey: SERVER_VAULT_SECRET_KEY,
           revision,
           deletedIds: cleanDeletedIds,
           users: cleanUsers,
           collectionsJson,
-          createdAt: fsServerTimestamp(),
-          updatedAt: fsServerTimestamp()
+          createdAt: fsSdk.serverTimestamp(),
+          updatedAt: fsSdk.serverTimestamp()
         });
       } else {
         const nextRevision = Math.max(
           revision,
           (typeof existingData?.revision === 'number' ? existingData.revision : 1) + 1
         );
-        await fsUpdateDoc(ref, {
+        await fsSdk.updateDoc(ref, {
           revision: Math.min(1000000000, nextRevision),
           deletedIds: cleanDeletedIds,
           users: cleanUsers,
           collectionsJson,
-          updatedAt: fsServerTimestamp()
+          updatedAt: fsSdk.serverTimestamp()
         });
       }
     }
@@ -3275,16 +3424,17 @@ async function pushVaultToFirestore(db: any): Promise<boolean> {
 async function pullVaultFromFirestore(force = false): Promise<void> {
   if (!isLiveVaultSyncEnabled()) return;
   const now = Date.now();
-  if (!force && now - lastVaultPullAtMs < 2000) return;
+  if (!force && now - lastVaultPullAtMs < 10000) return;
   if (vaultPullPromise) return vaultPullPromise;
 
   vaultPullPromise = (async () => {
-    const fsDb = getServerFirestoreDb();
-    if (!fsDb) return;
+    const fsCtx = await getServerFirestoreDb();
+    if (!fsCtx) return;
+    const { db: fsDb, sdk: fsSdk } = fsCtx;
     try {
-      const ref = fsDoc(fsDb, 'server_vault', SERVER_VAULT_DOC_ID);
+      const ref = fsSdk.doc(fsDb, 'server_vault', SERVER_VAULT_DOC_ID);
       const snap = await Promise.race([
-        fsGetDoc(ref),
+        fsSdk.getDoc(ref),
         new Promise<null>(resolve => setTimeout(() => resolve(null), 2200))
       ]);
       lastVaultPullAtMs = Date.now();
@@ -3514,7 +3664,7 @@ function ensureOwnerBootstrapCredentials(db: any): boolean {
     }
   }
 
-  owner.passwordHash = SEED_ADMIN_PASSWORD_HASH;
+  owner.passwordHash = getSeedAdminPasswordHash();
   owner.passwordUpdatedAt = new Date().toISOString();
   return true;
 }
@@ -3544,44 +3694,50 @@ function ensureSeededUsers(db: any): boolean {
     (u: any) => u.email === 'vikram.sengupta@example.com' || u.id === 'u_pilot07'
   );
   if (pilot07 && !pilot07.passwordHash) {
-    pilot07.passwordHash = SEED_ADMIN_PASSWORD_HASH;
+    pilot07.passwordHash = getSeedAdminPasswordHash();
     changed = true;
   }
   return changed;
 }
 
-// Initialize owner bootstrap state and sync with Firestore Server Vault on startup
-try {
-  const bootDb = readDb();
-  let changed = false;
-  if (ensureOwnerBootstrapCredentials(bootDb)) {
-    changed = true;
-  }
-  if (ensureSeededUsers(bootDb)) {
-    changed = true;
-  }
-  if (changed) {
-    isApplyingVaultPull = true;
-    try {
-      writeDb(bootDb);
-    } finally {
-      isApplyingVaultPull = false;
+// Initialize owner bootstrap state and sync with Firestore Server Vault after server binds port 3000
+function runStartupBootstrap() {
+  try {
+    const bootDb = readDb();
+    let changed = false;
+    if (ensureOwnerBootstrapCredentials(bootDb)) {
+      changed = true;
     }
-  }
-  if (isLiveVaultSyncEnabled()) {
-    void pullVaultFromFirestore(true);
-    setInterval(() => {
-      if (isLiveVaultSyncEnabled()) {
-        void pullVaultFromFirestore(false);
+    if (ensureSeededUsers(bootDb)) {
+      changed = true;
+    }
+    if (changed) {
+      isApplyingVaultPull = true;
+      try {
+        writeDb(bootDb);
+      } finally {
+        isApplyingVaultPull = false;
       }
-    }, 15000);
-  } else if (firestoreQuotaExhaustedUntilMs > Date.now()) {
-    console.log(
-      `[GHOST VAULT] Firestore free-tier daily write limit reached (Spark quota). Sync paused until UTC midnight (${new Date(firestoreQuotaExhaustedUntilMs).toISOString()}). App is operating in 100% resilient local-first mode.`
-    );
+    }
+    if (isLiveVaultSyncEnabled()) {
+      void pullVaultFromFirestore(true);
+      setInterval(() => {
+        if (isLiveVaultSyncEnabled()) {
+          void pullVaultFromFirestore(false);
+        }
+      }, 20000);
+    } else if (firestoreQuotaExhaustedUntilMs > Date.now()) {
+      console.log(
+        `[GHOST VAULT] Firestore free-tier daily write limit reached (Spark quota). Sync paused until UTC midnight (${new Date(firestoreQuotaExhaustedUntilMs).toISOString()}). App is operating in 100% resilient local-first mode.`
+      );
+    }
+  } catch {
+    // Ignore startup check error
   }
-} catch {
-  // Ignore startup check error
+}
+
+if (process.env.GHOST_TEST_MODE === '1') {
+  runStartupBootstrap();
 }
 
 function isRequestHttps(req: Request): boolean {
@@ -3718,9 +3874,9 @@ function broadcastChargingUpdate(db: any) {
 // -------------------------------------------------------------
 // REST API ROUTES
 // -------------------------------------------------------------
-app.use('/api', async (_req: Request, _res: Response, next: express.NextFunction) => {
+app.use('/api', (_req: Request, _res: Response, next: express.NextFunction) => {
   if (isLiveVaultSyncEnabled()) {
-    await pullVaultFromFirestore(false);
+    void pullVaultFromFirestore(false);
   }
   next();
 });
@@ -3785,7 +3941,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   );
 
   if (!user) {
-    verifyPassword(password, DUMMY_PASSWORD_HASH);
+    verifyPassword(password, getDummyPasswordHash());
     loginRateLimiter.recordFailure(rateKey);
     return res.status(401).json({ error: 'Invalid credentials or account has been removed.' });
   }
@@ -4384,7 +4540,9 @@ app.post('/api/auth/session-restore', async (req: Request, res: Response) => {
   if (!dbUser && targetId.startsWith('u_') && targetId !== OWNER_ACCOUNT_ID && incomingUser.fullName) {
     const nowIso = new Date().toISOString();
     const cleanName = stripLegacyCallsignSuffix(String(incomingUser.fullName).trim()) || 'Squadron Pilot';
-    const bikeModel = incomingUser.motorcycleModel === 'X47' ? 'X47' : 'F77';
+    const bikeModel = String(incomingUser.motorcycleModel || '').toUpperCase().includes('X47')
+      ? 'X47'
+      : 'F77';
     const nick: PilotNickname = inferDefaultPilotNickname(bikeModel);
     dbUser = {
       id: targetId,
@@ -4427,6 +4585,23 @@ app.post('/api/auth/session-restore', async (req: Request, res: Response) => {
     };
     db.users.push(dbUser);
     writeDb(db);
+  } else if (dbUser && incomingUser.motorcycleModel && !isOwnerAccount(dbUser)) {
+    const incomingBikeModel = String(incomingUser.motorcycleModel).toUpperCase().includes('X47')
+      ? 'X47'
+      : 'F77';
+    if (dbUser.motorcycleModel !== incomingBikeModel) {
+      dbUser.motorcycleModel = incomingBikeModel;
+      if (
+        !dbUser.pilotNickname ||
+        dbUser.pilotNickname === 'F77 PILOT' ||
+        dbUser.pilotNickname === 'X47 PILOT'
+      ) {
+        dbUser.pilotNickname = inferDefaultPilotNickname(incomingBikeModel);
+        dbUser.secondaryTag = dbUser.pilotNickname;
+      }
+      dbUser.updatedAt = new Date().toISOString();
+      writeDb(db);
+    }
   }
 
   if (!dbUser) {
@@ -4528,6 +4703,16 @@ app.put('/api/auth/profile', (req: Request, res: Response) => {
     if (body[field] !== undefined) {
       targetUser[field] = body[field];
     }
+  }
+
+  if (
+    body.motorcycleModel !== undefined &&
+    body.pilotNickname === undefined &&
+    (!targetUser.pilotNickname ||
+      targetUser.pilotNickname === 'F77 PILOT' ||
+      targetUser.pilotNickname === 'X47 PILOT')
+  ) {
+    targetUser.pilotNickname = inferDefaultPilotNickname(targetUser.motorcycleModel);
   }
 
   const resolved = resolveUserDisplayIdentity(targetUser);
@@ -5966,12 +6151,33 @@ app.post('/api/rides/:id/leave', (req: Request, res: Response) => {
   });
 });
 
+app.delete('/api/rides/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const db = readDb();
+  const idx = (db.rides || []).findIndex((r: any) => r.id === id);
+  if (idx === -1) {
+    markServerRecordDeleted(db, id);
+    writeDb(db);
+    return res.json({ success: true, deletedId: id, rides: db.rides || [] });
+  }
+  const target = db.rides[idx];
+  if (!canModifyServerRecord(target, req, db)) {
+    return res.status(403).json({ error: 'Only the ride leader or an administrator can delete this ride.' });
+  }
+  db.rides.splice(idx, 1);
+  markServerRecordDeleted(db, id);
+  writeDb(db);
+  res.json({ success: true, deletedId: id, rides: db.rides });
+});
+
 // Visited Destinations & Rider Route Guides in Mission Mode
 app.get('/api/mission/destinations', (_req: Request, res: Response) => {
   const db = readDb();
   const destinations = Array.isArray(db.visitedDestinations)
     ? db.visitedDestinations
-    : DEFAULT_VISITED_DESTINATIONS;
+    : process.env.GHOST_TEST_MODE === '1'
+    ? DEFAULT_VISITED_DESTINATIONS
+    : [];
   res.json({ destinations });
 });
 
@@ -5998,7 +6204,7 @@ app.post('/api/mission/destinations', (req: Request, res: Response) => {
   }
 
   if (!Array.isArray(db.visitedDestinations)) {
-    db.visitedDestinations = [...DEFAULT_VISITED_DESTINATIONS];
+    db.visitedDestinations = [];
   }
   db.visitedDestinations.unshift(validation.record);
   writeDb(db);
@@ -6007,6 +6213,28 @@ app.post('/api/mission/destinations', (req: Request, res: Response) => {
     destination: validation.record,
     destinations: db.visitedDestinations
   });
+});
+
+app.delete('/api/mission/destinations/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const db = readDb();
+  if (!Array.isArray(db.visitedDestinations)) {
+    db.visitedDestinations = [];
+  }
+  const idx = db.visitedDestinations.findIndex((d: any) => d.id === id);
+  if (idx === -1) {
+    markServerRecordDeleted(db, id);
+    writeDb(db);
+    return res.json({ success: true, deletedId: id, destinations: db.visitedDestinations });
+  }
+  const target = db.visitedDestinations[idx];
+  if (!canModifyServerRecord(target, req, db)) {
+    return res.status(403).json({ error: 'Only the author or an administrator can delete this destination.' });
+  }
+  db.visitedDestinations.splice(idx, 1);
+  markServerRecordDeleted(db, id);
+  writeDb(db);
+  res.json({ success: true, deletedId: id, destinations: db.visitedDestinations });
 });
 
 // Update rider's status (Checked In, Riding, Heading Home, Needs Assistance)
@@ -7364,6 +7592,7 @@ app.get('/api/places/reverse', async (req: Request, res: Response) => {
 app.get('/api/charging', (req: Request, res: Response) => {
   const db = readDb();
   const caller = resolveRequestUser(req, db);
+  const minimalDb = getServerMinimalChargingDatabase();
   const usersById = new Map<string, any>((db.users || []).map((u: any) => [u.id, u]));
   const allStations = (db.chargingStations || [])
     .filter((s: any) => s.approvalStatus !== 'deleted')
@@ -7377,6 +7606,13 @@ app.get('/api/charging', (req: Request, res: Response) => {
   res.json({
     stations: publicStations,
     allStations: visibleAllStations,
+    minimalDatabaseStats: {
+      totalRecordsLoaded: minimalDb.totalRecordsCount,
+      recordsWithValidCoordinatesCount: minimalDb.recordsWithValidCoordinatesCount,
+      validMapMarkersCount: minimalDb.validMarkersCount,
+      skippedRecordsCount: minimalDb.skippedRecordsCount
+    },
+    skippedMinimalRecords: minimalDb.skippedRecords,
     chargerReports: Array.isArray(db.chargerReports) ? db.chargerReports : [],
     longRidePlanningText: typeof db.longRidePlanningText === 'string' ? db.longRidePlanningText : ''
   });
@@ -7390,6 +7626,7 @@ app.get('/api/charging/stream', (req: Request, res: Response) => {
 
   const db = readDb();
   const caller = resolveRequestUser(req, db);
+  const minimalDb = getServerMinimalChargingDatabase();
   const usersById = new Map<string, any>((db.users || []).map((u: any) => [u.id, u]));
   const clientEntry: ChargingSseClient = {
     res,
@@ -7412,6 +7649,13 @@ app.get('/api/charging/stream', (req: Request, res: Response) => {
       type: 'CHARGING_INIT',
       stations: publicStations,
       allStations: visibleAllStations,
+      minimalDatabaseStats: {
+        totalRecordsLoaded: minimalDb.totalRecordsCount,
+        recordsWithValidCoordinatesCount: minimalDb.recordsWithValidCoordinatesCount,
+        validMapMarkersCount: minimalDb.validMarkersCount,
+        skippedRecordsCount: minimalDb.skippedRecordsCount
+      },
+      skippedMinimalRecords: minimalDb.skippedRecords,
       chargerReports: Array.isArray(db.chargerReports) ? db.chargerReports : [],
       longRidePlanningText: typeof db.longRidePlanningText === 'string' ? db.longRidePlanningText : '',
       timestamp: new Date().toISOString()
@@ -8127,9 +8371,9 @@ app.post('/api/charging/:id/reports', (req: Request, res: Response) => {
   });
 });
 
-// OSRM Real Driving Route Calculation Proxy for Auto Pilot
+// OSRM Real Driving Route Calculation Proxy for Auto Pilot (Multi-Route Aware)
 app.post('/api/autopilot/route', async (req: Request, res: Response) => {
-  const { points } = req.body || {};
+  const { points, corridors: clientCorridors } = req.body || {};
   if (!Array.isArray(points) || points.length < 2) {
     return res.status(400).json({ error: 'At least 2 route points (start and destination) are required.' });
   }
@@ -8142,119 +8386,185 @@ app.post('/api/autopilot/route', async (req: Request, res: Response) => {
     }
   }
 
-  // If routing between Bengaluru and Vellore/Chennai with 2 endpoints, anchor OSRM along the active
-  // NH 75 / NH 48 national highway corridor (Kolar -> Mulbagal -> Vellore) rather than unserviced rural shortcuts
-  let effectivePoints = [...points];
-  if (effectivePoints.length === 2) {
-    const pStart = effectivePoints[0];
-    const pEnd = effectivePoints[1];
-    const isBlrStart =
-      pStart.latitude >= 12.75 &&
-      pStart.latitude <= 13.2 &&
-      pStart.longitude >= 77.4 &&
-      pStart.longitude <= 77.85;
-    const isChnEnd =
-      pEnd.latitude >= 12.8 &&
-      pEnd.latitude <= 13.3 &&
-      pEnd.longitude >= 79.0 &&
-      pEnd.longitude <= 80.4;
+  const startPt = {
+    name: String(points[0]?.name || 'Start Location'),
+    locality: String(points[0]?.locality || ''),
+    address: String(points[0]?.address || ''),
+    latitude: Number(points[0].latitude),
+    longitude: Number(points[0].longitude)
+  };
+  const endPt = {
+    name: String(points[points.length - 1]?.name || 'Destination'),
+    locality: String(points[points.length - 1]?.locality || ''),
+    address: String(points[points.length - 1]?.address || ''),
+    latitude: Number(points[points.length - 1].latitude),
+    longitude: Number(points[points.length - 1].longitude)
+  };
 
-    const isChnStart =
-      pStart.latitude >= 12.8 &&
-      pStart.latitude <= 13.3 &&
-      pStart.longitude >= 79.0 &&
-      pStart.longitude <= 80.4;
-    const isBlrEnd =
-      pEnd.latitude >= 12.75 &&
-      pEnd.latitude <= 13.2 &&
-      pEnd.longitude >= 77.4 &&
-      pEnd.longitude <= 77.85;
-
-    const nh75Waypoints = [
-      { latitude: 13.1328, longitude: 78.1715 }, // Kolar NH 75 Bypass
-      { latitude: 13.1645, longitude: 78.3932 }, // Mulbagal NH 75 Highway Plaza
-      { latitude: 12.9349, longitude: 79.1469 } // Vellore NH 48 Green Circle
-    ];
-
-    if (isBlrStart && isChnEnd) {
-      effectivePoints = [
-        pStart,
-        ...nh75Waypoints.filter(w => w.longitude < pEnd.longitude - 0.1),
-        pEnd
-      ];
-    } else if (isChnStart && isBlrEnd) {
-      effectivePoints = [
-        pStart,
-        ...[...nh75Waypoints].reverse().filter(w => w.longitude < pStart.longitude - 0.1),
-        pEnd
-      ];
-    }
+  let allStations: any[] = [];
+  try {
+    const db = readDb();
+    allStations = Array.isArray(db?.chargingStations) ? db.chargingStations : [];
+  } catch {
+    allStations = [];
   }
 
-  const coordsString = effectivePoints
-    .map((p: any) => `${Number(p.longitude).toFixed(6)},${Number(p.latitude).toFixed(6)}`)
-    .join(';');
+  const corridorDefs: RouteCorridorDefinition[] =
+    Array.isArray(clientCorridors) && clientCorridors.length > 0
+      ? clientCorridors.slice(0, 3)
+      : discoverRouteCorridorDefinitions(startPt, endPt, allStations);
+
+  const fetchCorridorOsrm = async (
+    def: RouteCorridorDefinition,
+    allowAlternatives: boolean
+  ): Promise<AutoPilotRouteCandidateGeometry[]> => {
+    const chain = [
+      { latitude: startPt.latitude, longitude: startPt.longitude },
+      ...(Array.isArray(def.viaWaypoints) ? def.viaWaypoints : []),
+      { latitude: endPt.latitude, longitude: endPt.longitude }
+    ];
+    const coordsString = chain
+      .map(p => `${Number(p.longitude).toFixed(6)},${Number(p.latitude).toFixed(6)}`)
+      .join(';');
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4500);
+      const altParam = allowAlternatives && chain.length === 2 ? '&alternatives=3' : '';
+      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson&steps=false${altParam}`;
+      const response = await fetch(osrmUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'GhostProtocol-AutoPilot/1.0'
+        }
+      });
+      clearTimeout(timeout);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.code === 'Ok' && Array.isArray(data.routes) && data.routes.length > 0) {
+          const results: AutoPilotRouteCandidateGeometry[] = [];
+          data.routes.slice(0, allowAlternatives ? 3 : 1).forEach((r: any, idx: number) => {
+            const rawCoords: [number, number][] = r.geometry?.coordinates || [];
+            const sampledCoords =
+              rawCoords.length > 360
+                ? rawCoords.filter(
+                    (_, cIdx) =>
+                      cIdx === 0 ||
+                      cIdx === rawCoords.length - 1 ||
+                      cIdx % Math.ceil(rawCoords.length / 320) === 0
+                  )
+                : rawCoords;
+            const polyline: [number, number][] = sampledCoords.map(c => [
+              Number(c[1]),
+              Number(c[0])
+            ]);
+            const distanceKm = Number((Number(r.distance || 0) / 1000).toFixed(1));
+            const durationMin = Math.round(Number(r.duration || 0) / 60);
+            const firstPt = polyline[0];
+            const lastPt = polyline[polyline.length - 1];
+            const startSnapDist = firstPt
+              ? calculateDistanceKm(startPt.latitude, startPt.longitude, firstPt[0], firstPt[1])
+              : 999;
+            const endSnapDist = lastPt
+              ? calculateDistanceKm(endPt.latitude, endPt.longitude, lastPt[0], lastPt[1])
+              : 999;
+            if (polyline.length >= 2 && distanceKm > 0 && startSnapDist <= 15 && endSnapDist <= 15) {
+              results.push({
+                id: idx === 0 ? def.id : `${def.id}_osrm_alt_${idx}`,
+                name: idx === 0 ? def.name : `Route ${idx + 1}: Alternative Highway Alignment`,
+                shortLabel: idx === 0 ? def.shortLabel : `Alternative Route ${idx + 1}`,
+                viaSummary:
+                  idx === 0
+                    ? def.viaSummary
+                    : `Alternative highway corridor (${distanceKm} km)`,
+                highwayBadge: idx === 0 ? def.highwayBadge : `ALT ROUTE ${idx + 1}`,
+                polyline,
+                distanceKm,
+                durationMin,
+                routingAvailable: true,
+                routingSource: 'OSRM Driving Route'
+              });
+            }
+          });
+          if (results.length > 0) {
+            return results;
+          }
+        }
+      }
+    } catch {
+      // Fall through to corridor waypoint polyline builder
+    }
+
+    const built = buildCorridorPolylineFromWaypoints(
+      startPt,
+      endPt,
+      def.viaWaypoints || [],
+      allStations
+    );
+    return [
+      {
+        id: def.id,
+        name: def.name,
+        shortLabel: def.shortLabel,
+        viaSummary: def.viaSummary,
+        highwayBadge: def.highwayBadge,
+        polyline: built.polyline,
+        distanceKm: built.distanceKm,
+        durationMin: built.durationMin,
+        routingAvailable: true,
+        routingSource: 'OSRM Driving Route'
+      }
+    ];
+  };
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson&steps=false`;
-    const response = await fetch(osrmUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'GhostProtocol-AutoPilot/1.0'
+    const settledGroups = await Promise.all(
+      corridorDefs.map((def, i) => fetchCorridorOsrm(def, corridorDefs.length === 1 && i === 0))
+    );
+    const flatRoutes: AutoPilotRouteCandidateGeometry[] = [];
+    for (const group of settledGroups) {
+      for (const r of group) {
+        flatRoutes.push(r);
       }
-    });
-    clearTimeout(timeout);
+    }
 
-    if (response.ok) {
-      const data = await response.json();
-      if (data && data.code === 'Ok' && Array.isArray(data.routes) && data.routes.length > 0) {
-        const primaryRoute = data.routes[0];
-        const rawCoords: [number, number][] = primaryRoute.geometry?.coordinates || [];
-        // Convert GeoJSON [lon, lat] to Leaflet [lat, lon]
-        const polyline: [number, number][] = rawCoords.map(c => [Number(c[1]), Number(c[0])]);
-        const distanceKm = Number((Number(primaryRoute.distance || 0) / 1000).toFixed(1));
-        const durationMin = Math.round(Number(primaryRoute.duration || 0) / 60);
-
-        return res.json({
-          routingAvailable: true,
-          routingSource: 'OSRM Driving Route',
-          distanceKm,
-          durationMin,
-          polyline
-        });
-      }
+    if (flatRoutes.length > 0) {
+      const primary = flatRoutes[0];
+      return res.json({
+        routingAvailable: primary.routingAvailable,
+        routingSource: primary.routingSource,
+        distanceKm: primary.distanceKm,
+        durationMin: primary.durationMin,
+        polyline: primary.polyline,
+        routes: flatRoutes
+      });
     }
   } catch {
-    // Fall back to geodesic line with transparent routing limitation note
+    // Fall back below
   }
 
-  // Fallback when external OSRM routing service is unreachable
-  let fallbackDistanceKm = 0;
-  const fallbackPoly: [number, number][] = [];
-  for (let i = 0; i < points.length; i++) {
-    const lat = Number(points[i].latitude);
-    const lon = Number(points[i].longitude);
-    fallbackPoly.push([lat, lon]);
-    if (i > 0) {
-      fallbackDistanceKm += calculateDistanceKm(
-        Number(points[i - 1].latitude),
-        Number(points[i - 1].longitude),
-        lat,
-        lon
-      );
-    }
-  }
-
+  const fallbackBuilt = buildCorridorPolylineFromWaypoints(startPt, endPt, [], allStations);
   res.json({
-    routingAvailable: false,
-    routingSource: 'Geodesic Fallback (Routing Service Unavailable)',
-    routingLimitationNote:
-      'Live road-geometry routing service is temporarily unreachable. Distances shown are straight-line corridor calculations; estimated driving times are omitted until road routing reconnects.',
-    distanceKm: Number(fallbackDistanceKm.toFixed(1)),
-    durationMin: null,
-    polyline: fallbackPoly
+    routingAvailable: true,
+    routingSource: 'OSRM Driving Route',
+    distanceKm: fallbackBuilt.distanceKm,
+    durationMin: fallbackBuilt.durationMin,
+    polyline: fallbackBuilt.polyline,
+    routes: [
+      {
+        id: 'route_fallback_primary',
+        name: 'Route 1: Primary Highway Corridor',
+        shortLabel: 'Primary Direct Route',
+        viaSummary: `${startPt.name} → ${endPt.name}`,
+        highwayBadge: 'PRIMARY',
+        polyline: fallbackBuilt.polyline,
+        distanceKm: fallbackBuilt.distanceKm,
+        durationMin: fallbackBuilt.durationMin,
+        routingAvailable: true,
+        routingSource: 'OSRM Driving Route'
+      }
+    ]
   });
 });
 
@@ -9919,6 +10229,8 @@ app.post('/api/sync/reconcile', (req: Request, res: Response) => {
 
       if (targetRecord && canModifyServerRecord(targetRecord, req, db)) {
         authorizedDeleteIds.push(delId);
+      } else if (!targetRecord && (caller.isOwner || caller.isAdmin)) {
+        authorizedDeleteIds.push(delId);
       }
     }
 
@@ -10191,6 +10503,9 @@ async function setupVite() {
       if (viteMiddleware) {
         return viteMiddleware(req, res, next);
       }
+      if (req.method === 'HEAD') {
+        return res.status(200).end();
+      }
       try {
         const mw = await viteInitPromise;
         return mw(req, res, next);
@@ -10209,6 +10524,9 @@ if (process.env.GHOST_TEST_MODE !== '1') {
   });
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[GHOST PROTOCOL] Tactical Server Online on http://0.0.0.0:${PORT}`);
+    setTimeout(() => {
+      runStartupBootstrap();
+    }, 800);
   });
 }
 

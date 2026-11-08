@@ -73,18 +73,18 @@ public class MainActivity extends AppCompatActivity {
             return false;
         }
 
-        // Handle Google Maps intent links.
+        // Handle intent:// links (Google Maps, UPI App, GPay, PhonePe, Paytm).
         if (url.startsWith("intent://")) {
 
             try {
-                Intent mapIntent = Intent.parseUri(
+                Intent parsedIntent = Intent.parseUri(
                         url, Intent.URI_INTENT_SCHEME);
 
                 String fallbackUrl =
-                        mapIntent.getStringExtra("browser_fallback_url");
+                        parsedIntent.getStringExtra("browser_fallback_url");
 
                 try {
-                    startActivity(mapIntent);
+                    startActivity(parsedIntent);
                     return true;
 
                 } catch (ActivityNotFoundException e) {
@@ -103,6 +103,56 @@ public class MainActivity extends AppCompatActivity {
                     return true;
                 }
 
+            } catch (Exception e) {
+                return true;
+            }
+        }
+
+        // Handle direct phone dialer, email, SMS, and WhatsApp schemes outside the WebView.
+        if (url.startsWith("tel:")) {
+            try {
+                Intent dialIntent = new Intent(
+                        Intent.ACTION_DIAL, Uri.parse(url));
+                startActivity(dialIntent);
+                return true;
+            } catch (Exception e) {
+                openInBrowser(url);
+                return true;
+            }
+        }
+
+        if (url.startsWith("mailto:") ||
+                url.startsWith("sms:") ||
+                url.startsWith("smsto:") ||
+                url.startsWith("whatsapp://")) {
+            try {
+                Intent externalIntent = new Intent(
+                        Intent.ACTION_VIEW, Uri.parse(url));
+                startActivity(externalIntent);
+                return true;
+            } catch (Exception e) {
+                return true;
+            }
+        }
+
+        // Handle direct UPI and external payment schemes outside the WebView.
+        if (url.startsWith("upi://") ||
+                url.startsWith("tez://") ||
+                url.startsWith("gpay://") ||
+                url.startsWith("phonepe://") ||
+                url.startsWith("paytmmp://") ||
+                url.startsWith("bhim://")) {
+            try {
+                Intent upiIntent = new Intent(
+                        Intent.ACTION_VIEW, Uri.parse(url));
+                startActivity(upiIntent);
+                return true;
+            } catch (ActivityNotFoundException e) {
+                int queryIdx = url.indexOf('?');
+                if (queryIdx >= 0 && !url.startsWith("upi://")) {
+                    openInBrowser("upi://pay" + url.substring(queryIdx));
+                }
+                return true;
             } catch (Exception e) {
                 return true;
             }

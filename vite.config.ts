@@ -16,15 +16,12 @@ export default defineConfig(() => {
     },
     build: {
       sourcemap: false,
-      minify: 'esbuild',
+      minify: true,
       cssMinify: true,
       target: 'esnext',
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes('node_modules/phaser')) {
-              return 'vendor-phaser';
-            }
             if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) {
               return 'vendor-firebase';
             }

@@ -825,25 +825,22 @@ export const Discussions: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-[#13161A] border border-[#282D34] rounded-lg p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-[#13161A] border border-[#282D34] rounded-xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-3.5">
-          <div className="w-10 h-10 rounded bg-[#191D22] border border-[#414851] flex items-center justify-center text-[#D4D8DE]">
+          <div className="w-10 h-10 rounded-lg bg-[#191D22] border border-[#414851] flex items-center justify-center text-[#D4D8DE] shrink-0">
             <MessageCircle className="w-5 h-5 text-[#42B883]" />
           </div>
           <div>
-            <div className="text-sm font-mono font-bold text-[#F1F3F5] tracking-wider flex items-center gap-2">
+            <div className="text-base sm:text-lg font-mono font-bold text-[#F1F3F5] tracking-wider flex items-center gap-2">
               <span data-testid="discussion-page-heading">DISCUSSION</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#252A30] text-[#42B883] border border-[#42B883]/30">
-                THREADS • POLLS • PETITIONS
-              </span>
             </div>
-            <div className="text-xs text-[#A0A7B0] mt-0.5">
-              Community discussions • Live squadron polls • Rider petitions &amp; support • Technical insights
+            <div className="text-xs sm:text-sm text-[#A0A7B0] mt-0.5">
+              Community threads, live polls &amp; rider petitions
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             data-testid="open-create-poll-btn"
@@ -852,9 +849,9 @@ export const Discussions: React.FC = () => {
               setPollError(null);
               setShowCreatePollModal(true);
             }}
-            className="flex items-center space-x-1.5 px-3.5 py-2 rounded bg-[#19232C] hover:bg-[#223240] text-xs font-mono font-bold text-[#38BDF8] border border-[#38BDF8]/40 transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-lg bg-[#19232C] hover:bg-[#223240] text-xs font-mono font-bold text-[#38BDF8] border border-[#38BDF8]/40 transition-colors cursor-pointer"
           >
-            <BarChart3 className="w-3.5 h-3.5 text-[#38BDF8]" />
+            <BarChart3 className="w-4 h-4 text-[#38BDF8]" />
             <span>CONDUCT POLL</span>
           </button>
 
@@ -866,9 +863,9 @@ export const Discussions: React.FC = () => {
               setPetitionError(null);
               setShowCreatePetitionModal(true);
             }}
-            className="flex items-center space-x-1.5 px-3.5 py-2 rounded bg-[#261E11] hover:bg-[#332816] text-xs font-mono font-bold text-[#F59E0B] border border-[#F59E0B]/40 transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-lg bg-[#261E11] hover:bg-[#332816] text-xs font-mono font-bold text-[#F59E0B] border border-[#F59E0B]/40 transition-colors cursor-pointer"
           >
-            <FileSignature className="w-3.5 h-3.5 text-[#F59E0B]" />
+            <FileSignature className="w-4 h-4 text-[#F59E0B]" />
             <span>START PETITION</span>
           </button>
 
@@ -880,9 +877,9 @@ export const Discussions: React.FC = () => {
               setEditingPostId(null);
               setShowCreateModal(true);
             }}
-            className="flex items-center space-x-1.5 px-3.5 py-2 rounded bg-[#252A30] hover:bg-[#414851] text-xs font-mono font-bold text-[#F1F3F5] border border-[#414851] transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-lg bg-[#252A30] hover:bg-[#414851] text-xs font-mono font-bold text-[#F1F3F5] border border-[#414851] transition-colors cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5 text-[#42B883]" />
+            <Plus className="w-4 h-4 text-[#42B883]" />
             <span>NEW DISCUSSION</span>
           </button>
         </div>
@@ -908,8 +905,8 @@ export const Discussions: React.FC = () => {
 
       {/* Section Mode Selector + Category Tabs & Search */}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#282D34] pb-3">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+        <div className="border-b border-[#282D34] pb-3">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 text-xs font-mono">
             <button
               type="button"
               data-testid="section-tab-all"
@@ -917,7 +914,7 @@ export const Discussions: React.FC = () => {
                 playTacticalClick();
                 setActiveSectionView('all');
               }}
-              className={`relative px-3 py-1.5 rounded border transition-colors cursor-pointer ${
+              className={`relative px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeSectionView === 'all'
                   ? 'text-[#F1F3F5] border-transparent font-bold'
                   : 'bg-[#0D0F12] text-[#707883] border-[#282D34] hover:text-[#D4D8DE]'
@@ -941,7 +938,7 @@ export const Discussions: React.FC = () => {
                 playTacticalClick();
                 setActiveSectionView('polls');
               }}
-              className={`relative px-3 py-1.5 rounded border transition-colors flex items-center gap-1.5 cursor-pointer ${
+              className={`relative px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeSectionView === 'polls'
                   ? 'text-[#38BDF8] border-transparent font-bold'
                   : 'bg-[#0D0F12] text-[#707883] border-[#282D34] hover:text-[#D4D8DE]'
@@ -954,8 +951,8 @@ export const Discussions: React.FC = () => {
                   className="pointer-events-none absolute inset-0 rounded bg-[#19232C] border border-[#38BDF8]/50"
                 />
               )}
-              <Vote className="relative z-10 w-3.5 h-3.5" />
-              <span className="relative z-10">POLLS SECTION ({filteredPolls.length})</span>
+              <Vote className="relative z-10 w-3.5 h-3.5 shrink-0" />
+              <span className="relative z-10">POLLS ({filteredPolls.length})</span>
             </button>
             <button
               type="button"
@@ -964,7 +961,7 @@ export const Discussions: React.FC = () => {
                 playTacticalClick();
                 setActiveSectionView('petitions');
               }}
-              className={`relative px-3 py-1.5 rounded border transition-colors flex items-center gap-1.5 cursor-pointer ${
+              className={`relative px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeSectionView === 'petitions'
                   ? 'text-[#F59E0B] border-transparent font-bold'
                   : 'bg-[#0D0F12] text-[#707883] border-[#282D34] hover:text-[#D4D8DE]'
@@ -977,8 +974,8 @@ export const Discussions: React.FC = () => {
                   className="pointer-events-none absolute inset-0 rounded bg-[#261E11] border border-[#F59E0B]/50"
                 />
               )}
-              <FileSignature className="relative z-10 w-3.5 h-3.5" />
-              <span className="relative z-10">PETITIONS SECTION ({filteredPetitions.length})</span>
+              <FileSignature className="relative z-10 w-3.5 h-3.5 shrink-0" />
+              <span className="relative z-10">PETITIONS ({filteredPetitions.length})</span>
             </button>
             <button
               type="button"
@@ -987,7 +984,7 @@ export const Discussions: React.FC = () => {
                 playTacticalClick();
                 setActiveSectionView('threads');
               }}
-              className={`relative px-3 py-1.5 rounded border transition-colors flex items-center gap-1.5 cursor-pointer ${
+              className={`relative px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeSectionView === 'threads'
                   ? 'text-[#42B883] border-transparent font-bold'
                   : 'bg-[#0D0F12] text-[#707883] border-[#282D34] hover:text-[#D4D8DE]'
@@ -1000,8 +997,8 @@ export const Discussions: React.FC = () => {
                   className="pointer-events-none absolute inset-0 rounded bg-[#191D22] border border-[#42B883]/50"
                 />
               )}
-              <MessageCircle className="relative z-10 w-3.5 h-3.5" />
-              <span className="relative z-10">DISCUSSION THREADS ({filteredDiscussions.length})</span>
+              <MessageCircle className="relative z-10 w-3.5 h-3.5 shrink-0" />
+              <span className="relative z-10">THREADS ({filteredDiscussions.length})</span>
             </button>
           </div>
         </div>
@@ -1063,22 +1060,17 @@ export const Discussions: React.FC = () => {
           data-testid="discussion-polls-section"
           className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5 space-y-4"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#282D34]">
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#282D34]">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded bg-[#19232C] border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8]">
-                <BarChart3 className="w-4 h-4" />
+              <div className="w-7 h-7 rounded bg-[#19232C] border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8]">
+                <BarChart3 className="w-3.5 h-3.5" />
               </div>
-              <div>
-                <h3 className="text-xs font-mono font-bold text-[#F1F3F5] uppercase tracking-wider flex items-center gap-2">
-                  <span>COMMUNITY POLLS</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-[#19232C] text-[#38BDF8] border border-[#38BDF8]/30">
-                    {filteredPolls.length} ACTIVE
-                  </span>
-                </h3>
-                <p className="text-[11px] text-[#A0A7B0]">
-                  Conduct a poll for the squadron or cast your vote on active community questions.
-                </p>
-              </div>
+              <h3 className="text-xs font-mono font-bold text-[#F1F3F5] uppercase tracking-wider flex items-center gap-2">
+                <span>COMMUNITY POLLS</span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-[#19232C] text-[#38BDF8] border border-[#38BDF8]/30">
+                  {filteredPolls.length} ACTIVE
+                </span>
+              </h3>
             </div>
 
             <button
@@ -1089,10 +1081,10 @@ export const Discussions: React.FC = () => {
                 setPollError(null);
                 setShowCreatePollModal(true);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#19232C] hover:bg-[#223240] text-[#38BDF8] border border-[#38BDF8]/40 text-xs font-mono font-bold transition-colors self-start sm:self-auto cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#19232C] hover:bg-[#223240] text-[#38BDF8] border border-[#38BDF8]/40 text-xs font-mono font-bold transition-colors shrink-0 whitespace-nowrap cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>CONDUCT A POLL</span>
+              <Plus className="w-3.5 h-3.5 shrink-0" />
+              <span>NEW POLL</span>
             </button>
           </div>
 
@@ -1210,22 +1202,17 @@ export const Discussions: React.FC = () => {
           data-testid="discussion-petitions-section"
           className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5 space-y-4"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#282D34]">
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#282D34]">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded bg-[#261E11] border border-[#F59E0B]/40 flex items-center justify-center text-[#F59E0B]">
-                <FileSignature className="w-4 h-4" />
+              <div className="w-7 h-7 rounded bg-[#261E11] border border-[#F59E0B]/40 flex items-center justify-center text-[#F59E0B]">
+                <FileSignature className="w-3.5 h-3.5" />
               </div>
-              <div>
-                <h3 className="text-xs font-mono font-bold text-[#F1F3F5] uppercase tracking-wider flex items-center gap-2">
-                  <span>COMMUNITY PETITIONS</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-[#261E11] text-[#F59E0B] border border-[#F59E0B]/30">
-                    {filteredPetitions.length} ACTIVE
-                  </span>
-                </h3>
-                <p className="text-[11px] text-[#A0A7B0]">
-                  Conduct a petition for charging corridors, firmware features, or community initiatives where other users can support.
-                </p>
-              </div>
+              <h3 className="text-xs font-mono font-bold text-[#F1F3F5] uppercase tracking-wider flex items-center gap-2">
+                <span>COMMUNITY PETITIONS</span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-[#261E11] text-[#F59E0B] border border-[#F59E0B]/30">
+                  {filteredPetitions.length} ACTIVE
+                </span>
+              </h3>
             </div>
 
             <button
@@ -1236,10 +1223,10 @@ export const Discussions: React.FC = () => {
                 setPetitionError(null);
                 setShowCreatePetitionModal(true);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#261E11] hover:bg-[#332816] text-[#F59E0B] border border-[#F59E0B]/40 text-xs font-mono font-bold transition-colors self-start sm:self-auto cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#261E11] hover:bg-[#332816] text-[#F59E0B] border border-[#F59E0B]/40 text-xs font-mono font-bold transition-colors shrink-0 whitespace-nowrap cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>CONDUCT A PETITION</span>
+              <Plus className="w-3.5 h-3.5 shrink-0" />
+              <span>NEW PETITION</span>
             </button>
           </div>
 

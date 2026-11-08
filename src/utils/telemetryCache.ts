@@ -610,19 +610,63 @@ export function getCacheStorageStats(storage?: StorageLike): CacheStorageStats |
   }
 }
 
+export const PURGED_DEMO_SEED_IDS: readonly string[] = [
+  'mp_01',
+  'mp_02',
+  'mp_rent_01',
+  'mp_rent_02',
+  'mp_auc_01',
+  'mp_auc_02',
+  'mp_1792589692480',
+  'ride_01',
+  'ride_02',
+  'ride_1793297195274',
+  'ride_1793297046565',
+  'ride_1793296933377',
+  'dest_seed_chikmagalur',
+  'dest_seed_nandihills',
+  'dest_seed_coorg',
+  'apm_seed_01',
+  'mod_01',
+  'mod_02',
+  'mod_03',
+  'mod_04',
+  'mod_05',
+  'mod_06',
+  'mod_1792933695492',
+  'mod_1792930804163',
+  'sr_01',
+  'disc_01',
+  'disc_02',
+  'poll_01',
+  'poll_02',
+  'pet_01',
+  'pet_02',
+  'emg_01',
+  'emg_1792944682031',
+  'emg_1792401500873',
+  'contrib_01',
+  'contrib_02',
+  'contrib_1793002283910_0r2f',
+  'contrib_1792687028444_9gr7'
+];
+
 export function getDeletedIds(storage?: StorageLike): string[] {
   const store = getStorage(storage);
+  const baseSeeds = !storage ? [...PURGED_DEMO_SEED_IDS] : [];
   try {
     const raw = store.getItem(DELETED_IDS_KEY);
-    if (!raw) return [];
+    if (!raw) return baseSeeds;
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === 'string');
-    if (parsed && Array.isArray(parsed.data)) {
-      return parsed.data.filter((x: any): x is string => typeof x === 'string');
+    let stored: string[] = [];
+    if (Array.isArray(parsed)) {
+      stored = parsed.filter((x): x is string => typeof x === 'string');
+    } else if (parsed && Array.isArray(parsed.data)) {
+      stored = parsed.data.filter((x: any): x is string => typeof x === 'string');
     }
-    return [];
+    return baseSeeds.length > 0 ? Array.from(new Set([...baseSeeds, ...stored])) : stored;
   } catch {
-    return [];
+    return baseSeeds;
   }
 }
 
@@ -1298,7 +1342,7 @@ export async function reconcileAllCachesWithServer(): Promise<boolean> {
         marketplace: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.MARKETPLACE, [])),
         serviceReviews: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.SERVICE_REVIEWS, [])),
         jetSubmissions: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.JET_SUBMISSIONS, [])),
-        jetQaHistory: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.JET_QA_HISTORY, [])),
+        jetQaHistory: [],
         rides: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.RIDES, [])),
         visitedDestinations: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.VISITED_DESTINATIONS, [])),
         autoPilotMissions: stripLocalOnly(loadFromCache<any[]>(CACHE_KEYS.AUTOPILOT_MISSIONS, [])),
@@ -1382,6 +1426,35 @@ export async function hydrateAllCachesFromIndexedDB(): Promise<void> {
   } catch {
     // ignore IndexedDB errors
   }
+}
+
+export const JET_ENGINEER_WELCOME_MESSAGE =
+  'Welcome Pilot, how can I help you today?';
+
+export function formatDirectJetEngineerSolution(item: {
+  title?: string;
+  resolutionOutcome?: string;
+  proposedSolution?: string;
+  troubleshootingAttempted?: string;
+  serviceCentreFindings?: string;
+  symptoms?: string;
+}): string {
+  const candidates = [
+    item?.resolutionOutcome,
+    item?.proposedSolution,
+    item?.troubleshootingAttempted,
+    item?.serviceCentreFindings,
+    item?.symptoms
+  ];
+
+  for (const raw of candidates) {
+    const cleaned = String(raw || '').trim();
+    if (cleaned && cleaned !== '--' && cleaned.toLowerCase() !== 'none reported') {
+      return cleaned;
+    }
+  }
+
+  return 'Follow standard Ultraviolette service guidelines or visit an authorized Hangar for inspection.';
 }
 
 export function generateOfflineJetEngineerResponse(
@@ -1507,71 +1580,32 @@ export function generateOfflineJetEngineerResponse(
     return qWords.some(w => hay.includes(w)) || detectedConcepts.some(c => hay.includes(c));
   });
 
-  const sections: string[] = [
-    `[OFFLINE TACTICAL ARCHIVE MODE — ${motorcycleModel || 'F77 / X47'}]`
-  ];
-
   let topTitle = '';
+  let answerText = '';
 
   if (scoredSubmissions.length > 0) {
     const top = scoredSubmissions[0].item;
     topTitle = top.title;
-    const isApproved = top.status === 'Approved';
-    const topPhotos: string[] = Array.isArray(top.stepPhotos) && top.stepPhotos.length > 0
-      ? top.stepPhotos
-      : top.photoUrl
-      ? [top.photoUrl]
-      : [];
-
-    sections.push(
-      `EMPIRICAL RECORD FROM TRAIN DATABASE: ${top.title}`,
-      `• Verification Status: ${isApproved ? 'Admin Approved Factory / Squadron Bulletin' : 'Community Empirical Submission (Logged in TRAIN)'}`,
-      `• Platform Model: ${top.motorcycleModel || 'Ultraviolette F77'} ${top.variant ? `(${top.variant})` : ''}`,
-      `\nOPERATIONAL RESOLUTION:`,
-      `${top.resolutionOutcome || top.proposedSolution || 'Refer to service protocol.'}`,
-      `\nTECHNICAL SYMPTOMS & CONDITIONS:`,
-      `• Symptoms: ${top.symptoms}`,
-      top.operatingConditions ? `• Operating Context: ${top.operatingConditions}` : '',
-      top.troubleshootingAttempted ? `• Field Troubleshooting: ${top.troubleshootingAttempted}` : '',
-      top.serviceCentreFindings ? `• Service Hangar Findings: ${top.serviceCentreFindings}` : '',
-      topPhotos.length > 0 ? `• Step-by-Step Instruction Photos Attached: ${topPhotos.length} photo(s) available for visual guidance.` : '',
-      `\nSOURCE ATTRIBUTION:`,
-      `Recorded by ${top.authorName || 'Squadron Pilot'} | Reference: ${top.sourceReferences || 'Tactical Empirical Database'}`
-    );
-
-    if (scoredSubmissions.length > 1) {
-      sections.push(
-        `\nADDITIONAL CORRELATED TRAINING RECORDS (${scoredSubmissions.length - 1}):`,
-        ...scoredSubmissions.slice(1, 3).map(
-          sub => `• ${sub.item.title} (${sub.item.status || 'Empirical'}): ${sub.item.resolutionOutcome || sub.item.proposedSolution || sub.item.symptoms || ''}`
-        )
-      );
-    }
-  }
-
-  if (matchedProblems.length > 0) {
-    sections.push(
-      `\nRELATED SQUADRON PROBLEM TRACKER ENTRIES:`,
-      ...matchedProblems.slice(0, 2).map(
-        p => `• [${p.category || 'General'}] ${p.title} (${p.status || 'Active'}): ${p.description || ''}${p.warningMessageOrCode ? ` | Code: ${p.warningMessageOrCode}` : ''}`
-      )
-    );
-  }
-
-  if (scoredSubmissions.length === 0) {
+    answerText = formatDirectJetEngineerSolution(top);
+  } else if (matchedProblems.length > 0) {
+    const topProblem = matchedProblems[0];
+    topTitle = topProblem.title;
+    answerText = String(
+      topProblem.troubleshootingAttempted ||
+        topProblem.description ||
+        topProblem.title
+    ).trim();
+  } else {
     const isX47 = String(motorcycleModel).includes('X47');
-    sections.push(
-      `STANDARD ULTRAVIOLETTE ${isX47 ? 'X47' : 'F77 MACH 2 / RECON'} TACTICAL BASELINE:`,
-      `• Battery & Thermal Architecture: SRB 10.3 kWh aluminum pack with BMS thermal throttling safety protocols. If charging in high ambient temperatures (>38°C), allow 10-15 mins thermal soak before fast charging.`,
-      `• Drivetrain: Gates carbon belt drive nominal frequency 210 Hz (checked with acoustic frequency meter).`,
-      `• Charging Protocol: Ensure earthing loop impedance < 2V earth-to-neutral for 15A wall sockets and Boost Chargers.`,
-      `• Console & Connectivity: In case of BLE or TFT console display synchronization timeouts, perform standard key-off 30s reset.`,
-      `\n• NOTICE: No exact empirical record for this symptom is currently logged in the local TRAIN database.`,
-      `• HOW TO TRAIN: Navigate to the TRAIN tab above to submit the verified symptoms and resolution for this issue. Once added, this offline engine will immediately answer future queries with your data.`
-    );
+    answerText = [
+      `Quick solutions for your ${isX47 ? 'X47' : 'F77'}:`,
+      `• Charging / Red Blinking LED: Use a properly grounded 15A wall socket (earth-to-neutral under 2V). After hard riding in hot weather (>38°C), let the bike cool in the shade for 15 minutes before fast charging.`,
+      `• Console / Bluetooth Freeze: Turn the key OFF, switch the kill switch to OFF, wait 45 seconds, then turn it back ON and reconnect.`,
+      `• Belt Noise (45–55 km/h): Adjust the rear carbon drive belt tension to 205–215 Hz.`,
+      `• Wet Road Slip: Set Dynamic Regen to Level 3 or 4 and switch traction control to Rain mode.`
+    ].join('\n');
   }
 
-  const answerText = sections.filter(Boolean).join('\n\n');
   const topMatch = scoredSubmissions[0]?.item;
   const topStepPhotos = topMatch
     ? (Array.isArray(topMatch.stepPhotos) && topMatch.stepPhotos.length > 0
@@ -1589,7 +1623,7 @@ export function generateOfflineJetEngineerResponse(
     matchedCount: scoredSubmissions.length,
     topMatchTitle: topTitle,
     stepPhotos: topStepPhotos,
-    includes: (s: string) => answerText.includes(s)
+    includes: (s: string) => answerText.includes(s) || topTitle.includes(s)
   };
 }
 
@@ -1607,7 +1641,7 @@ export const OFFLINE_FALLBACK_CHARGING_STATIONS: any[] = [
     chargerType: 'Supernova',
     chargerDetails: 'No separate charger required — Integrated 30 kW Supernova DC Tether.',
     vehicleCompatibility: 'F77 MACH 2, F77 Recon, F77 Original (Supernova DC Port)',
-    connectorTypes: ['UV Supernova Dual DC (30 kW)', 'Type 2 AC (7.2 kW)', '15A Standard Socket'],
+    connectorTypes: ['UV Supernova Dual DC (30 kW)'],
     powerOutputKw: 30,
     chargerSource: 'Supernova',
     isSupernova: true,
@@ -1749,7 +1783,7 @@ export const OFFLINE_FALLBACK_CHARGING_STATIONS: any[] = [
     chargerType: 'Supernova',
     chargerDetails: 'No separate charger required — Direct Supernova DC Fast Tether.',
     vehicleCompatibility: 'F77 MACH 2, F77 Recon, F77 Original',
-    connectorTypes: ['UV Supernova Dual DC (30 kW)', '15A Standard Socket'],
+    connectorTypes: ['UV Supernova Dual DC (30 kW)'],
     powerOutputKw: 30,
     chargerSource: 'Supernova',
     isSupernova: true,
@@ -1849,7 +1883,7 @@ export const OFFLINE_FALLBACK_CHARGING_STATIONS: any[] = [
     uvChargingLink: 'https://www.ultraviolette.com/charging',
     chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charger (2 bays, 24/7 highway access)',
     vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-    connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', '15A 3-Pin Industrial Socket'],
+    connectorTypes: ['UV Supernova Dual DC (30 kW)'],
     powerOutputKw: 30.0,
     chargerSource: 'Supernova',
     isSupernova: true,
@@ -1902,7 +1936,7 @@ export const OFFLINE_FALLBACK_CHARGING_STATIONS: any[] = [
     uvChargingLink: 'https://www.ultraviolette.com/charging',
     chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charging Hub on NH 75 Eastbound/Westbound access road',
     vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-    connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', '15A 3-Pin Socket'],
+    connectorTypes: ['UV Supernova Dual DC (30 kW)'],
     powerOutputKw: 30.0,
     chargerSource: 'Supernova',
     isSupernova: true,
@@ -1921,15 +1955,15 @@ export const OFFLINE_FALLBACK_CHARGING_STATIONS: any[] = [
   },
   {
     id: 'cs_14',
-    name: 'Vellore Green Circle Supernova & Type 6 Hub (NH 48)',
+    name: 'UV Supernova Hub — Vellore Green Circle (NH 48)',
     location: 'NH 48 Service Road, Green Circle Junction, Vellore, Tamil Nadu 632004',
     latitude: 12.9349,
     longitude: 79.1469,
     chargerType: 'Supernova',
     uvChargingLink: 'https://www.ultraviolette.com/charging',
-    chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charger + Type 6 Ather Grid co-located bay',
+    chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charger (Dual Highway Bays)',
     vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-    connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', 'Type 2 AC (7.2 kW)'],
+    connectorTypes: ['UV Supernova Dual DC (30 kW)'],
     powerOutputKw: 30.0,
     chargerSource: 'Supernova',
     isSupernova: true,
@@ -1982,7 +2016,7 @@ export const OFFLINE_FALLBACK_CHARGING_STATIONS: any[] = [
     uvChargingLink: 'https://www.ultraviolette.com/charging',
     chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charging Bay at highway food plaza',
     vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-    connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', '15A 3-Pin Socket'],
+    connectorTypes: ['UV Supernova Dual DC (30 kW)'],
     powerOutputKw: 30.0,
     chargerSource: 'Supernova',
     isSupernova: true,
@@ -2009,7 +2043,7 @@ export const OFFLINE_FALLBACK_CHARGING_STATIONS: any[] = [
     uvChargingLink: 'https://www.ultraviolette.com/charging',
     chargerDetails: 'Ultraviolette Supernova 30 kW DC Fast Charging Station (Dual Bay, 24/7 Highway Access)',
     vehicleCompatibility: 'F77 Original / F77 MACH 2 / Recon / SuperStreet',
-    connectorTypes: ['IEC 62196-3 Type 6 (UV DC Fast)', '15A 3-Pin Industrial Socket'],
+    connectorTypes: ['UV Supernova Dual DC (30 kW)'],
     powerOutputKw: 30.0,
     chargerSource: 'Supernova',
     isSupernova: true,

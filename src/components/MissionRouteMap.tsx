@@ -584,63 +584,11 @@ export const MissionRouteMap: React.FC<MissionRouteMapProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Search Bar & Edit Controls Header (For Edit / Create Mode) */}
-      {mode === 'edit' && (
+      {/* Active Pin Target Setter Modal / Bar (Only shown if user taps directly on map canvas in edit mode) */}
+      {mode === 'edit' && activePinCoords && (
         <div className="bg-[#050811] border border-[#1E2D42] rounded-xl p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-sans font-bold text-xs sm:text-sm text-[#F8FAFC] uppercase tracking-wider flex items-center gap-2 break-words">
-              <Search className="w-4 h-4 text-[#38BDF8] shrink-0" />
-              <span>SEARCH WAYPOINT OR PASTE GOOGLE MAPS LINK</span>
-            </h3>
-            <span className="font-mono text-[10px] text-[#38BDF8] shrink-0">ALL INDIA PLACES & GMAPS</span>
-          </div>
-
-          {/* Search Input Box */}
-          <div className="relative">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => handlePerformSearch(e.target.value)}
-                  placeholder="Search Kolar, Hoskote, Nandi Hills, Munnar, Coorg, or paste Google Maps URL..."
-                  className="w-full bg-[#080D1A] border border-[#1E2D42] rounded-lg pl-9 pr-8 py-2 text-xs sm:text-sm text-[#F8FAFC] placeholder-[#64748B] focus:outline-none focus:border-[#38BDF8] font-mono"
-                />
-                <Search className="w-4 h-4 text-[#64748B] absolute left-3 top-2.5" />
-                {isSearching && (
-                  <div className="w-3.5 h-3.5 border-2 border-[#38BDF8] border-t-transparent rounded-full animate-spin absolute right-3 top-3" />
-                )}
-              </div>
-            </div>
-
-            {/* Search Dropdown Results */}
-            {searchResults.length > 0 && (
-              <div className="absolute z-50 left-0 right-0 mt-1 bg-[#050811] border border-[#1E2D42] rounded-xl shadow-2xl max-h-60 overflow-y-auto divide-y divide-[#131C2B]">
-                {searchResults.map(item => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleSelectSearchResult(item)}
-                    className="w-full text-left p-3 hover:bg-[#0F172A] transition-colors flex items-start gap-2.5 text-xs text-[#CBD5E1]"
-                  >
-                    <MapPin className="w-4 h-4 text-[#38BDF8] shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold text-[#F8FAFC]">{item.name}</div>
-                      <div className="text-[11px] text-[#94A3B8] font-mono">{item.address || item.locality}</div>
-                      <div className="text-[10px] text-[#38BDF8] font-mono mt-0.5 uppercase">
-                        {item.category} • {item.latitude.toFixed(4)}°N, {item.longitude.toFixed(4)}°E
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Active Pin Target Setter Modal / Bar */}
-          {activePinCoords && (
-            <div className="p-3.5 rounded-xl bg-[#0A1224] border border-[#38BDF8]/40 space-y-3">
-              <div className="flex items-start justify-between gap-2">
+          <div className="p-3.5 rounded-xl bg-[#0A1224] border border-[#38BDF8]/40 space-y-3">
+            <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-[#EF4444] animate-ping" />
                   <div>
@@ -835,7 +783,6 @@ export const MissionRouteMap: React.FC<MissionRouteMapProps> = ({
                 )}
               </div>
             </div>
-          )}
         </div>
       )}
 

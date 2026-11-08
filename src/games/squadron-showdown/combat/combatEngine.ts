@@ -33,6 +33,7 @@ export const EMPTY_INPUT: CombatInputFrame = {
   block: false,
   dodge: false,
   special: false,
+  taunt: false,
 };
 
 export function createCombatantState(
@@ -113,7 +114,8 @@ export function canPerformAttack(c: CombatantRuntimeState): boolean {
     c.action === 'DEFEAT' ||
     c.action === 'VICTORY' ||
     c.action === 'SPECIAL' ||
-    c.action === 'DODGE'
+    c.action === 'DODGE' ||
+    c.action === 'TAUNT'
   ) {
     return false;
   }
@@ -253,7 +255,8 @@ function updateSingleCombatant(
     c.action === 'PUNCH' ||
     c.action === 'KICK' ||
     c.action === 'SPECIAL' ||
-    c.action === 'DODGE'
+    c.action === 'DODGE' ||
+    c.action === 'TAUNT'
   ) {
     c.actionTimerMs += dtMs;
     // Update active hitbox position to follow fighter
@@ -263,6 +266,10 @@ function updateSingleCombatant(
       c.activeAttack.y = c.y - (c.activeAttack.type === 'SPECIAL' ? 210 : 185);
     }
     if (c.actionTimerMs >= c.actionDurationMs) {
+      if (c.action === 'TAUNT') {
+        // Successful taunt completes! Award comical +15% Super Energy boost!
+        c.energy = Math.min(c.maxEnergy, c.energy + 15);
+      }
       c.action = 'IDLE';
       c.actionTimerMs = 0;
       c.activeAttack = null;
@@ -306,11 +313,18 @@ function updateSingleCombatant(
       startFighterAttack(c, 'KICK', matchElapsedMs);
     } else if (canAct && input.punch && c.stamina >= PUNCH_STAMINA_COST) {
       startFighterAttack(c, 'PUNCH', matchElapsedMs);
+    } else if (canAct && input.taunt) {
+      c.action = 'TAUNT';
+      c.actionTimerMs = 0;
+      c.actionDurationMs = 520;
+      c.attackCooldownMs = 450;
+      c.vx *= 0.2;
     } else if (
       c.action !== 'PUNCH' &&
       c.action !== 'KICK' &&
       c.action !== 'SPECIAL' &&
-      c.action !== 'DODGE'
+      c.action !== 'DODGE' &&
+      c.action !== 'TAUNT'
     ) {
       if (input.block && c.stamina > 4) {
         c.action = 'BLOCK';

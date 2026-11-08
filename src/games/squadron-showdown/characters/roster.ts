@@ -1,5 +1,18 @@
 import { FighterDefinition } from '../types';
 
+export function buildActionSprites(id: string) {
+  return {
+    idle: `/assets/squadron-showdown/sprites/${id}/idle.png`,
+    punch: `/assets/squadron-showdown/sprites/${id}/punch.png`,
+    kick: `/assets/squadron-showdown/sprites/${id}/kick.png`,
+    jump: `/assets/squadron-showdown/sprites/${id}/jump.png`,
+    block: `/assets/squadron-showdown/sprites/${id}/block.png`,
+    special: `/assets/squadron-showdown/sprites/${id}/special.png`,
+    victory: `/assets/squadron-showdown/sprites/${id}/victory.png`,
+    defeat: `/assets/squadron-showdown/sprites/${id}/defeat.png`,
+  };
+}
+
 export const SQUADRON_ROSTER: FighterDefinition[] = [
   {
     id: 'FIGHTER_001',
@@ -8,7 +21,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     title: 'Ultraviolette Heavy Vanguard',
     style: 'Heavy balanced fighter',
     isOfficial: true,
-    spriteAsset: '/assets/squadron-showdown/characters/naresh_clean.png',
+    spriteAsset: '/assets/squadron-showdown/sprites/FIGHTER_001/idle.png',
     cardAsset: '/assets/aistudio/Naresh_9dd9a52c.png',
     accentColor: '#38bdf8',
     secondaryColor: '#dc2626',
@@ -22,6 +35,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
       defense: 75,
       stamina: 80,
     },
+    actionSprites: buildActionSprites('FIGHTER_001'),
   },
   {
     id: 'FIGHTER_002',
@@ -30,7 +44,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     title: 'Tactical Precision Striker',
     style: 'Technical fighter',
     isOfficial: true,
-    spriteAsset: '/assets/aistudio/dheeraj_b0cdc76b.png',
+    spriteAsset: '/assets/squadron-showdown/sprites/FIGHTER_002/idle.png',
     cardAsset: '/assets/aistudio/dheeraj_b0cdc76b.png',
     accentColor: '#eab308',
     secondaryColor: '#f97316',
@@ -44,6 +58,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
       defense: 80,
       stamina: 75,
     },
+    actionSprites: buildActionSprites('FIGHTER_002'),
   },
   {
     id: 'FIGHTER_003',
@@ -52,7 +67,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     title: 'Apex Velocity Interceptor',
     style: 'Fast and evasive fighter',
     isOfficial: true,
-    spriteAsset: '/assets/aistudio/vijay_e1402ef4.png',
+    spriteAsset: '/assets/squadron-showdown/sprites/FIGHTER_003/idle.png',
     cardAsset: '/assets/aistudio/vijay_e1402ef4.png',
     accentColor: '#facc15',
     secondaryColor: '#ec4899',
@@ -66,6 +81,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
       defense: 65,
       stamina: 80,
     },
+    actionSprites: buildActionSprites('FIGHTER_003'),
   },
   {
     id: 'FIGHTER_004',
@@ -74,7 +90,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     title: 'Crimson Redline Juggernaut',
     style: 'Powerful aggressive fighter',
     isOfficial: true,
-    spriteAsset: '/assets/aistudio/anhiyan_9b0cd04d.png',
+    spriteAsset: '/assets/squadron-showdown/sprites/FIGHTER_004/idle.png',
     cardAsset: '/assets/aistudio/anhiyan_9b0cd04d.png',
     accentColor: '#ef4444',
     secondaryColor: '#dc2626',
@@ -88,6 +104,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
       defense: 90,
       stamina: 85,
     },
+    actionSprites: buildActionSprites('FIGHTER_004'),
   },
   {
     id: 'FIGHTER_005',
@@ -96,7 +113,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     title: 'High-Voltage Striker',
     style: 'Fast technical fighter',
     isOfficial: true,
-    spriteAsset: '/assets/squadron-showdown/characters/lexi_clean.png',
+    spriteAsset: '/assets/squadron-showdown/sprites/FIGHTER_005/idle.png',
     cardAsset: '/assets/aistudio/lexi_1ed88019.png',
     accentColor: '#facc15',
     secondaryColor: '#f59e0b',
@@ -110,6 +127,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
       defense: 75,
       stamina: 85,
     },
+    actionSprites: buildActionSprites('FIGHTER_005'),
   },
   {
     id: 'FIGHTER_006',
@@ -118,7 +136,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     title: 'Squadron Mascot & Wildcard',
     style: 'Unpredictable and humorous fighter',
     isOfficial: true,
-    spriteAsset: '/assets/squadron-showdown/characters/penguin_bhai_clean.png',
+    spriteAsset: '/assets/squadron-showdown/sprites/FIGHTER_006/idle.png',
     cardAsset: '/assets/aistudio/penguin_bhai_04c14eda.png',
     accentColor: '#06b6d4',
     secondaryColor: '#f97316',
@@ -132,6 +150,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
       defense: 70,
       stamina: 100,
     },
+    actionSprites: buildActionSprites('FIGHTER_006'),
   },
   {
     id: 'FIGHTER_007',
@@ -140,7 +159,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     title: 'Tactical Squadron Commander',
     style: 'Balanced tactical fighter',
     isOfficial: true,
-    spriteAsset: '/assets/squadron-showdown/characters/girimon_clean.png',
+    spriteAsset: '/assets/squadron-showdown/sprites/FIGHTER_007/idle.png',
     cardAsset: '/assets/aistudio/girimon_59f7d5ac.png',
     accentColor: '#3b82f6',
     secondaryColor: '#60a5fa',
@@ -154,6 +173,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
       defense: 85,
       stamina: 85,
     },
+    actionSprites: buildActionSprites('FIGHTER_007'),
   },
   {
     id: 'FIGHTER_008',
@@ -162,7 +182,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     title: 'The Shadow Rider',
     style: 'Stealth, speed and dual-blade attacks',
     isOfficial: true,
-    spriteAsset: '/assets/squadron-showdown/characters/dq_sprite.png',
+    spriteAsset: '/assets/squadron-showdown/sprites/FIGHTER_008/idle.png',
     cardAsset: '/assets/aistudio/dq_d03691e2.png',
     accentColor: '#a855f7',
     secondaryColor: '#38bdf8',
@@ -176,6 +196,30 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
       defense: 80,
       stamina: 85,
     },
+    actionSprites: buildActionSprites('FIGHTER_008'),
+  },
+  {
+    id: 'FIGHTER_009',
+    code: 'FIGHTER_009',
+    name: 'LIVIN CHETTAN',
+    title: 'Ultraviolette Chief Pilot',
+    style: 'Tactical power striker',
+    isOfficial: true,
+    spriteAsset: '/assets/squadron-showdown/sprites/FIGHTER_009/idle.png',
+    cardAsset: '/assets/squadron-showdown/sprites/FIGHTER_009/idle.png',
+    accentColor: '#00f0ff',
+    secondaryColor: '#1e293b',
+    specialName: 'THUNDER ARC OVERLOAD',
+    specialDescription: 'Channels high-voltage twin-palm electric arc energy across the tarmac with thunderous kinetic force.',
+    tagline: 'Precision engineering meets raw electric power.',
+    lore: 'Wearing the signature black-and-white Ultraviolette techwear hoodie and tactical cargo trousers, Livin Chettan anchors the frontline with electrifying hand-to-hand combat and calculated power strikes.',
+    stats: {
+      strength: 88,
+      speed: 84,
+      defense: 86,
+      stamina: 85,
+    },
+    actionSprites: buildActionSprites('FIGHTER_009'),
   },
   // 4 Additional Original Biker Fighters (FIGHTER_010 to FIGHTER_013)
   {

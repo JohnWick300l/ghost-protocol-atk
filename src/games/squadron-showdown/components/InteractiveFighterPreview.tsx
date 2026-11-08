@@ -1,9 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FighterActionState, FighterDefinition } from '../types';
-import {
-  ArticulatedFighterPuppet,
-  computeFighterRigPose,
-} from '../animation/fighterRig';
 import { gameAudio } from '../audio/gameAudio';
 
 interface InteractiveFighterPreviewProps {
@@ -16,29 +12,36 @@ export const InteractiveFighterPreview: React.FC<
   InteractiveFighterPreviewProps
 > = ({ fighter, mirrored = false, showMoveTester = true }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const puppetRef = useRef<ArticulatedFighterPuppet | null>(null);
   const [activeAction, setActiveAction] = useState<FighterActionState>('IDLE');
-  const [comboStep, setComboStep] = useState<number>(0);
   const actionStartRef = useRef<number>(0);
   const actionDurationRef = useRef<number>(0);
   const activeActionRef = useRef<FighterActionState>('IDLE');
-  const comboStepRef = useRef<number>(0);
+  const imagesRef = useRef<Record<string, HTMLImageElement>>({});
 
-  // Load fighter image into ArticulatedFighterPuppet whenever fighter changes
+  // Preload all action sprites for this fighter
   useEffect(() => {
     let cancelled = false;
-    puppetRef.current = null;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      if (cancelled) return;
-      puppetRef.current = new ArticulatedFighterPuppet(img, fighter.id);
-    };
-    img.src = fighter.spriteAsset;
+    const poses = ['idle', 'punch', 'kick', 'block', 'special', 'jump', 'victory', 'defeat'] as const;
+    const loadedImages: Record<string, HTMLImageElement> = {};
+
+    poses.forEach((pose) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const url = fighter.actionSprites?.[pose] || fighter.spriteAsset;
+      img.src = url;
+      img.onload = () => {
+        if (!cancelled) {
+          loadedImages[pose] = img;
+        }
+      };
+      loadedImages[pose] = img;
+    });
+
+    imagesRef.current = loadedImages;
     return () => {
       cancelled = true;
     };
-  }, [fighter.id, fighter.spriteAsset]);
+  }, [fighter.id, fighter.actionSprites, fighter.spriteAsset]);
 
   // 60 FPS animation loop for the interactive preview
   useEffect(() => {
@@ -46,44 +49,72 @@ export const InteractiveFighterPreview: React.FC<
 
     const renderLoop = (now: number) => {
       const canvas = canvasRef.current;
-      const puppet = puppetRef.current;
-      if (canvas && puppet) {
+      if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           let currentAct = activeActionRef.current;
-          let elapsed = now - actionStartRef.current;
+          const elapsed = now - actionStartRef.current;
           const dur = actionDurationRef.current;
 
           if (currentAct !== 'IDLE' && dur > 0 && elapsed >= dur) {
             currentAct = 'IDLE';
             activeActionRef.current = 'IDLE';
             setActiveAction('IDLE');
-            elapsed = 0;
           }
 
-          const pose = computeFighterRigPose(
-            currentAct,
-            elapsed,
-            dur,
-            comboStepRef.current,
-            now,
-            mirrored
-          );
+          let poseKey = 'idle';
+          if (currentAct === 'PUNCH') poseKey = 'punch';
+          else if (currentAct === 'KICK') poseKey = 'kick';
+          else if (currentAct === 'BLOCK') poseKey = 'block';
+          else if (currentAct === 'SPECIAL') poseKey = 'special';
+          else if (currentAct === 'JUMP') poseKey = 'jump';
+          else if (currentAct === 'TAUNT') poseKey = 'victory';
+
+          const activeImg = imagesRef.current[poseKey] || imagesRef.current['idle'];
 
           ctx.save();
           ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Background glow during SPECIAL attack
+          if (currentAct === 'SPECIAL') {
+            const grad = ctx.createRadialGradient(
+              canvas.width / 2,
+              canvas.height / 2,
+              20,
+              canvas.width / 2,
+              canvas.height / 2,
+              canvas.width / 2
+            );
+            grad.addColorStop(0, `${fighter.accentColor}44`);
+            grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+
           if (mirrored) {
             ctx.translate(canvas.width, 0);
             ctx.scale(-1, 1);
           }
-          puppet.renderPose(
-            ctx,
-            canvas.width,
-            canvas.height,
-            pose,
-            fighter.accentColor,
-            fighter.secondaryColor
-          );
+
+          if (activeImg && activeImg.complete && activeImg.naturalWidth > 0) {
+            // Standardize display height ~320px
+            const drawH = 340;
+            const drawW = (activeImg.naturalWidth / activeImg.naturalHeight) * drawH;
+            const groundY = canvas.height - 18;
+            let drawX = (canvas.width - drawW) / 2;
+            let drawY = groundY - drawH;
+
+            // Subtle breathing idle bob
+            if (currentAct === 'IDLE') {
+              drawY += Math.sin(now * 0.004) * 2;
+            } else if (currentAct === 'PUNCH' || currentAct === 'KICK') {
+              // Punch/kick forward extension
+              drawX += 6;
+            }
+
+            ctx.drawImage(activeImg, drawX, drawY, drawW, drawH);
+          }
+
           ctx.restore();
         }
       }
@@ -96,22 +127,21 @@ export const InteractiveFighterPreview: React.FC<
 
   const triggerPreviewMove = (
     e: React.MouseEvent,
-    move: 'PUNCH' | 'KICK' | 'BLOCK' | 'SPECIAL'
+    move: 'PUNCH' | 'KICK' | 'BLOCK' | 'SPECIAL' | 'TAUNT'
   ) => {
     e.stopPropagation();
     const now = performance.now();
-    const nextCombo = (comboStep + 1) % 3;
-    setComboStep(nextCombo);
-    comboStepRef.current = nextCombo;
 
     const dur =
       move === 'PUNCH'
-        ? 360
+        ? 340
         : move === 'KICK'
-        ? 460
+        ? 440
         : move === 'BLOCK'
+        ? 500
+        : move === 'TAUNT'
         ? 520
-        : 640;
+        : 650;
 
     activeActionRef.current = move;
     actionStartRef.current = now;
@@ -126,6 +156,8 @@ export const InteractiveFighterPreview: React.FC<
       gameAudio.playKickHit();
     } else if (move === 'BLOCK') {
       gameAudio.playBlockImpact();
+    } else if (move === 'TAUNT') {
+      gameAudio.playTauntLaugh(fighter.id === 'FIGHTER_006');
     } else {
       gameAudio.playSpecialAttack();
     }
@@ -148,12 +180,12 @@ export const InteractiveFighterPreview: React.FC<
       </div>
 
       {showMoveTester && (
-        <div className="grid grid-cols-4 gap-1 w-full">
+        <div className="grid grid-cols-5 gap-1 w-full">
           <button
             type="button"
             data-testid={`preview-punch-${fighter.id}`}
             onClick={(e) => triggerPreviewMove(e, 'PUNCH')}
-            className="py-1 px-1 rounded bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-[9px] font-black text-sky-200 uppercase cursor-pointer"
+            className="py-1 px-0.5 rounded bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-[9px] font-black text-sky-200 uppercase cursor-pointer text-center"
             title="Test Right Hand Punch"
           >
             PUNCH
@@ -162,7 +194,7 @@ export const InteractiveFighterPreview: React.FC<
             type="button"
             data-testid={`preview-kick-${fighter.id}`}
             onClick={(e) => triggerPreviewMove(e, 'KICK')}
-            className="py-1 px-1 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-[9px] font-black text-amber-200 uppercase cursor-pointer"
+            className="py-1 px-0.5 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-[9px] font-black text-amber-200 uppercase cursor-pointer text-center"
             title="Test Leg Rise Kick"
           >
             KICK
@@ -170,7 +202,7 @@ export const InteractiveFighterPreview: React.FC<
           <button
             type="button"
             onClick={(e) => triggerPreviewMove(e, 'BLOCK')}
-            className="py-1 px-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-[9px] font-black text-emerald-200 uppercase cursor-pointer"
+            className="py-1 px-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-[9px] font-black text-emerald-200 uppercase cursor-pointer text-center"
             title="Test Guard Block"
           >
             BLOCK
@@ -178,10 +210,18 @@ export const InteractiveFighterPreview: React.FC<
           <button
             type="button"
             onClick={(e) => triggerPreviewMove(e, 'SPECIAL')}
-            className="py-1 px-1 rounded bg-purple-500/20 hover:bg-purple-500/35 border border-purple-400/40 text-[9px] font-black text-purple-200 uppercase cursor-pointer"
+            className="py-1 px-0.5 rounded bg-purple-500/20 hover:bg-purple-500/35 border border-purple-400/40 text-[9px] font-black text-purple-200 uppercase cursor-pointer text-center"
             title="Test Special Move"
           >
             SPEC
+          </button>
+          <button
+            type="button"
+            onClick={(e) => triggerPreviewMove(e, 'TAUNT')}
+            className="py-1 px-0.5 rounded bg-pink-500/20 hover:bg-pink-500/35 border border-pink-400/40 text-[9px] font-black text-pink-200 uppercase cursor-pointer text-center"
+            title="Test Taunt Laugh"
+          >
+            TAUNT
           </button>
         </div>
       )}

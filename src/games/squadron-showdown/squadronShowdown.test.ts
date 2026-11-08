@@ -27,9 +27,9 @@ import {
 
 describe('SQUADRON SHOWDOWN — Roster & Arena Integrity', () => {
   it('contains all 8 official fighters (FIGHTER_001 to FIGHTER_008) with exact stats and specials', () => {
-    assert.equal(OFFICIAL_FIGHTERS.length, 8);
+    assert.equal(OFFICIAL_FIGHTERS.length, 9);
     assert.equal(BONUS_FIGHTERS.length, 4);
-    assert.equal(SQUADRON_ROSTER.length, 12);
+    assert.equal(SQUADRON_ROSTER.length, 13);
 
     const naresh = getFighterById('FIGHTER_001');
     assert.equal(naresh.name, 'NARESH');
@@ -74,6 +74,20 @@ describe('SQUADRON SHOWDOWN — Roster & Arena Integrity', () => {
     assert.equal(dq.name, 'DQ (THE SHADOW RIDER)');
     assert.equal(dq.specialName, 'SHADOW STRIKE');
     assert.deepEqual(dq.stats, { strength: 85, speed: 90, defense: 80, stamina: 85 });
+
+    const livin = getFighterById('FIGHTER_009');
+    assert.equal(livin.name, 'LIVIN CHETTAN');
+    assert.equal(livin.specialName, 'THUNDER ARC OVERLOAD');
+    assert.deepEqual(livin.stats, { strength: 88, speed: 84, defense: 86, stamina: 85 });
+    assert.ok(livin.actionSprites);
+    assert.ok(livin.actionSprites.idle.includes('FIGHTER_009/idle.png'));
+    assert.ok(livin.actionSprites.punch.includes('FIGHTER_009/punch.png'));
+    assert.ok(livin.actionSprites.kick.includes('FIGHTER_009/kick.png'));
+    assert.ok(livin.actionSprites.jump.includes('FIGHTER_009/jump.png'));
+    assert.ok(livin.actionSprites.block.includes('FIGHTER_009/block.png'));
+    assert.ok(livin.actionSprites.special.includes('FIGHTER_009/special.png'));
+    assert.ok(livin.actionSprites.victory.includes('FIGHTER_009/victory.png'));
+    assert.ok(livin.actionSprites.defeat.includes('FIGHTER_009/defeat.png'));
   });
 
   it('contains all 4 official battle arenas', () => {
@@ -391,6 +405,35 @@ describe('SQUADRON SHOWDOWN — Articulated Fighter Kinematic Rig (Physical Punc
       'Expected isCounterHit: true when interrupting opponent startup'
     );
   });
+
+  it('triggers TAUNT state and awards +15 Super Energy upon uninterrupted completion', () => {
+    const state = createInitialMatchState({
+      playerFighterId: 'FIGHTER_001',
+      opponentFighterId: 'FIGHTER_002',
+      arenaId: 'ARENA_001',
+      difficulty: 'MEDIUM',
+    });
+    state.phase = 'FIGHTING';
+    state.player.energy = 20;
+
+    // Trigger taunt input
+    stepBattleSimulation(state, { ...EMPTY_INPUT, taunt: true }, EMPTY_INPUT, 20);
+    assert.equal(state.player.action, 'TAUNT');
+
+    // Trying to punch while taunting should be rejected
+    stepBattleSimulation(state, { ...EMPTY_INPUT, punch: true }, EMPTY_INPUT, 20);
+    assert.equal(state.player.action, 'TAUNT');
+
+    // Advance simulation until taunt completes (520ms total)
+    for (let elapsed = 40; elapsed < 560; elapsed += 20) {
+      stepBattleSimulation(state, EMPTY_INPUT, EMPTY_INPUT, 20);
+    }
+
+    // Taunt should complete and award +15 Super Energy (20 -> 35)
+    assert.equal(state.player.action, 'IDLE');
+    assert.equal(state.player.energy, 35);
+  });
 });
+
 
 

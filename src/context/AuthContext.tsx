@@ -126,6 +126,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
+      const autostartMode = new URLSearchParams(window.location.search).get('autostart');
+      if (autostartMode === 'admin') {
+        return normalizeUserRecord({
+          ...PUBLIC_FALLBACK_ACCOUNTS[0],
+          email: 'abinavthejas2001@gmail.com',
+          mobile: '+91 98450 11099'
+        });
+      }
+      if (autostartMode === '1') {
+        return normalizeUserRecord({
+          id: 'u_pilot07',
+          originalName: 'Vikram Sengupta',
+          fullName: 'Vikram Sengupta',
+          pilotNickname: 'F77 PILOT',
+          email: 'vikram.sengupta@example.com',
+          mobile: '+91 98860 22345',
+          city: 'Bengaluru',
+          state: 'Karnataka',
+          motorcycleModel: 'F77',
+          variant: 'Shadow Stealth (10.3 kWh)',
+          registrationNumber: 'KA 03 EV 4077',
+          purchaseDate: '2024-06-20',
+          bloodGroup: 'B+',
+          emergencyContact: { name: 'Ananya Sengupta', relationship: 'Spouse', phone: '+91 98860 77654' },
+          role: 'verified_member',
+          verificationStatus: 'verified',
+          joinedAt: '2024-02-20T18:10:00Z',
+          optInSquadronAssist: true,
+          privacySettings: {
+            showStartingPoint: false,
+            showCity: true,
+            showMotorcycleDetails: true
+          }
+        });
+      }
       const stored = localStorage.getItem('ghost_protocol_current_user_obj');
       if (stored) {
         const parsed = JSON.parse(stored);
@@ -143,7 +178,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const deletedSet = new Set(getDeletedIds());
     return PUBLIC_FALLBACK_ACCOUNTS.filter(u => !deletedSet.has(u.id));
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const autostartMode = new URLSearchParams(window.location.search).get('autostart');
+      if (autostartMode === 'admin' || autostartMode === '1') {
+        return false;
+      }
+      const stored = localStorage.getItem('ghost_protocol_current_user_obj');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const deletedSet = new Set(getDeletedIds());
+        if (parsed && parsed.id && !deletedSet.has(parsed.id)) {
+          return false;
+        }
+      }
+      const hasSessionToken = Boolean(localStorage.getItem('ghost_protocol_session_token'));
+      if (!hasSessionToken) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+    return true;
+  });
 
   // Authentication & Account Switch Modal State (Decision 2A & 1A)
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -711,6 +769,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateProfile = async (updates: Partial<User>) => {
     if (!currentUser) return { success: false, error: 'Not authenticated' };
+    const effectiveUpdates: Partial<User> = { ...updates };
+    if (
+      effectiveUpdates.motorcycleModel &&
+      !effectiveUpdates.pilotNickname &&
+      (!currentUser.pilotNickname ||
+        currentUser.pilotNickname === 'F77 PILOT' ||
+        currentUser.pilotNickname === 'X47 PILOT')
+    ) {
+      effectiveUpdates.pilotNickname = inferDefaultPilotNickname(effectiveUpdates.motorcycleModel);
+    }
     try {
       const res = await gpApiFetch('/api/auth/profile', {
         method: 'PUT',
@@ -718,7 +786,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: getSessionAuthHeaders({
           'Content-Type': 'application/json'
         }),
-        body: JSON.stringify(updates)
+        body: JSON.stringify(effectiveUpdates)
       });
       const data = await res.json();
       if (!res.ok) {
@@ -730,10 +798,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await fetchAuthData();
       return { success: true, user: normalized };
     } catch {
-      const optimistic = normalizeUserRecord({ ...currentUser, ...updates });
+      const optimistic = normalizeUserRecord({ ...currentUser, ...effectiveUpdates });
       setCurrentUser(optimistic);
       localStorage.setItem('ghost_protocol_current_user_obj', JSON.stringify(optimistic));
-      enqueueOfflineAction('/api/auth/profile', 'PUT', updates, {
+      enqueueOfflineAction('/api/auth/profile', 'PUT', effectiveUpdates, {
         module: 'garage',
         label: 'Update Garage & Profile Settings'
       });

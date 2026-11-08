@@ -18,6 +18,7 @@ import {
   Maximize2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Play
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -95,11 +96,31 @@ export const ProblemTracker: React.FC = () => {
   // Lightbox viewer state
   const [lightboxMedia, setLightboxMedia] = useState<{ mediaList: string[]; index: number; title?: string } | null>(null);
 
-  // Filter state
+  // Filter & Accordion state (all priority headings collapsed by default)
   const [isViewAllMode, setIsViewAllMode] = useState<boolean>(true);
   const [filterSeverity, setFilterSeverity] = useState<string>('ALL');
   const [filterModel, setFilterModel] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+
+  const toggleSection = (sectionId: string) => {
+    playTacticalClick();
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionId]: !prev[sectionId]
+    }));
+  };
+
+  const cleanIssueTitle = (title: string): string => {
+    return (title || '').replace(/^\d+\.\s*/, '').trim();
+  };
+
+  const cleanSubsystemCode = (code?: string): string => {
+    if (!code) return '';
+    return code
+      .replace(/^(CRITICAL|HIGH|MODERATE|MEDIUM|LOW)[-\s]*PRIORITY(\s*\/\s*OWNER-MANAGEABLE)?\s*[•\-:|]\s*/i, '')
+      .trim();
+  };
 
   const rawDraft = loadFormDraft<any>(DRAFT_KEY, {});
   const initialDraft = {
@@ -516,380 +537,341 @@ export const ProblemTracker: React.FC = () => {
     }
   }, [filterModel, filterSeverity, isViewAllMode, searchQuery, problems]);
 
-  const getSeverityBadge = (sev: ProblemReport['severity']) => {
-    const rank = getSeverityRank(sev);
-    switch (rank) {
-      case 1:
-        return (
-          <span className="px-2 py-0.5 rounded bg-[#E04F5F]/20 text-[#E04F5F] border border-[#E04F5F]/40 font-bold">
-            🔴 CRITICAL PRIORITY
-          </span>
-        );
-      case 2:
-        return (
-          <span className="px-2 py-0.5 rounded bg-[#F97316]/20 text-[#FB923C] border border-[#F97316]/40 font-bold">
-            🟠 HIGH PRIORITY
-          </span>
-        );
-      case 3:
-        return (
-          <span className="px-2 py-0.5 rounded bg-[#EAB308]/20 text-[#FACC15] border border-[#EAB308]/40 font-semibold">
-            🟡 MODERATE
-          </span>
-        );
-      case 4:
-        return (
-          <span className="px-2 py-0.5 rounded bg-[#A855F7]/20 text-[#C084FC] border border-[#A855F7]/40 font-semibold">
-            🟣 LOW
-          </span>
-        );
-      case 5:
-      default:
-        return (
-          <span className="px-2 py-0.5 rounded bg-[#191D22] text-[#707883] border border-[#282D34]">
-            INFORMATIONAL
-          </span>
-        );
-    }
-  };
-
   const prioritySections = [
     {
       rank: 1,
       id: 'critical',
-      label: '🔴 Critical Priority',
-      headerClass: 'bg-[#E04F5F]/15 border-[#E04F5F]/40 text-[#FCA5A5]',
+      label: 'Critical Priority',
+      dotColor: 'bg-[#E04F5F]',
+      accentBorder: 'border-[#E04F5F]/40 hover:border-[#E04F5F]/70',
+      headerBg: 'bg-gradient-to-r from-[#E04F5F]/15 via-[#13161A] to-[#13161A]',
+      textColor: 'text-[#FCA5A5]',
+      badgeClass: 'bg-[#E04F5F]/20 text-[#FCA5A5] border border-[#E04F5F]/40',
       items: displayedProblems.filter(p => getSeverityRank(p.severity) === 1)
     },
     {
       rank: 2,
       id: 'high',
-      label: filterModel === 'F77' ? '🟠 High-Priority Issues' : '🟠 High Priority',
-      headerClass: 'bg-[#F97316]/15 border-[#F97316]/40 text-[#FDBA74]',
+      label: 'High Priority',
+      dotColor: 'bg-[#F97316]',
+      accentBorder: 'border-[#F97316]/40 hover:border-[#F97316]/70',
+      headerBg: 'bg-gradient-to-r from-[#F97316]/15 via-[#13161A] to-[#13161A]',
+      textColor: 'text-[#FDBA74]',
+      badgeClass: 'bg-[#F97316]/20 text-[#FDBA74] border border-[#F97316]/40',
       items: displayedProblems.filter(p => getSeverityRank(p.severity) === 2)
     },
     {
       rank: 3,
       id: 'moderate',
-      label: filterModel === 'F77' ? '🟡 Medium-Priority Issues' : '🟡 Moderate',
-      headerClass: 'bg-[#EAB308]/15 border-[#EAB308]/40 text-[#FEF08A]',
+      label: 'Moderate Priority',
+      dotColor: 'bg-[#EAB308]',
+      accentBorder: 'border-[#EAB308]/40 hover:border-[#EAB308]/70',
+      headerBg: 'bg-gradient-to-r from-[#EAB308]/15 via-[#13161A] to-[#13161A]',
+      textColor: 'text-[#FEF08A]',
+      badgeClass: 'bg-[#EAB308]/20 text-[#FEF08A] border border-[#EAB308]/40',
       items: displayedProblems.filter(p => getSeverityRank(p.severity) === 3)
     },
     {
       rank: 4,
       id: 'low',
-      label: filterModel === 'F77' ? '🟣 Low-Priority / Owner-Manageable Issues' : '🟣 Low',
-      headerClass: 'bg-[#A855F7]/15 border-[#A855F7]/40 text-[#E9D5FF]',
+      label: 'Low Priority',
+      dotColor: 'bg-[#A855F7]',
+      accentBorder: 'border-[#A855F7]/40 hover:border-[#A855F7]/70',
+      headerBg: 'bg-gradient-to-r from-[#A855F7]/15 via-[#13161A] to-[#13161A]',
+      textColor: 'text-[#E9D5FF]',
+      badgeClass: 'bg-[#A855F7]/20 text-[#E9D5FF] border border-[#A855F7]/40',
       items: displayedProblems.filter(p => getSeverityRank(p.severity) === 4)
     },
     {
       rank: 5,
       id: 'info',
-      label: '⚪ Informational',
-      headerClass: 'bg-[#191D22] border-[#282D34] text-[#A0A7B0]',
+      label: 'Informational',
+      dotColor: 'bg-[#707883]',
+      accentBorder: 'border-[#282D34] hover:border-[#414851]',
+      headerBg: 'bg-[#13161A]',
+      textColor: 'text-[#D4D8DE]',
+      badgeClass: 'bg-[#191D22] text-[#A0A7B0] border border-[#282D34]',
       items: displayedProblems.filter(p => getSeverityRank(p.severity) >= 5)
     }
   ].filter(sec => sec.items.length > 0);
 
-  const renderIssueFullDetails = (prob: ProblemReport, isModal = false) => (
-    <div className="space-y-5">
-      <div>
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-[#282D34]">
-          <div className="text-[10px] font-mono text-[#707883] flex flex-wrap items-center gap-2">
-            <span>CASE ID: {prob.id.toUpperCase()}</span>
-            <span>•</span>
-            <span>LOGGED BY {prob.reporterName || 'Squadron Pilot'}</span>
-            {prob.isRecurring && (
-              <span className="px-1.5 py-0.5 rounded bg-[#E04F5F]/15 text-[#FCA5A5] border border-[#E04F5F]/30 font-bold">
-                RECURRING SYMPTOM
+  const renderIssueFullDetails = (prob: ProblemReport, isModal = false) => {
+    const cleanedCode = cleanSubsystemCode(prob.warningMessageOrCode);
+    const hasDistinctDescription =
+      Boolean(prob.description) &&
+      cleanIssueTitle(prob.description).toLowerCase() !== cleanIssueTitle(prob.title).toLowerCase();
+
+    return (
+      <div className="space-y-5">
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-[#282D34]">
+            <div className="text-[11px] font-mono text-[#A0A7B0] flex flex-wrap items-center gap-2">
+              <span
+                className={`px-2 py-0.5 rounded font-bold ${
+                  prob.motorcycleModel.includes('X47')
+                    ? 'bg-[#38BDF8]/15 text-[#38BDF8] border border-[#38BDF8]/30'
+                    : 'bg-[#42B883]/15 text-[#42B883] border border-[#42B883]/30'
+                }`}
+              >
+                {prob.motorcycleModel}
               </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-testid={isModal ? 'modal-edit-issue-btn' : 'panel-edit-issue-btn'}
-              onClick={() => openEditProblem(prob)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#E8AA45] hover:bg-[#F59E0B] text-[#08090B] font-mono text-xs font-bold transition-colors shadow-sm"
-              title="Edit Issue Details"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-              <span>EDIT ISSUE</span>
-            </button>
-            {canUserModifyRecord(currentUser, prob) && (
+              <span className="text-[#D4D8DE]">{prob.category}</span>
+            </div>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => handleDeleteProblem(prob)}
-                className="p-1.5 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#AEB5BE] hover:text-[#E04F5F] border border-[#282D34]"
-                title="Delete Issue Report"
+                data-testid={isModal ? 'modal-edit-issue-btn' : 'panel-edit-issue-btn'}
+                onClick={() => openEditProblem(prob)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#E8AA45] hover:bg-[#F59E0B] text-[#08090B] font-mono text-xs font-bold transition-colors shadow-sm"
+                title="Edit Issue Details"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>EDIT</span>
               </button>
-            )}
-            {getSeverityBadge(prob.severity)}
-            {isModal && (
-              <button
-                type="button"
-                data-testid="close-issue-detail-modal"
-                onClick={() => setShowDetailModal(false)}
-                className="p-1.5 rounded bg-[#191D22] hover:bg-[#252A30] text-[#A0A7B0] hover:text-[#F1F3F5] border border-[#282D34]"
-                title="Close Full Details"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-        <h3 className="text-base sm:text-lg font-bold text-[#F1F3F5] leading-snug">{prob.title}</h3>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono">
-        <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
-          <div className="text-[10px] text-[#707883]">MODEL & VARIANT</div>
-          <div className="text-[#38BDF8] font-bold mt-0.5">
-            {prob.motorcycleModel}
-            {prob.variant ? ` • ${prob.variant}` : ''}
-          </div>
-        </div>
-        <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
-          <div className="text-[10px] text-[#707883]">SYSTEM CATEGORY</div>
-          <div className="text-[#F1F3F5] font-semibold mt-0.5">{prob.category}</div>
-        </div>
-        <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
-          <div className="text-[10px] text-[#707883]">CURRENT STATUS</div>
-          <div className="text-[#42B883] font-bold mt-0.5">{prob.status}</div>
-        </div>
-        <div className="p-2.5 rounded bg-[#13161A] border border-[#282D34]">
-          <div className="text-[10px] text-[#707883]">FIRST OBSERVED / ODO</div>
-          <div className="text-[#F1F3F5] font-semibold mt-0.5">
-            {prob.firstObservedDate}
-            {prob.mileageKm ? ` • ${prob.mileageKm.toLocaleString()} km` : ''}
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-3 text-xs font-mono">
-        <div>
-          <div className="text-[#707883] mb-1">DASH / CAN BUS ERROR CODE:</div>
-          <div className="text-[#E8AA45] bg-[#13161A] p-2.5 rounded border border-[#282D34] font-bold">
-            {prob.warningMessageOrCode || 'NONE LOGGED'}
-          </div>
-        </div>
-
-        <div>
-          <div className="text-[#707883] mb-1">FULL ISSUE DESCRIPTION:</div>
-          <div className="text-[#F1F3F5] bg-[#13161A] p-3.5 rounded border border-[#282D34] leading-relaxed font-sans text-sm">
-            {prob.description}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <div className="text-[#707883] mb-1">TROUBLESHOOTING ATTEMPTED:</div>
-            <div className="text-[#D4D8DE] bg-[#13161A] p-3 rounded border border-[#282D34] leading-relaxed min-h-[60px]">
-              {prob.troubleshootingAttempted || 'No troubleshooting steps logged yet.'}
+              {canUserModifyRecord(currentUser, prob) && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteProblem(prob)}
+                  className="p-1.5 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#AEB5BE] hover:text-[#E04F5F] border border-[#282D34]"
+                  title="Delete Issue Report"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {isModal && (
+                <button
+                  type="button"
+                  data-testid="close-issue-detail-modal"
+                  onClick={() => setShowDetailModal(false)}
+                  className="p-1.5 rounded bg-[#191D22] hover:bg-[#252A30] text-[#A0A7B0] hover:text-[#F1F3F5] border border-[#282D34]"
+                  title="Close Details"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
-
-          <div>
-            <div className="text-[#707883] mb-1">SERVICE VISITS & ACTIONS:</div>
-            <div className="text-[#D4D8DE] bg-[#13161A] p-3 rounded border border-[#282D34] leading-relaxed min-h-[60px]">
-              {prob.serviceVisits || 'No service visits logged yet.'}
-            </div>
-          </div>
+          <h3 className="text-base sm:text-lg font-bold text-[#F1F3F5] leading-snug">
+            {cleanIssueTitle(prob.title)}
+          </h3>
         </div>
 
-        {/* Evidence Media Section (Photos & Videos) */}
-        {((prob.mediaUrls && prob.mediaUrls.length > 0) || prob.photoUrl || prob.videoUrl) && (
-          <div className="pt-2 border-t border-[#282D34]/80">
-            <div className="text-[#707883] mb-1.5 flex items-center justify-between text-[11px]">
-              <span className="flex items-center gap-1.5 font-bold text-[#D4D8DE] uppercase">
-                <Camera className="w-3.5 h-3.5 text-[#E8AA45]" />
-                EVIDENCE MEDIA (PHOTOS & VIDEOS)
-              </span>
-              <span className="text-[10px] text-[#A0A7B0]">
-                {(prob.mediaUrls || [prob.photoUrl, prob.videoUrl].filter(Boolean)).length} file(s)
+        <div className="space-y-3 text-xs font-mono">
+          {cleanedCode && (
+            <div className="flex items-center gap-2">
+              <span className="text-[#707883]">SUBSYSTEM:</span>
+              <span className="text-[#E8AA45] bg-[#13161A] px-2.5 py-1 rounded border border-[#282D34] font-semibold">
+                {cleanedCode}
               </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-[#13161A] p-2.5 rounded border border-[#282D34]">
-              {(prob.mediaUrls || [prob.photoUrl, prob.videoUrl].filter(Boolean) as string[]).map((mUrl, mIdx) => {
-                const isVid = isVideoMedia(mUrl);
-                return (
-                  <div
-                    key={mIdx}
-                    onClick={() => {
-                      playTacticalClick();
-                      setLightboxMedia({
-                        mediaList: prob.mediaUrls || ([prob.photoUrl, prob.videoUrl].filter(Boolean) as string[]),
-                        index: mIdx,
-                        title: prob.title
-                      });
-                    }}
-                    className="relative bg-[#08090B] border border-[#282D34] hover:border-[#E8AA45]/60 rounded overflow-hidden aspect-video cursor-pointer group transition-all"
-                  >
-                    {isVid ? (
-                      <div className="w-full h-full relative flex items-center justify-center bg-black">
-                        <video src={mUrl} className="w-full h-full object-cover opacity-80" />
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/20 transition-colors">
-                          <div className="w-8 h-8 rounded-full bg-[#E8AA45] text-black flex items-center justify-center font-bold">
-                            <Play className="w-4 h-4 fill-current ml-0.5" />
-                          </div>
-                        </div>
-                        <span className="absolute top-1 left-1 bg-black/80 text-[#E8AA45] text-[9px] font-bold px-1.5 py-0.2 rounded border border-[#E8AA45]/30 flex items-center gap-1">
-                          <Film className="w-2.5 h-2.5" /> VIDEO
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="w-full h-full relative">
-                        <img src={mUrl} alt={`Media ${mIdx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                        <span className="absolute top-1 left-1 bg-black/80 text-[#42B883] text-[9px] font-bold px-1.5 py-0.2 rounded border border-[#42B883]/30 flex items-center gap-1">
-                          <Camera className="w-2.5 h-2.5" /> PHOTO
-                        </span>
-                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                          <Maximize2 className="w-4 h-4 text-white" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      {/* Progress Timeline & Updates */}
-      <div className="space-y-3 pt-3 border-t border-[#282D34] text-xs font-mono">
-        <div className="text-xs font-bold text-[#D4D8DE] uppercase">
-          PROGRESS TIMELINE & SERVICE UPDATES ({prob.updates?.length || 0})
-        </div>
-
-        <div className="space-y-2">
-          {prob.updates?.map(u => (
-            <div key={u.id} className="p-3 rounded bg-[#13161A] border border-[#282D34] space-y-2">
-              <div className="flex items-center justify-between text-[10px] text-[#707883]">
-                <span className="text-[#D4D8DE] font-semibold">{u.authorName}</span>
-                <span>{u.date}</span>
+          {hasDistinctDescription && (
+            <div>
+              <div className="text-[#707883] mb-1">DETAILS:</div>
+              <div className="text-[#F1F3F5] bg-[#13161A] p-3.5 rounded border border-[#282D34] leading-relaxed font-sans text-sm">
+                {prob.description}
               </div>
-              <div className="text-[11px] text-[#A0A7B0]">{u.note}</div>
-              {u.mediaUrls && u.mediaUrls.length > 0 && (
-                <div className="flex items-center gap-1.5 pt-1 overflow-x-auto">
-                  {u.mediaUrls.map((mUrl, mIdx) => (
+            </div>
+          )}
+
+          {(prob.troubleshootingAttempted || prob.serviceVisits) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {prob.troubleshootingAttempted && (
+                <div>
+                  <div className="text-[#707883] mb-1">TROUBLESHOOTING:</div>
+                  <div className="text-[#D4D8DE] bg-[#13161A] p-3 rounded border border-[#282D34] leading-relaxed">
+                    {prob.troubleshootingAttempted}
+                  </div>
+                </div>
+              )}
+
+              {prob.serviceVisits && (
+                <div>
+                  <div className="text-[#707883] mb-1">SERVICE ACTIONS:</div>
+                  <div className="text-[#D4D8DE] bg-[#13161A] p-3 rounded border border-[#282D34] leading-relaxed">
+                    {prob.serviceVisits}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Evidence Media Section (Photos & Videos) */}
+          {((prob.mediaUrls && prob.mediaUrls.length > 0) || prob.photoUrl || prob.videoUrl) && (
+            <div className="pt-2 border-t border-[#282D34]/80">
+              <div className="text-[#707883] mb-1.5 flex items-center justify-between text-[11px]">
+                <span className="flex items-center gap-1.5 font-bold text-[#D4D8DE] uppercase">
+                  <Camera className="w-3.5 h-3.5 text-[#E8AA45]" />
+                  EVIDENCE MEDIA
+                </span>
+                <span className="text-[10px] text-[#A0A7B0]">
+                  {(prob.mediaUrls || [prob.photoUrl, prob.videoUrl].filter(Boolean)).length} file(s)
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-[#13161A] p-2.5 rounded border border-[#282D34]">
+                {(prob.mediaUrls || ([prob.photoUrl, prob.videoUrl].filter(Boolean) as string[])).map((mUrl, mIdx) => {
+                  const isVid = isVideoMedia(mUrl);
+                  return (
                     <div
                       key={mIdx}
                       onClick={() => {
                         playTacticalClick();
                         setLightboxMedia({
-                          mediaList: u.mediaUrls!,
+                          mediaList: prob.mediaUrls || ([prob.photoUrl, prob.videoUrl].filter(Boolean) as string[]),
                           index: mIdx,
-                          title: `Update Media by ${u.authorName}`
+                          title: cleanIssueTitle(prob.title)
                         });
                       }}
-                      className="w-10 h-10 rounded border border-[#282D34] overflow-hidden bg-[#08090B] cursor-pointer shrink-0 hover:border-[#E8AA45]"
+                      className="relative bg-[#08090B] border border-[#282D34] hover:border-[#E8AA45]/60 rounded overflow-hidden aspect-video cursor-pointer group transition-all"
                     >
-                      {isVideoMedia(mUrl) ? (
-                        <div className="w-full h-full flex items-center justify-center bg-black text-[#E8AA45]">
-                          <Film className="w-3.5 h-3.5" />
+                      {isVid ? (
+                        <div className="w-full h-full relative flex items-center justify-center bg-black">
+                          <video src={mUrl} className="w-full h-full object-cover opacity-80" />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/20 transition-colors">
+                            <div className="w-8 h-8 rounded-full bg-[#E8AA45] text-black flex items-center justify-center font-bold">
+                              <Play className="w-4 h-4 fill-current ml-0.5" />
+                            </div>
+                          </div>
+                          <span className="absolute top-1 left-1 bg-black/80 text-[#E8AA45] text-[9px] font-bold px-1.5 py-0.2 rounded border border-[#E8AA45]/30 flex items-center gap-1">
+                            <Film className="w-2.5 h-2.5" /> VIDEO
+                          </span>
                         </div>
                       ) : (
-                        <img src={mUrl} alt={`Update media ${mIdx}`} className="w-full h-full object-cover" />
+                        <div className="w-full h-full relative">
+                          <img src={mUrl} alt={`Media ${mIdx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                          <span className="absolute top-1 left-1 bg-black/80 text-[#42B883] text-[9px] font-bold px-1.5 py-0.2 rounded border border-[#42B883]/30 flex items-center gap-1">
+                            <Camera className="w-2.5 h-2.5" /> PHOTO
+                          </span>
+                          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <Maximize2 className="w-4 h-4 text-white" />
+                          </div>
+                        </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </div>
-          ))}
+          )}
         </div>
 
-        {/* Add Progress Note Form */}
-        <form onSubmit={handleAddUpdate} className="pt-2 space-y-2">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              value={updateNote}
-              onChange={e => setUpdateNote(e.target.value)}
-              placeholder="Add diagnostic finding, service update, or resolution note..."
-              className="flex-1 bg-[#08090B] border border-[#282D34] rounded px-3 py-2 text-[#F1F3F5] text-xs focus:outline-none"
-            />
-            <select
-              value={newStatusUpdate}
-              onChange={e => setNewStatusUpdate(e.target.value as any)}
-              className="bg-[#13161A] border border-[#282D34] text-[#D4D8DE] px-2 py-2 rounded text-xs focus:outline-none"
-            >
-              <option value="Reported">Reported</option>
-              <option value="Under Investigation">Under Investigation</option>
-              <option value="Service Scheduled">Service Scheduled</option>
-              <option value="Resolved">Resolved</option>
-              <option value="Recurring">Recurring</option>
-            </select>
-          </div>
-
-          {updateMediaUrls.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap p-1.5 rounded bg-[#13161A] border border-[#282D34]">
-              {updateMediaUrls.map((m, idx) => (
-                <div key={idx} className="relative w-12 h-12 bg-[#08090B] border border-[#282D34] rounded overflow-hidden group">
-                  {isVideoMedia(m) ? (
-                    <video src={m} className="w-full h-full object-cover" />
-                  ) : (
-                    <img src={m} alt={`Update media ${idx}`} className="w-full h-full object-cover" />
+        {/* Notes & Updates */}
+        <div className="space-y-3 pt-3 border-t border-[#282D34] text-xs font-mono">
+          {prob.updates && prob.updates.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-[11px] font-bold text-[#D4D8DE] uppercase">
+                UPDATES ({prob.updates.length})
+              </div>
+              {prob.updates.map(u => (
+                <div key={u.id} className="p-3 rounded bg-[#13161A] border border-[#282D34] space-y-1.5">
+                  <div className="text-[10px] text-[#D4D8DE] font-semibold">{u.authorName}</div>
+                  <div className="text-[11px] text-[#A0A7B0]">{u.note}</div>
+                  {u.mediaUrls && u.mediaUrls.length > 0 && (
+                    <div className="flex items-center gap-1.5 pt-1 overflow-x-auto">
+                      {u.mediaUrls.map((mUrl, mIdx) => (
+                        <div
+                          key={mIdx}
+                          onClick={() => {
+                            playTacticalClick();
+                            setLightboxMedia({
+                              mediaList: u.mediaUrls!,
+                              index: mIdx,
+                              title: `Update Media by ${u.authorName}`
+                            });
+                          }}
+                          className="w-10 h-10 rounded border border-[#282D34] overflow-hidden bg-[#08090B] cursor-pointer shrink-0 hover:border-[#E8AA45]"
+                        >
+                          {isVideoMedia(mUrl) ? (
+                            <div className="w-full h-full flex items-center justify-center bg-black text-[#E8AA45]">
+                              <Film className="w-3.5 h-3.5" />
+                            </div>
+                          ) : (
+                            <img src={mUrl} alt={`Update media ${mIdx}`} className="w-full h-full object-cover" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMedia(idx, true)}
-                    className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[#E04F5F]"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               ))}
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-2">
-            <label className="text-[10px] text-[#A0A7B0] hover:text-[#42B883] cursor-pointer flex items-center gap-1 font-mono">
-              <Upload className="w-3 h-3 text-[#42B883]" />
-              <span>+ Attach Photo / Video to Update</span>
+          {/* Add Note Form */}
+          <form onSubmit={handleAddUpdate} className="pt-1 space-y-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                onChange={e => handleMediaUpload(e, true)}
-                className="hidden"
+                type="text"
+                value={updateNote}
+                onChange={e => setUpdateNote(e.target.value)}
+                placeholder="Add a note or resolution update..."
+                className="flex-1 bg-[#08090B] border border-[#282D34] rounded px-3 py-2 text-[#F1F3F5] text-xs focus:outline-none"
               />
-            </label>
-          </div>
+              <button
+                type="submit"
+                disabled={!updateNote.trim()}
+                className="px-4 py-2 bg-[#252A30] hover:bg-[#414851] disabled:opacity-40 text-[#F1F3F5] rounded border border-[#414851] text-xs font-mono font-bold shrink-0"
+              >
+                ADD NOTE
+              </button>
+            </div>
 
-          <button
-            type="submit"
-            disabled={!updateNote.trim()}
-            className="w-full py-2 bg-[#252A30] hover:bg-[#414851] disabled:opacity-40 text-[#F1F3F5] rounded border border-[#414851] text-xs font-mono font-bold"
-          >
-            RECORD CASE UPDATE
-          </button>
-        </form>
+            {updateMediaUrls.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap p-1.5 rounded bg-[#13161A] border border-[#282D34]">
+                {updateMediaUrls.map((m, idx) => (
+                  <div key={idx} className="relative w-12 h-12 bg-[#08090B] border border-[#282D34] rounded overflow-hidden group">
+                    {isVideoMedia(m) ? (
+                      <video src={m} className="w-full h-full object-cover" />
+                    ) : (
+                      <img src={m} alt={`Update media ${idx}`} className="w-full h-full object-cover" />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMedia(idx, true)}
+                      className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[#E04F5F]"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-[10px] text-[#A0A7B0] hover:text-[#42B883] cursor-pointer flex items-center gap-1 font-mono">
+                <Upload className="w-3 h-3 text-[#42B883]" />
+                <span>+ Attach Photo / Video</span>
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  onChange={e => handleMediaUpload(e, true)}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 max-w-4xl mx-auto">
       {/* Top Header */}
-      <div className="bg-[#13161A] border border-[#282D34] rounded-lg p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-10 h-10 rounded bg-[#191D22] border border-[#414851] flex items-center justify-center text-[#D4D8DE]">
-            <Activity className="w-5 h-5 text-[#E8AA45]" />
+      <div className="bg-[#13161A] border border-[#282D34] rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-lg bg-[#191D22] border border-[#282D34] flex items-center justify-center text-[#E8AA45] shrink-0">
+            <Activity className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-sm font-mono font-bold text-[#F1F3F5] tracking-wider flex items-center gap-2">
+            <h1 className="text-base sm:text-lg font-mono font-bold text-[#F1F3F5] tracking-wider">
               PRIORITY ISSUES
-              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#252A30] text-[#E8AA45] border border-[#E8AA45]/30">
-                LOGS
-              </span>
-            </div>
-            <div className="text-xs text-[#A0A7B0] mt-0.5">
-              Press any specific issue below to inspect full details or edit the issue record
-            </div>
+            </h1>
+            <p className="text-xs sm:text-sm text-[#A0A7B0] mt-0.5">
+              Tap any priority heading to expand its issues
+            </p>
           </div>
         </div>
 
@@ -899,9 +881,9 @@ export const ProblemTracker: React.FC = () => {
             setEditingProblemId(null);
             setShowCreateModal(true);
           }}
-          className="flex items-center space-x-1.5 px-3.5 py-2 rounded bg-[#252A30] hover:bg-[#414851] text-xs font-mono font-bold text-[#F1F3F5] border border-[#414851] transition-colors"
+          className="w-full sm:w-auto flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-lg bg-[#E8AA45] hover:bg-[#F59E0B] text-xs sm:text-sm font-mono font-bold text-[#08090B] transition-colors shrink-0 shadow-sm cursor-pointer"
         >
-          <Plus className="w-3.5 h-3.5" />
+          <Plus className="w-4 h-4" />
           <span>REPORT ISSUE</span>
         </button>
       </div>
@@ -926,8 +908,8 @@ export const ProblemTracker: React.FC = () => {
         </div>
       )}
 
-      {/* Filter and View Controls Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between text-xs font-mono bg-[#13161A] p-3 rounded-lg border border-[#282D34]">
+      {/* Clean Model Filter & Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between text-xs font-mono bg-[#13161A] p-3 rounded-xl border border-[#282D34]">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -938,14 +920,13 @@ export const ProblemTracker: React.FC = () => {
               setFilterModel('ALL');
               setSearchQuery('');
             }}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded font-bold transition-all border ${
-              isViewAllMode && filterModel === 'ALL'
-                ? 'bg-[#E8AA45] text-[#08090B] border-[#E8AA45] shadow-[0_0_12px_rgba(232,170,69,0.3)]'
-                : 'bg-[#0D0F12] text-[#D4D8DE] border-[#282D34] hover:border-[#414851] hover:text-[#F1F3F5]'
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all border ${
+              filterModel === 'ALL'
+                ? 'bg-[#E8AA45] text-[#08090B] border-[#E8AA45]'
+                : 'bg-[#0D0F12] text-[#D4D8DE] border-[#282D34] hover:border-[#414851]'
             }`}
           >
-            <Eye className="w-3.5 h-3.5" />
-            <span>View All Problems</span>
+            All ({problems.length})
           </button>
 
           <button
@@ -956,13 +937,13 @@ export const ProblemTracker: React.FC = () => {
               setFilterModel('X47');
               setIsViewAllMode(false);
             }}
-            className={`px-3 py-1.5 rounded font-bold transition-all border ${
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all border ${
               filterModel === 'X47'
-                ? 'bg-[#38BDF8] text-[#08090B] border-[#38BDF8] shadow-[0_0_12px_rgba(56,189,248,0.3)]'
-                : 'bg-[#0D0F12] text-[#D4D8DE] border-[#282D34] hover:border-[#414851] hover:text-[#F1F3F5]'
+                ? 'bg-[#38BDF8] text-[#08090B] border-[#38BDF8]'
+                : 'bg-[#0D0F12] text-[#D4D8DE] border-[#282D34] hover:border-[#414851]'
             }`}
           >
-            X47 Model ({problems.filter(p => p.motorcycleModel.includes('X47')).length})
+            X47 ({problems.filter(p => p.motorcycleModel.includes('X47')).length})
           </button>
 
           <button
@@ -973,45 +954,14 @@ export const ProblemTracker: React.FC = () => {
               setFilterModel('F77');
               setIsViewAllMode(false);
             }}
-            className={`px-3 py-1.5 rounded font-bold transition-all border ${
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all border ${
               filterModel === 'F77'
-                ? 'bg-[#42B883] text-[#08090B] border-[#42B883] shadow-[0_0_12px_rgba(66,184,131,0.3)]'
-                : 'bg-[#0D0F12] text-[#D4D8DE] border-[#282D34] hover:border-[#414851] hover:text-[#F1F3F5]'
+                ? 'bg-[#42B883] text-[#08090B] border-[#42B883]'
+                : 'bg-[#0D0F12] text-[#D4D8DE] border-[#282D34] hover:border-[#414851]'
             }`}
           >
-            F77 Model ({problems.filter(p => p.motorcycleModel.includes('F77')).length})
+            F77 ({problems.filter(p => p.motorcycleModel.includes('F77')).length})
           </button>
-
-          <span className="text-[#414851] hidden sm:inline">|</span>
-
-          <select
-            value={filterSeverity}
-            onChange={e => {
-              setFilterSeverity(e.target.value);
-              setIsViewAllMode(false);
-            }}
-            className="bg-[#0D0F12] border border-[#282D34] text-[#D4D8DE] px-3 py-1.5 rounded focus:outline-none focus:border-[#414851]"
-          >
-            <option value="ALL">FILTER BY SEVERITY</option>
-            <option value="Critical / Safety-Related">🔴 Critical Priority</option>
-            <option value="High">🟠 High Priority</option>
-            <option value="Moderate">🟡 Moderate</option>
-            <option value="Low">🟣 Low</option>
-            <option value="Informational">Informational</option>
-          </select>
-
-          <select
-            value={filterModel}
-            onChange={e => {
-              setFilterModel(e.target.value);
-              setIsViewAllMode(false);
-            }}
-            className="bg-[#0D0F12] border border-[#282D34] text-[#D4D8DE] px-3 py-1.5 rounded focus:outline-none focus:border-[#414851]"
-          >
-            <option value="ALL">ALL MODELS</option>
-            <option value="F77">F77</option>
-            <option value="X47">X47</option>
-          </select>
         </div>
 
         <div className="relative">
@@ -1025,61 +975,60 @@ export const ProblemTracker: React.FC = () => {
                 setIsViewAllMode(false);
               }
             }}
-            placeholder="Search symptoms or error codes..."
-            className="bg-[#0D0F12] border border-[#282D34] focus:border-[#414851] rounded pl-8 pr-3 py-1.5 text-[#F1F3F5] text-xs focus:outline-none w-full sm:w-64"
+            placeholder="Search issues..."
+            className="bg-[#0D0F12] border border-[#282D34] focus:border-[#414851] rounded-lg pl-8 pr-3 py-1.5 text-[#F1F3F5] text-xs focus:outline-none w-full sm:w-60"
           />
         </div>
       </div>
 
-      {/* View All Mode Indicator */}
-      {isViewAllMode && (
-        <div className="p-2.5 rounded bg-[#E8AA45]/10 border border-[#E8AA45]/30 text-xs font-mono text-[#E8AA45] flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <CheckCircle2 className="w-4 h-4 text-[#E8AA45]" />
-            <span>
-              <strong>VIEW ALL PROBLEMS ACTIVE:</strong> Displaying all {problems.length} reported problems organized by priority (🔴 Critical → 🟠 High → 🟡 Moderate → 🟣 Low). Press any issue to view full details or edit.
-            </span>
+      {/* Collapsible Priority Sections (Collapsed by default) */}
+      <div className="space-y-3">
+        {displayedProblems.length === 0 ? (
+          <div className="bg-[#0D0F12] border border-[#282D34] rounded-xl p-10 text-center text-xs font-mono text-[#707883]">
+            NO ISSUES FOUND
           </div>
-        </div>
-      )}
-
-      {filterModel === 'F77' && (
-        <div
-          data-testid="f77-priority-banner"
-          className="p-3 rounded-lg bg-[#42B883]/10 border border-[#42B883]/40 text-xs font-mono text-[#42B883] flex items-center justify-between"
-        >
-          <div className="font-bold tracking-wide">
-            Ultraviolette F77 – Owner-Reported Issues &amp; Improvements (18 Priority Issues)
-          </div>
-          <span className="text-[10px] px-2 py-0.5 rounded bg-black/40 text-[#D4D8DE]">
-            HIGH (1–9) • MEDIUM (10–13) • LOW (14–18)
-          </span>
-        </div>
-      )}
-
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 space-y-5">
-          {displayedProblems.length === 0 ? (
-            <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-10 text-center text-xs font-mono text-[#707883]">
-              NO PRIORITY ISSUES MATCHING CRITERIA
-            </div>
-          ) : (
-            prioritySections.map(section => (
-              <div key={section.id} data-testid={`priority-section-${section.id}`} className="space-y-2.5">
-                <div
-                  className={`px-3.5 py-2 rounded-lg border font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-between ${section.headerClass}`}
+        ) : (
+          prioritySections.map(section => {
+            const isExpanded = searchQuery.trim().length > 0 ? true : Boolean(expandedSections[section.id]);
+            return (
+              <div
+                key={section.id}
+                data-testid={`priority-section-${section.id}`}
+                className={`rounded-xl border transition-all overflow-hidden bg-[#0D0F12] ${section.accentBorder}`}
+              >
+                {/* Expandable Main Priority Heading */}
+                <button
+                  type="button"
+                  data-testid={`priority-header-${section.id}`}
+                  aria-expanded={isExpanded}
+                  onClick={() => toggleSection(section.id)}
+                  className={`w-full px-4 py-4 flex items-center justify-between gap-3 text-left transition-colors cursor-pointer select-none ${section.headerBg}`}
                 >
-                  <span>{section.label}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-black/40">
-                    {section.items.length} {section.items.length === 1 ? 'ISSUE' : 'ISSUES'}
-                  </span>
-                </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`w-3 h-3 rounded-full shrink-0 ${section.dotColor}`} />
+                    <span className={`font-mono text-sm sm:text-base font-bold uppercase tracking-wider ${section.textColor}`}>
+                      {section.label}
+                    </span>
+                  </div>
 
-                <div className="space-y-2.5">
-                  {section.items.map(prob => {
-                    const isSelected = selectedProblem?.id === prob.id;
-                    return (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded-md whitespace-nowrap shrink-0 ${section.badgeClass}`}>
+                      {section.items.length} {section.items.length === 1 ? 'Issue' : 'Issues'}
+                    </span>
+                    <div className="w-8 h-8 rounded-lg bg-[#191D22]/80 border border-[#282D34] flex items-center justify-center text-[#D4D8DE] shrink-0">
+                      {isExpanded ? (
+                        <ChevronDown className="w-4 h-4 transition-transform" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 transition-transform" />
+                      )}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Collapsible Issue List */}
+                {isExpanded && (
+                  <div className="p-3 sm:p-4 space-y-2.5 border-t border-[#282D34]/80 bg-[#08090B]/60">
+                    {section.items.map((prob, idx) => (
                       <div
                         key={prob.id}
                         data-testid={`problem-card-${prob.id}`}
@@ -1088,112 +1037,59 @@ export const ProblemTracker: React.FC = () => {
                           setSelectedProblem(prob);
                           setShowDetailModal(true);
                         }}
-                        className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                          isSelected
-                            ? 'bg-[#191D22] border-[#E8AA45]/70 shadow-lg'
-                            : 'bg-[#0D0F12] border-[#282D34] hover:border-[#414851]/80'
-                        }`}
+                        className="group p-4 rounded-xl bg-[#13161A] border border-[#282D34] hover:border-[#414851] cursor-pointer transition-all flex items-start justify-between gap-3"
                       >
-                        <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
-                          <span className="text-[#AEB5BE] font-semibold flex items-center gap-1.5">
-                            <span
-                              className={`px-1.5 py-0.5 rounded font-bold ${
-                                prob.motorcycleModel.includes('X47')
-                                  ? 'bg-[#38BDF8]/15 text-[#38BDF8] border border-[#38BDF8]/30'
-                                  : 'bg-[#42B883]/15 text-[#42B883] border border-[#42B883]/30'
-                              }`}
-                            >
-                              {prob.motorcycleModel}
-                            </span>
-                            <span className="text-[#707883]">{prob.category}</span>
-                            {(prob as any).pendingSync && (
-                              <span className="px-1.5 py-0.2 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40">
-                                PENDING SYNC
-                              </span>
-                            )}
+                        <div className="flex items-start gap-3 min-w-0">
+                          <span className="text-xs font-mono font-bold text-[#94A3B8] mt-0.5 shrink-0 w-6">
+                            {String(idx + 1).padStart(2, '0')}.
                           </span>
-                          {getSeverityBadge(prob.severity)}
+                          <div className="space-y-1.5 min-w-0">
+                            <div className="text-sm sm:text-base font-semibold text-[#F8FAFC] leading-snug group-hover:text-white">
+                              {cleanIssueTitle(prob.title)}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                              <span
+                                className={`px-2 py-0.5 rounded font-bold ${
+                                  prob.motorcycleModel.includes('X47')
+                                    ? 'bg-[#38BDF8]/15 text-[#38BDF8]'
+                                    : 'bg-[#42B883]/15 text-[#42B883]'
+                                }`}
+                              >
+                                {prob.motorcycleModel}
+                              </span>
+                              <span className="text-[#94A3B8]">{prob.category}</span>
+                              {((prob.mediaUrls && prob.mediaUrls.length > 0) || prob.photoUrl || prob.videoUrl) && (
+                                <span className="flex items-center gap-1 text-[#E8AA45]">
+                                  <Camera className="w-3.5 h-3.5" />
+                                  <span>Media</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
-                        <div className="text-xs font-semibold text-[#F1F3F5] leading-relaxed">
-                          {/^\d+\.\s/.test(prob.title) ? prob.title : `• ${prob.title}`}
-                        </div>
-
-                        {prob.warningMessageOrCode && (
-                          <div className="text-[10px] font-mono text-[#E8AA45] mt-1.5 bg-[#13161A] px-2 py-0.5 rounded w-fit">
-                            {prob.warningMessageOrCode}
-                          </div>
-                        )}
-
-                        {/* Media Badge Indicator */}
-                        {((prob.mediaUrls && prob.mediaUrls.length > 0) || prob.photoUrl || prob.videoUrl) && (
-                          <div className="flex items-center gap-1 mt-1 text-[10px] font-mono text-[#42B883]">
-                            {prob.videoUrl || prob.mediaUrls?.some(m => isVideoMedia(m)) ? (
-                              <Film className="w-3 h-3 text-[#E8AA45]" />
-                            ) : (
-                              <Camera className="w-3 h-3 text-[#42B883]" />
-                            )}
-                            <span>
-                              {prob.mediaUrls?.length || 1} Media Attached (Photo/Video)
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[#282D34] text-[10px] font-mono text-[#707883]">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[#42B883] font-semibold">STATUS: {prob.status.toUpperCase()}</span>
-                            <span>• {prob.firstObservedDate}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              data-testid={`card-view-btn-${prob.id}`}
-                              onClick={e => {
-                                e.stopPropagation();
-                                playTacticalClick();
-                                setSelectedProblem(prob);
-                                setShowDetailModal(true);
-                              }}
-                              className="px-2 py-1 rounded bg-[#13161A] hover:bg-[#252A30] text-[#D4D8DE] border border-[#282D34] flex items-center gap-1 font-bold transition-colors"
-                            >
-                              <Eye className="w-3 h-3 text-[#38BDF8]" />
-                              <span>FULL DETAILS</span>
-                            </button>
-                            <button
-                              type="button"
-                              data-testid={`card-edit-btn-${prob.id}`}
-                              onClick={e => {
-                                e.stopPropagation();
-                                openEditProblem(prob);
-                              }}
-                              className="px-2 py-1 rounded bg-[#E8AA45]/15 hover:bg-[#E8AA45]/30 text-[#E8AA45] border border-[#E8AA45]/40 flex items-center gap-1 font-bold transition-colors"
-                            >
-                              <Edit2 className="w-3 h-3" />
-                              <span>EDIT</span>
-                            </button>
-                          </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            data-testid={`card-edit-btn-${prob.id}`}
+                            onClick={e => {
+                              e.stopPropagation();
+                              openEditProblem(prob);
+                            }}
+                            className="p-1.5 rounded bg-[#191D22] hover:bg-[#E8AA45]/20 text-[#A0A7B0] hover:text-[#E8AA45] border border-[#282D34] transition-colors"
+                            title="Edit Issue"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))
-          )}
-        </div>
-
-        {/* Selected Issue Detail & Progress Updates */}
-        <div className="lg:col-span-7">
-          {selectedProblem ? (
-            <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5 lg:sticky lg:top-4">
-              {renderIssueFullDetails(selectedProblem, false)}
-            </div>
-          ) : (
-            <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-12 text-center text-xs font-mono text-[#707883]">
-              SELECT A PRIORITY ISSUE TO INSPECT DETAILS
-            </div>
-          )}
-        </div>
+            );
+          })
+        )}
       </div>
 
       {/* Modal: Full Details & Actions when User Presses on a Specific Issue */}

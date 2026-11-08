@@ -16,6 +16,23 @@ export interface IndiaTownEntry {
  * Used alongside live OpenStreetMap Nominatim & Photon geocoding for instant Google Maps-style search.
  */
 export const ALL_INDIA_CITIES_AND_TOWNS: IndiaTownEntry[] = [
+  // POPULAR RIDING HANGARS, HILLS & HIGHWAY TEA/FOOD BREAK HUBS
+  { name: 'Ultraviolette Hangar Indiranagar', state: 'Karnataka', district: 'Bengaluru Urban', lat: 12.9719, lng: 77.6412, aliases: ['Bengaluru Hangar', 'UV Hangar', 'Indiranagar Hangar'], category: 'UV Hangar' },
+  { name: 'Nandi Hills Summit', state: 'Karnataka', district: 'Chikkaballapur', lat: 13.3702, lng: 77.6835, aliases: ['Nandi Hills', 'Nandi Betta'], category: 'Hill Station' },
+  { name: 'Hebbal Flyover', state: 'Karnataka', district: 'Bengaluru Urban', lat: 13.0358, lng: 77.5970, aliases: ['Hebbal Esteem Mall', 'Hebbal'], category: 'Meeting Point' },
+  { name: 'Nelamangala Toll Gate', state: 'Karnataka', district: 'Bengaluru Rural', lat: 13.0993, lng: 77.3936, aliases: ['Nelamangala Toll Plaza', 'Tumkur Road Toll'], category: 'Meeting Point' },
+  { name: 'Hoskote Toll Gate', state: 'Karnataka', district: 'Bengaluru Rural', lat: 13.0707, lng: 77.7981, aliases: ['Hoskote Toll Plaza', 'Kolar Highway Toll'], category: 'Meeting Point' },
+  { name: 'Electronic City Toll Plaza', state: 'Karnataka', district: 'Bengaluru Urban', lat: 12.8452, lng: 77.6602, aliases: ['Silk Board', 'ECity Toll'], category: 'Meeting Point' },
+  { name: 'Nice Road Bannerghatta Toll', state: 'Karnataka', district: 'Bengaluru Urban', lat: 12.8636, lng: 77.5858, aliases: ['NICE Road Toll', 'Kanaka Pura Toll'], category: 'Meeting Point' },
+  { name: 'Indian Paratha Company (IPC) Devanahalli', state: 'Karnataka', district: 'Bengaluru Rural', lat: 13.3145, lng: 77.7342, aliases: ['IPC', 'Indian Paratha Company', 'Paratha Stop'], category: 'Tea / Food Break' },
+  { name: 'Nandi Upachar Devanahalli', state: 'Karnataka', district: 'Bengaluru Rural', lat: 13.2610, lng: 77.7165, aliases: ['Nandi Upachar', 'Breakfast Stop Devanahalli'], category: 'Tea / Food Break' },
+  { name: 'Maddur Tiffany\'s Highway Plaza', state: 'Karnataka', district: 'Mandya', lat: 12.5841, lng: 77.0428, aliases: ['Maddur Vada', 'Maddur Tiffanys'], category: 'Tea / Food Break' },
+  { name: 'Swathi Delicacy Kunigal', state: 'Karnataka', district: 'Tumakuru', lat: 13.0218, lng: 76.9954, aliases: ['Swathi Delicacy', 'Hassan Highway Breakfast', 'Kunigal Bypass'], category: 'Tea / Food Break' },
+  { name: 'Rasta Cafe Mysore Road', state: 'Karnataka', district: 'Ramanagara', lat: 12.6852, lng: 77.2412, aliases: ['Rasta Cafe', 'Bidadi Coffee Stop'], category: 'Tea / Food Break' },
+  { name: 'Cafe Coffee Day Kolar Highway', state: 'Karnataka', district: 'Kolar', lat: 13.1124, lng: 78.0412, aliases: ['CCD Kolar', 'Woodys Kolar', 'Narsapura Breakfast Stop'], category: 'Tea / Food Break' },
+  { name: 'A2B Adyar Ananda Bhavan Hosur', state: 'Tamil Nadu', district: 'Krishnagiri', lat: 12.7126, lng: 77.8685, aliases: ['A2B Hosur', 'Shoolagiri A2B', 'McDonalds Shoolagiri'], category: 'Tea / Food Break' },
+  { name: 'Murugan Idli Shop Krishnagiri', state: 'Tamil Nadu', district: 'Krishnagiri', lat: 12.5386, lng: 78.2137, aliases: ['Murugan Idli', 'Krishnagiri Toll Breakfast'], category: 'Tea / Food Break' },
+  { name: 'Kamat Upachar Tumakuru', state: 'Karnataka', district: 'Tumakuru', lat: 13.4125, lng: 77.0612, aliases: ['Kamat Upachar', 'Sira Highway Breakfast'], category: 'Tea / Food Break' },
   // KARNATAKA (All districts & major taluks/towns)
   { name: 'Bengaluru', state: 'Karnataka', district: 'Bengaluru Urban', lat: 12.9716, lng: 77.5946, aliases: ['Bangalore', 'BLR'] },
   { name: 'Mysuru', state: 'Karnataka', district: 'Mysuru', lat: 12.2958, lng: 76.6394, aliases: ['Mysore'] },

@@ -23,10 +23,13 @@ import {
   sanitizeContributionConfig,
   redactContributionForPublicWall,
   buildUpiPaymentUri,
+  buildUpiIntentUri,
+  openInUpiApp,
   validateContributionSubmission,
   type ContributionConfig,
   type ContributionOptionId,
-  type ContributionRecord
+  type ContributionRecord,
+  type UpiAppTarget
 } from '../utils/rules';
 import {
   CACHE_KEYS,
@@ -98,6 +101,7 @@ export const ContributionHub: React.FC<ContributionHubProps> = ({ onBackToCockpi
     text: string;
   } | null>(null);
   const [copiedUpi, setCopiedUpi] = useState(false);
+  const [launchedUpiAppLabel, setLaunchedUpiAppLabel] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUser?.fullName && !contributorName) {
@@ -171,6 +175,32 @@ export const ContributionHub: React.FC<ContributionHubProps> = ({ onBackToCockpi
     }
     setCopiedUpi(true);
     setTimeout(() => setCopiedUpi(false), 2200);
+  };
+
+  const handleLaunchUpiApp = async (app: UpiAppTarget) => {
+    playTacticalClick();
+    try {
+      await navigator.clipboard.writeText(config.upiId);
+    } catch {
+      // Fallback if clipboard API is restricted
+    }
+    setCopiedUpi(true);
+    const appLabel =
+      app === 'gpay'
+        ? 'Google Pay (GPay)'
+        : app === 'phonepe'
+        ? 'PhonePe'
+        : app === 'paytm'
+        ? 'Paytm'
+        : 'UPI App';
+    setLaunchedUpiAppLabel(appLabel);
+    setTimeout(() => {
+      setCopiedUpi(false);
+    }, 2400);
+    setTimeout(() => {
+      setLaunchedUpiAppLabel(null);
+    }, 5000);
+    openInUpiApp(upiUri, app);
   };
 
   const upiUri = useMemo(
@@ -720,10 +750,13 @@ export const ContributionHub: React.FC<ContributionHubProps> = ({ onBackToCockpi
                 </div>
 
                 <a
-                  href={upiUri}
+                  href={buildUpiIntentUri(upiUri, 'upi')}
                   data-testid="launch-upi-pay-link"
-                  onClick={() => playTacticalClick()}
-                  className="w-full py-2.5 px-4 rounded-xl bg-[#0A1426] hover:bg-[#10203C] border border-[#38BDF8]/70 text-[#38BDF8] font-mono font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors"
+                  onClick={e => {
+                    e.preventDefault();
+                    void handleLaunchUpiApp('upi');
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#0A1426] hover:bg-[#10203C] border border-[#38BDF8]/70 text-[#38BDF8] font-mono font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
                   <ExternalLink className="w-4 h-4" />
                   <span>Pay {effectiveAmountInr.toLocaleString('en-IN')} Rs via UPI App</span>
@@ -731,27 +764,51 @@ export const ContributionHub: React.FC<ContributionHubProps> = ({ onBackToCockpi
 
                 <div className="grid grid-cols-3 gap-2">
                   <a
-                    href={upiUri.replace(/^upi:\/\/pay/, 'tez://upi/pay')}
-                    onClick={() => playTacticalClick()}
-                    className="py-1.5 px-2 rounded-lg bg-[#050B16] hover:bg-[#0D1A30] border border-[#1E2D42] text-[#CBD5E1] font-mono text-[10px] font-bold uppercase text-center transition-colors"
+                    href={buildUpiIntentUri(upiUri, 'gpay')}
+                    data-testid="launch-gpay-btn"
+                    onClick={e => {
+                      e.preventDefault();
+                      void handleLaunchUpiApp('gpay');
+                    }}
+                    className="py-1.5 px-2 rounded-lg bg-[#050B16] hover:bg-[#0D1A30] border border-[#1E2D42] text-[#CBD5E1] font-mono text-[10px] font-bold uppercase text-center transition-colors cursor-pointer"
                   >
                     GPay
                   </a>
                   <a
-                    href={upiUri.replace(/^upi:\/\/pay/, 'phonepe://pay')}
-                    onClick={() => playTacticalClick()}
-                    className="py-1.5 px-2 rounded-lg bg-[#050B16] hover:bg-[#0D1A30] border border-[#1E2D42] text-[#CBD5E1] font-mono text-[10px] font-bold uppercase text-center transition-colors"
+                    href={buildUpiIntentUri(upiUri, 'phonepe')}
+                    data-testid="launch-phonepe-btn"
+                    onClick={e => {
+                      e.preventDefault();
+                      void handleLaunchUpiApp('phonepe');
+                    }}
+                    className="py-1.5 px-2 rounded-lg bg-[#050B16] hover:bg-[#0D1A30] border border-[#1E2D42] text-[#CBD5E1] font-mono text-[10px] font-bold uppercase text-center transition-colors cursor-pointer"
                   >
                     PhonePe
                   </a>
                   <a
-                    href={upiUri.replace(/^upi:\/\/pay/, 'paytmmp://pay')}
-                    onClick={() => playTacticalClick()}
-                    className="py-1.5 px-2 rounded-lg bg-[#050B16] hover:bg-[#0D1A30] border border-[#1E2D42] text-[#CBD5E1] font-mono text-[10px] font-bold uppercase text-center transition-colors"
+                    href={buildUpiIntentUri(upiUri, 'paytm')}
+                    data-testid="launch-paytm-btn"
+                    onClick={e => {
+                      e.preventDefault();
+                      void handleLaunchUpiApp('paytm');
+                    }}
+                    className="py-1.5 px-2 rounded-lg bg-[#050B16] hover:bg-[#0D1A30] border border-[#1E2D42] text-[#CBD5E1] font-mono text-[10px] font-bold uppercase text-center transition-colors cursor-pointer"
                   >
                     Paytm
                   </a>
                 </div>
+
+                {launchedUpiAppLabel && (
+                  <div
+                    data-testid="upi-app-launch-status"
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#04111D] border border-[#38BDF8]/40 text-[11px] font-mono text-[#7DD3FC]"
+                  >
+                    <span>
+                      Opening {launchedUpiAppLabel} ({effectiveAmountInr.toLocaleString('en-IN')} Rs) · UPI ID copied
+                    </span>
+                    <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                  </div>
+                )}
               </div>
             )}
 

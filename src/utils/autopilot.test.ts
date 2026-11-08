@@ -307,8 +307,10 @@ test('Auto Pilot: buildAutoPilotNavigationStages reuses Google Maps dir URL and 
 
   const stages = buildAutoPilotNavigationStages(START_BLR, manyStops, [], DEST_CHN, 8);
   assert.equal(stages.length, 2, '10 intermediate stops with limit 8 should split into 2 sequential stages');
-  assert.ok(stages[0].url.startsWith('https://www.google.com/maps/dir/?api=1'));
-  assert.ok(stages[0].url.includes('waypoints='));
+  assert.ok(stages[0].url.startsWith('https://maps.google.com/maps?saddr='));
+  assert.ok(!stages[0].url.includes('intent://'));
+  assert.ok(stages[0].url.includes('daddr='));
+  assert.ok(stages[0].url.includes('+to:'), 'Intermediate charging stops must be chained in daddr via +to: for Google Maps multi-stop navigation');
   assert.equal(stages[0].waypointNames.length, 8);
   assert.equal(stages[1].originName, 'Stop 9');
   assert.equal(stages[1].destinationName, DEST_CHN.name);
@@ -377,8 +379,8 @@ test('Auto Pilot: resolveNextChargerNavigation identifies next unreached stop an
   const nav = resolveNextChargerNavigation(START_BLR, stops, null);
   assert.equal(nav.allReached, false);
   assert.equal(nav.nextStop?.station.id, 'cs_2');
-  assert.ok(nav.url?.includes('12.800000%2C77.400000'), 'Uses last reached stop as origin when GPS is not active');
-  assert.ok(nav.url?.includes('12.600000%2C77.100000'), 'Targets next unreached stop as destination');
+  assert.ok(nav.url?.includes('12.800000,77.400000'), 'Uses last reached stop as origin when GPS is not active');
+  assert.ok(nav.url?.includes('12.600000,77.100000'), 'Targets next unreached stop as destination');
 });
 
 test('Auto Pilot: discoverCorridorPitStops finds real restaurants/cafes along route without including pure EV chargers', () => {

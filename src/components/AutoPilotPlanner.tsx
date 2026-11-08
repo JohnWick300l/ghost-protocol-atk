@@ -36,6 +36,9 @@ import {
   planAutoPilotMission,
   resolveNextChargerNavigation,
   discoverCorridorPitStops,
+  discoverRouteCorridorDefinitions,
+  buildFallbackRouteCandidates,
+  evaluateAutoPilotRouteOptions,
   VALID_CHARGER_REPORT_CATEGORIES,
   type RouteCoordinate,
   type EligibleChargerRecord,
@@ -43,7 +46,9 @@ import {
   type ChargerReportCategory,
   type PlannedPitStop,
   type RangeGuardConfig,
-  type AutoPilotMissionRecord
+  type AutoPilotMissionRecord,
+  type AutoPilotRouteCandidateGeometry,
+  type EvaluatedAutoPilotRouteOption
 } from '../utils/autopilot';
 import {
   VALID_CHARGER_PLUG_TYPES,
@@ -116,59 +121,10 @@ const DEFAULT_DESTINATION: RouteCoordinate = {
   longitude: 80.2824
 };
 
-const QUICK_CORRIDOR_PRESETS: {
-  id: string;
-  label: string;
-  subtitle: string;
-  start: RouteCoordinate;
-  destination: RouteCoordinate;
-}[] = [
-  {
-    id: 'blr_chn',
-    label: 'Bengaluru → Chennai (345 km)',
-    subtitle: 'Multi-stop NH 75 / NH 48 corridor via Kolar, Mulbagal, Vellore & Sriperumbudur',
-    start: DEFAULT_START,
-    destination: DEFAULT_DESTINATION
-  },
-  {
-    id: 'blr_mys',
-    label: 'Bengaluru → Mysuru Palace (146 km)',
-    subtitle: 'NH 275 Expressway sortie via Channapatna Supernova & Maddur',
-    start: DEFAULT_START,
-    destination: {
-      name: 'Mysuru Palace Main Gate',
-      locality: 'Agrahara, Mysuru',
-      address: 'Sayyaji Rao Rd, Agrahara, Chamrajpura, Mysuru, Karnataka 570001',
-      latitude: 12.3051,
-      longitude: 76.6551
-    }
-  },
-  {
-    id: 'blr_kolar',
-    label: 'Bengaluru → Kolar CCD (68 km)',
-    subtitle: 'Short breakfast run — reachable without intermediate charging stops',
-    start: DEFAULT_START,
-    destination: {
-      name: 'Café Coffee Day — Kolar NH75 Highway',
-      locality: 'Tamaka, Kolar',
-      address: 'NH 75 Bengaluru-Tirupati Highway, Tamaka, Kolar, Karnataka 563103',
-      latitude: 13.1328,
-      longitude: 78.1715
-    }
-  }
-];
 
 const SQUADRON_ROSTER = [
   { id: 'u_admin', name: 'Abinav Thejas K' }
 ];
-
-function formatDuration(minutes: number | null): string {
-  if (minutes === null || !isFinite(minutes) || minutes <= 0) return 'N/A';
-  const hrs = Math.floor(minutes / 60);
-  const mins = Math.round(minutes % 60);
-  if (hrs === 0) return `${mins} min`;
-  return `${hrs}h ${mins}m`;
-}
 
 export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
   stations,
@@ -241,13 +197,15 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
     reserveRangeKm: 25
   });
 
-  // 4. OSRM Driving Route Geometry & Weather State
+  // 4. OSRM Driving Route Geometry, Multi-Route Candidates & Weather State
   const [routePolyline, setRoutePolyline] = useState<[number, number][]>([]);
   const [roadDistanceKm, setRoadDistanceKm] = useState<number | null>(null);
   const [roadDurationMin, setRoadDurationMin] = useState<number | null>(null);
   const [routingAvailable, setRoutingAvailable] = useState<boolean>(true);
   const [routingLimitationNote, setRoutingLimitationNote] = useState<string | undefined>(undefined);
   const [routeLoading, setRouteLoading] = useState<boolean>(false);
+  const [candidateRoutes, setCandidateRoutes] = useState<AutoPilotRouteCandidateGeometry[]>([]);
+  const [selectedRouteId, setSelectedRouteId] = useState<string>('');
 
   const [weather, setWeather] = useState<CorridorWeatherState>({
     loading: false,
@@ -514,7 +472,28 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
     const dLat = destination.latitude;
     const dLon = destination.longitude;
 
-    // 1. Immediately hydrate from phone storage if this corridor was previously cached
+    const activeStationPool =
+      allStationsForValidation.length > 0 ? allStationsForValidation : stations;
+    const corridorDefs = discoverRouteCorridorDefinitions(
+      startLocation,
+      destination,
+      activeStationPool
+    );
+    const instantFallbackRoutes = buildFallbackRouteCandidates(
+      startLocation,
+      destination,
+      activeStationPool,
+      corridorDefs
+    );
+
+    // 1. Immediately hydrate multi-route candidates so multiple routes are visible right away
+    setCandidateRoutes(instantFallbackRoutes);
+    setSelectedRouteId(prev =>
+      instantFallbackRoutes.some(r => r.id === prev)
+        ? prev
+        : instantFallbackRoutes[0]?.id || ''
+    );
+
     const cachedRoute = loadCachedRouteFromPhone(sLat, sLon, dLat, dLon);
     if (cachedRoute && Array.isArray(cachedRoute.polyline) && cachedRoute.polyline.length >= 2) {
       setRoutePolyline(cachedRoute.polyline);
@@ -522,6 +501,11 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
       setRoadDurationMin(cachedRoute.durationMin);
       setRoutingAvailable(cachedRoute.routingAvailable);
       setRoutingLimitationNote(cachedRoute.routingLimitationNote);
+    } else if (instantFallbackRoutes[0]) {
+      setRoutePolyline(instantFallbackRoutes[0].polyline);
+      setRoadDistanceKm(instantFallbackRoutes[0].distanceKm);
+      setRoadDurationMin(instantFallbackRoutes[0].durationMin);
+      setRoutingAvailable(true);
     }
 
     const cachedWeather = loadCachedWeatherFromPhone(sLat, sLon, dLat, dLon);
@@ -536,33 +520,27 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
     }
 
     const applyOfflineFallbackRoute = () => {
-      if (cachedRoute && Array.isArray(cachedRoute.polyline) && cachedRoute.polyline.length >= 2) {
-        setRoutePolyline(cachedRoute.polyline);
-        setRoadDistanceKm(cachedRoute.distanceKm);
-        setRoadDurationMin(cachedRoute.durationMin);
+      setCandidateRoutes(instantFallbackRoutes);
+      const firstRoute = instantFallbackRoutes[0];
+      if (firstRoute) {
+        setSelectedRouteId(prev =>
+          instantFallbackRoutes.some(r => r.id === prev) ? prev : firstRoute.id
+        );
+        setRoutePolyline(firstRoute.polyline);
+        setRoadDistanceKm(firstRoute.distanceKm);
+        setRoadDurationMin(firstRoute.durationMin);
         setRoutingAvailable(true);
-        setRoutingLimitationNote('Loaded cached corridor route from phone storage (Offline Mode).');
-        return;
+        setRoutingLimitationNote(
+          'Offline multi-corridor highway geometry active (calculated from phone storage).'
+        );
+        saveCachedRouteToPhone(sLat, sLon, dLat, dLon, {
+          polyline: firstRoute.polyline,
+          distanceKm: firstRoute.distanceKm,
+          durationMin: firstRoute.durationMin,
+          routingAvailable: true,
+          routingLimitationNote: 'Offline highway corridor geometry cached on phone.'
+        });
       }
-      const generated = generateOfflineCorridorGeometry(
-        startLocation,
-        destination,
-        allStationsForValidation.length > 0 ? allStationsForValidation : stations
-      );
-      setRoutePolyline(generated.polyline);
-      setRoadDistanceKm(generated.distanceKm);
-      setRoadDurationMin(generated.durationMin);
-      setRoutingAvailable(true);
-      setRoutingLimitationNote(
-        'Offline highway corridor geometry active (calculated from phone storage).'
-      );
-      saveCachedRouteToPhone(sLat, sLon, dLat, dLon, {
-        polyline: generated.polyline,
-        distanceKm: generated.distanceKm,
-        durationMin: generated.durationMin,
-        routingAvailable: true,
-        routingLimitationNote: 'Offline highway corridor geometry cached on phone.'
-      });
     };
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -580,29 +558,71 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             points: [
-              { latitude: sLat, longitude: sLon },
-              { latitude: dLat, longitude: dLon }
-            ]
+              {
+                name: startLocation?.name,
+                locality: startLocation?.locality,
+                address: startLocation?.address,
+                latitude: sLat,
+                longitude: sLon
+              },
+              {
+                name: destination?.name,
+                locality: destination?.locality,
+                address: destination?.address,
+                latitude: dLat,
+                longitude: dLon
+              }
+            ],
+            corridors: corridorDefs
           })
         });
 
         if (!cancelled && routeRes.ok) {
           const rData = await routeRes.json();
-          const avail = Boolean(rData.routingAvailable);
-          const dist = typeof rData.distanceKm === 'number' ? rData.distanceKm : null;
-          const dur = typeof rData.durationMin === 'number' ? rData.durationMin : null;
+          const serverRoutes: AutoPilotRouteCandidateGeometry[] =
+            Array.isArray(rData.routes) && rData.routes.length > 0
+              ? rData.routes
+              : instantFallbackRoutes;
+
+          setCandidateRoutes(serverRoutes);
+          setSelectedRouteId(prev => {
+            const matched = serverRoutes.find(r => r.id === prev) || serverRoutes[0];
+            if (matched) {
+              setRoutingAvailable(Boolean(matched.routingAvailable));
+              setRoutingLimitationNote(rData.routingLimitationNote);
+              setRoadDistanceKm(matched.distanceKm);
+              setRoadDurationMin(matched.durationMin);
+              setRoutePolyline(matched.polyline);
+              return matched.id;
+            }
+            return prev;
+          });
+
+          const primaryCache = serverRoutes[0];
+          const avail = Boolean(
+            primaryCache ? primaryCache.routingAvailable : rData.routingAvailable
+          );
+          const dist =
+            primaryCache && typeof primaryCache.distanceKm === 'number'
+              ? primaryCache.distanceKm
+              : typeof rData.distanceKm === 'number'
+              ? rData.distanceKm
+              : null;
+          const dur =
+            primaryCache && typeof primaryCache.durationMin === 'number'
+              ? primaryCache.durationMin
+              : typeof rData.durationMin === 'number'
+              ? rData.durationMin
+              : null;
           const poly: [number, number][] =
-            Array.isArray(rData.polyline) && rData.polyline.length >= 2
+            primaryCache && Array.isArray(primaryCache.polyline) && primaryCache.polyline.length >= 2
+              ? primaryCache.polyline
+              : Array.isArray(rData.polyline) && rData.polyline.length >= 2
               ? rData.polyline
               : [
                   [sLat, sLon],
                   [dLat, dLon]
                 ];
-          setRoutingAvailable(avail);
-          setRoutingLimitationNote(rData.routingLimitationNote);
-          setRoadDistanceKm(dist);
-          setRoadDurationMin(dur);
-          setRoutePolyline(poly);
 
           saveCachedRouteToPhone(sLat, sLon, dLat, dLon, {
             polyline: poly,
@@ -664,9 +684,79 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
     destination?.longitude
   ]);
 
-  // Compute complete Auto Pilot plan deterministically via pure engine
+  // Evaluate all discovered routes so each route shows total distance and total chargers on route
+  const evaluatedRouteOptions = useMemo<EvaluatedAutoPilotRouteOption[]>(() => {
+    if (!startLocation || !destination) return [];
+    const activeStations =
+      allStationsForValidation.length > 0 ? allStationsForValidation : stations;
+    const effectiveCandidates =
+      candidateRoutes.length > 0
+        ? candidateRoutes
+        : buildFallbackRouteCandidates(startLocation, destination, activeStations);
+
+    return evaluateAutoPilotRouteOptions(effectiveCandidates, {
+      startLocation,
+      destination,
+      allStations: activeStations,
+      reports: chargerReports,
+      targetIntervalKm,
+      preferredChargerTypes,
+      manualAddedStationIds: manualAddedIds,
+      removedStationIds: removedIds,
+      replacedStopMap,
+      reachedStopIds,
+      confirmedChargedIds,
+      pitStops: selectedPitStops,
+      rangeGuard,
+      previousPlannedStationIds
+    });
+  }, [
+    startLocation,
+    destination,
+    candidateRoutes,
+    allStationsForValidation,
+    stations,
+    chargerReports,
+    targetIntervalKm,
+    preferredChargerTypes,
+    manualAddedIds,
+    removedIds,
+    replacedStopMap,
+    reachedStopIds,
+    confirmedChargedIds,
+    selectedPitStops,
+    rangeGuard,
+    previousPlannedStationIds
+  ]);
+
+  const activeRouteOption = useMemo<EvaluatedAutoPilotRouteOption | null>(() => {
+    if (evaluatedRouteOptions.length === 0) return null;
+    return (
+      evaluatedRouteOptions.find(r => r.id === selectedRouteId) ||
+      evaluatedRouteOptions[0] ||
+      null
+    );
+  }, [evaluatedRouteOptions, selectedRouteId]);
+
+  const handleSelectRouteOption = (routeId: string) => {
+    const found = evaluatedRouteOptions.find(r => r.id === routeId);
+    setSelectedRouteId(routeId);
+    if (found) {
+      setRoutePolyline(found.polyline);
+      setRoadDistanceKm(found.distanceKm);
+      setRoadDurationMin(found.durationMin);
+      setRoutingAvailable(found.routingAvailable);
+      setRoutingLimitationNote(found.routingLimitationNote);
+      setActiveStopId(null);
+    }
+  };
+
+  // Compute complete Auto Pilot plan deterministically via pure engine (using active selected route)
   const planResult = useMemo(() => {
     if (!startLocation || !destination) return null;
+    if (activeRouteOption) {
+      return activeRouteOption.planResult;
+    }
     return planAutoPilotMission({
       startLocation,
       destination,
@@ -691,6 +781,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
   }, [
     startLocation,
     destination,
+    activeRouteOption,
     routePolyline,
     roadDistanceKm,
     roadDurationMin,
@@ -937,21 +1028,6 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
     );
   };
 
-  const handleApplyPreset = (preset: (typeof QUICK_CORRIDOR_PRESETS)[number]) => {
-    setStartLocation(preset.start);
-    setDestination(preset.destination);
-    setStartSearchText(preset.start.name);
-    setDestSearchText(preset.destination.name);
-    setMissionNameInput(`AUTO PILOT: ${preset.label.toUpperCase()}`);
-    setManualAddedIds([]);
-    setRemovedIds([]);
-    setReplacedStopMap({});
-    setReachedStopIds({});
-    setConfirmedChargedIds({});
-    setSelectedPitStops([]);
-    setPreviousPlannedStationIds([]);
-    setActiveMissionId(null);
-  };
 
   const handleTogglePlugPreference = (plug: ChargerPlugType) => {
     setPreferredChargerTypes(prev =>
@@ -1289,73 +1365,137 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
     return planResult.eligibleCorridorChargers.filter(c => !selectedSet.has(c.station.id));
   }, [planResult]);
 
-  return (
-    <div className="space-y-6">
-      {/* ========================================================= */}
-      {/* 1. ROUTE CONFIGURATION & LOCATION AUTOCOMPLETE DECK        */}
-      {/* ========================================================= */}
-      <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-5 sm:p-6 shadow-xl">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 mb-5 border-b border-slate-800/80">
-          <div>
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-[#FF5500]/15 border border-[#FF5500]/40 text-[#FF5500] text-[10px] font-mono uppercase tracking-widest mb-1.5 font-bold">
-              <Compass className="w-3.5 h-3.5" />
-              GHOST PROTOCOL // AUTO PILOT FLIGHT DECK
-            </div>
-            <h3 className="text-xl sm:text-2xl font-display font-bold text-white uppercase tracking-wider">
-              AUTO PILOT — Intelligent EV Motorcycle Corridor &amp; Charger Planner
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Plans optimal charging stops (~{targetIntervalKm} km target intervals), identifies corridor backup chargers, and generates 1-click Google Maps turn-by-turn navigation handoffs.
-            </p>
-          </div>
+  const [showRouteOptions, setShowRouteOptions] = useState(false);
+  const [showMoreTools, setShowMoreTools] = useState(false);
 
-          {/* Quick Corridor Presets */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 mr-1">
-              QUICK CORRIDORS:
+  return (
+    <div className="space-y-4">
+      {/* ========================================================= */}
+      {/* 1. CHOOSE STARTING LOCATION & FINAL DESTINATION            */}
+      {/* ========================================================= */}
+      <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-4 sm:p-5 shadow-xl">
+        {/* Quick Corridor Presets & Optional Settings Toggle */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3.5 border-b border-slate-800/80">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold mr-1">
+              Quick Corridors:
             </span>
-            {QUICK_CORRIDOR_PRESETS.map(preset => (
+            {[
+              {
+                id: 'preset_blr_kerala',
+                label: 'Bengaluru → Kerala (Mysuru / Salem)',
+                start: {
+                  name: 'Ultraviolette Hangar Indiranagar',
+                  locality: 'Indiranagar, Bengaluru',
+                  address: '529, 100 Feet Rd, HAL 2nd Stage, Indiranagar, Bengaluru, Karnataka',
+                  latitude: 12.9719,
+                  longitude: 77.6412
+                },
+                dest: {
+                  name: 'Kerala — Kochi (Edappally NH 66 Hub)',
+                  locality: 'Kochi, Kerala',
+                  address: 'Edappally NH 66 / NH 544 Highway Junction, Kochi, Kerala 682024',
+                  latitude: 10.0190,
+                  longitude: 76.3142
+                }
+              },
+              {
+                id: 'preset_blr_mysuru',
+                label: 'Bengaluru → Mysuru',
+                start: {
+                  name: 'Ultraviolette Hangar Indiranagar',
+                  locality: 'Indiranagar, Bengaluru',
+                  address: '529, 100 Feet Rd, HAL 2nd Stage, Indiranagar, Bengaluru, Karnataka',
+                  latitude: 12.9719,
+                  longitude: 77.6412
+                },
+                dest: {
+                  name: 'Mysuru Palace & Chamundi Foothills',
+                  locality: 'Agrahara, Mysuru',
+                  address: 'Sayyaji Rao Road, Agrahara, Mysuru, Karnataka 570001',
+                  latitude: 12.3051,
+                  longitude: 76.6551
+                }
+              },
+              {
+                id: 'preset_blr_chennai',
+                label: 'Bengaluru → Chennai',
+                start: {
+                  name: 'Ultraviolette Hangar Indiranagar',
+                  locality: 'Indiranagar, Bengaluru',
+                  address: '529, 100 Feet Rd, HAL 2nd Stage, Indiranagar, Bengaluru, Karnataka',
+                  latitude: 12.9719,
+                  longitude: 77.6412
+                },
+                dest: {
+                  name: 'ECR Mahabalipuram Coastal Hub, Chennai',
+                  locality: 'Mamallapuram, Chennai Corridor',
+                  address: 'East Coast Road (ECR), Mamallapuram, Chennai Corridor, Tamil Nadu',
+                  latitude: 12.6208,
+                  longitude: 80.1945
+                }
+              }
+            ].map(preset => (
               <button
                 key={preset.id}
                 type="button"
-                onClick={() => handleApplyPreset(preset)}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-[#FF5500]/50 text-[11px] font-mono text-slate-200 transition-colors"
-                title={preset.subtitle}
+                data-testid={preset.id}
+                onClick={() => {
+                  setStartLocation(preset.start);
+                  setDestination(preset.dest);
+                  setStartSearchText(preset.start.name);
+                  setDestSearchText(preset.dest.name);
+                  setManualAddedIds([]);
+                  setRemovedIds([]);
+                  setReplacedStopMap({});
+                  setActiveStopId(null);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-[#FF5500]/60 text-[10px] font-mono text-slate-200 hover:text-white transition-colors cursor-pointer"
               >
                 {preset.label}
               </button>
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowRouteOptions(prev => !prev)}
+            className={`px-2.5 py-1 rounded-lg border text-[10px] font-mono uppercase font-bold flex items-center gap-1.5 transition-colors ${
+              showRouteOptions
+                ? 'bg-[#FF5500]/15 border-[#FF5500] text-[#FF5500]'
+                : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+            }`}
+          >
+            <SlidersHorizontal className="w-3 h-3" />
+            <span>{showRouteOptions ? 'Hide Route Options' : `Stop Interval (${targetIntervalKm} km)`}</span>
+          </button>
         </div>
 
         {/* Start & Destination Search Inputs */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-start">
           {/* Starting Location */}
           <div ref={startContainerRef} className="lg:col-span-5 relative">
             <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
               <label
                 htmlFor="autopilot-start-input"
-                className="text-[11px] font-mono uppercase tracking-wider text-emerald-400 font-bold flex items-center gap-1.5"
+                className="text-xs font-mono uppercase tracking-wider text-emerald-400 font-bold flex items-center gap-1.5"
               >
-                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-                STARTING LOCATION *
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
+                STARTING LOCATION
               </label>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
-                  data-testid="toggle-start-manual-coords-btn"
-                  onClick={() => {
-                    setShowStartManualCoords(prev => !prev);
-                    setStartLatError(undefined);
-                    setStartLonError(undefined);
-                  }}
-                  className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border transition-colors ${
-                    showStartManualCoords
-                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 font-bold'
-                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-emerald-400/60 hover:text-emerald-300'
-                  }`}
+                  onClick={handleUseCurrentLocation}
+                  disabled={gpsLocating}
+                  className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 flex items-center gap-1 font-bold"
                 >
-                  {showStartManualCoords ? 'BACK TO PLACE SEARCH' : 'ENTER COORDINATES'}
+                  {gpsLocating ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <LocateFixed className="w-3 h-3" />
+                  )}
+                  GPS
                 </button>
                 <button
                   type="button"
@@ -1368,20 +1508,23 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                   }`}
                 >
                   <Crosshair className="w-3 h-3 text-emerald-400" />
-                  <span>{mapPickMode === 'start' ? 'Picking on Map...' : 'Pick on Map'}</span>
+                  <span>{mapPickMode === 'start' ? 'Tap Map...' : 'Map'}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={handleUseCurrentLocation}
-                  disabled={gpsLocating}
-                  className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                  data-testid="toggle-start-manual-coords-btn"
+                  onClick={() => {
+                    setShowStartManualCoords(prev => !prev);
+                    setStartLatError(undefined);
+                    setStartLonError(undefined);
+                  }}
+                  className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border transition-colors ${
+                    showStartManualCoords
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 font-bold'
+                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-emerald-400/60'
+                  }`}
                 >
-                  {gpsLocating ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <LocateFixed className="w-3 h-3" />
-                  )}
-                  Use My Current Location
+                  {showStartManualCoords ? 'Search' : 'Coords'}
                 </button>
               </div>
             </div>
@@ -1419,7 +1562,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                     setShowStartDropdown(false);
                   }
                 }}
-                placeholder="Search city, town, village, landmark, cafe, hospital, or address..."
+                placeholder="Enter starting city, area, or landmark..."
                 className="w-full bg-slate-950 border border-slate-700/90 focus:border-emerald-500 rounded-lg pl-10 pr-9 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none"
               />
               {startSearchText && (
@@ -1444,23 +1587,13 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                 data-testid="start-manual-coords-panel"
                 className="mt-2 p-3 rounded-lg bg-slate-900/95 border border-emerald-500/40 space-y-2.5"
               >
-                <div className="flex items-center justify-between text-[10px] font-mono text-emerald-300 uppercase">
-                  <span>Manual Starting Coordinates (WGS84 Decimal)</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowStartManualCoords(false)}
-                    className="text-slate-400 hover:text-white underline"
-                  >
-                    Switch to Place Search
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label
                       htmlFor="autopilot-start-lat-input"
                       className="block text-[10px] font-mono text-slate-300 uppercase mb-1"
                     >
-                      Latitude (-90 to +90) *
+                      Latitude *
                     </label>
                     <input
                       id="autopilot-start-lat-input"
@@ -1494,7 +1627,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                       htmlFor="autopilot-start-lon-input"
                       className="block text-[10px] font-mono text-slate-300 uppercase mb-1"
                     >
-                      Longitude (-180 to +180) *
+                      Longitude *
                     </label>
                     <input
                       id="autopilot-start-lon-input"
@@ -1524,44 +1657,34 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                     )}
                   </div>
                 </div>
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    Resolves address when available or uses exact coordinates directly.
-                  </span>
+                <div className="flex justify-end">
                   <button
                     type="button"
                     data-testid="confirm-start-coords-btn"
                     disabled={startResolvingCoords}
                     onClick={() => handleConfirmManualCoordinates('start')}
-                    className="px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono text-[11px] uppercase font-bold flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                    className="px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono text-[11px] uppercase font-bold flex items-center gap-1.5 disabled:opacity-50"
                   >
                     {startResolvingCoords ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <CheckCircle2 className="w-3.5 h-3.5" />
                     )}
-                    <span>Confirm Coordinates</span>
+                    <span>Confirm Start</span>
                   </button>
                 </div>
               </div>
             )}
 
-            {startLocation ? (
+            {startLocation && (
               <div
                 data-testid="confirmed-start-summary"
-                className="mt-1.5 text-[11px] text-slate-300 flex items-center justify-between gap-2 bg-slate-900/60 px-2.5 py-1.5 rounded border border-slate-800/80"
+                className="mt-1.5 text-[11px] text-slate-300 flex items-center justify-between gap-2 bg-slate-900/60 px-2.5 py-1 rounded border border-slate-800/80"
               >
                 <div className="truncate">
-                  <span className="font-bold text-emerald-400 mr-1.5">{startLocation.name}:</span>
+                  <span className="font-bold text-emerald-400 mr-1">{startLocation.name}</span>
                   <span className="text-slate-400">{startLocation.address}</span>
                 </div>
-                <span className="font-mono text-[10px] text-emerald-400 shrink-0">
-                  {startLocation.latitude.toFixed(4)}, {startLocation.longitude.toFixed(4)}
-                </span>
-              </div>
-            ) : (
-              <div className="mt-1.5 text-[11px] font-mono text-amber-400/90 bg-amber-950/20 border border-amber-500/30 px-2.5 py-1 rounded">
-                Select a place from suggestions, enter coordinates, or pick on map to confirm start.
               </div>
             )}
 
@@ -1569,12 +1692,12 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
               <div
                 role="listbox"
                 aria-label="Starting location suggestions"
-                className="absolute z-30 left-0 right-0 mt-1 bg-[#0D1322] border border-slate-700 rounded-lg shadow-2xl max-h-64 overflow-y-auto"
+                className="absolute z-30 left-0 right-0 mt-1 bg-[#0D1322] border border-slate-700 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
               >
                 {startLoading && (
                   <div className="px-3 py-2 text-xs font-mono text-slate-400 flex items-center gap-2 border-b border-slate-800/60">
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-                    Searching geographic locations...
+                    Searching locations...
                   </div>
                 )}
 
@@ -1598,7 +1721,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                     data-testid="start-no-locations-found"
                     className="p-3 text-xs font-mono text-slate-400"
                   >
-                    No locations found for &ldquo;{startSearchText}&rdquo;. Try another place name or use ENTER COORDINATES.
+                    No locations found for &ldquo;{startSearchText}&rdquo;.
                   </div>
                 ) : (
                   startSuggestions.map((item, idx) => (
@@ -1630,12 +1753,12 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
           </div>
 
           {/* Swap Button */}
-          <div className="lg:col-span-2 flex flex-col items-center justify-center pt-1 lg:pt-6">
+          <div className="lg:col-span-2 flex flex-col items-center justify-center pt-0.5 lg:pt-6">
             <button
               type="button"
               onClick={handleSwapEndpoints}
               disabled={!startLocation || !destination}
-              className="w-full lg:w-auto px-3.5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
+              className="w-full lg:w-auto px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40"
               title="Swap Starting Location and Destination"
             >
               <ArrowUpDown className="w-3.5 h-3.5 text-[#FF5500]" />
@@ -1648,34 +1771,18 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
               <label
                 htmlFor="autopilot-dest-input"
-                className="text-[11px] font-mono uppercase tracking-wider text-[#FF5500] font-bold flex items-center gap-1.5"
+                className="text-xs font-mono uppercase tracking-wider text-[#FF5500] font-bold flex items-center gap-1.5"
               >
-                <span className="w-2 h-2 rounded-full bg-[#FF5500] inline-block" />
-                FINAL DESTINATION *
+                <span className="w-2.5 h-2.5 rounded-full bg-[#FF5500] inline-block" />
+                FINAL DESTINATION
               </label>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {routeLoading && (
                   <span className="text-[10px] font-mono text-amber-400 flex items-center gap-1">
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    Calculating road geometry...
+                    Routing...
                   </span>
                 )}
-                <button
-                  type="button"
-                  data-testid="toggle-dest-manual-coords-btn"
-                  onClick={() => {
-                    setShowDestManualCoords(prev => !prev);
-                    setDestLatError(undefined);
-                    setDestLonError(undefined);
-                  }}
-                  className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border transition-colors ${
-                    showDestManualCoords
-                      ? 'bg-[#FF5500]/20 border-[#FF5500] text-[#FF5500] font-bold'
-                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-[#FF5500]/60 hover:text-[#FF5500]'
-                  }`}
-                >
-                  {showDestManualCoords ? 'BACK TO PLACE SEARCH' : 'ENTER COORDINATES'}
-                </button>
                 <button
                   type="button"
                   data-testid="pick-dest-on-map-btn"
@@ -1687,7 +1794,23 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                   }`}
                 >
                   <Crosshair className="w-3 h-3 text-[#FF5500]" />
-                  <span>{mapPickMode === 'dest' ? 'Picking on Map...' : 'Pick on Map'}</span>
+                  <span>{mapPickMode === 'dest' ? 'Tap Map...' : 'Map'}</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="toggle-dest-manual-coords-btn"
+                  onClick={() => {
+                    setShowDestManualCoords(prev => !prev);
+                    setDestLatError(undefined);
+                    setDestLonError(undefined);
+                  }}
+                  className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border transition-colors ${
+                    showDestManualCoords
+                      ? 'bg-[#FF5500]/20 border-[#FF5500] text-[#FF5500] font-bold'
+                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-[#FF5500]/60'
+                  }`}
+                >
+                  {showDestManualCoords ? 'Search' : 'Coords'}
                 </button>
               </div>
             </div>
@@ -1725,7 +1848,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                     setShowDestDropdown(false);
                   }
                 }}
-                placeholder="Search destination city, town, village, landmark, cafe, or address..."
+                placeholder="Enter destination city, area, or landmark..."
                 className="w-full bg-slate-950 border border-slate-700/90 focus:border-[#FF5500] rounded-lg pl-10 pr-9 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none"
               />
               {destSearchText && (
@@ -1750,23 +1873,13 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                 data-testid="dest-manual-coords-panel"
                 className="mt-2 p-3 rounded-lg bg-slate-900/95 border border-[#FF5500]/40 space-y-2.5"
               >
-                <div className="flex items-center justify-between text-[10px] font-mono text-[#FF5500] uppercase">
-                  <span>Manual Destination Coordinates (WGS84 Decimal)</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowDestManualCoords(false)}
-                    className="text-slate-400 hover:text-white underline"
-                  >
-                    Switch to Place Search
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label
                       htmlFor="autopilot-dest-lat-input"
                       className="block text-[10px] font-mono text-slate-300 uppercase mb-1"
                     >
-                      Latitude (-90 to +90) *
+                      Latitude *
                     </label>
                     <input
                       id="autopilot-dest-lat-input"
@@ -1778,7 +1891,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                         setDestManualLat(e.target.value);
                         if (destLatError) setDestLatError(undefined);
                       }}
-                      placeholder="e.g. 12.9716"
+                      placeholder="e.g. 13.0827"
                       className={`w-full bg-slate-950 border rounded px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none ${
                         destLatError
                           ? 'border-red-500 focus:border-red-400'
@@ -1800,7 +1913,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                       htmlFor="autopilot-dest-lon-input"
                       className="block text-[10px] font-mono text-slate-300 uppercase mb-1"
                     >
-                      Longitude (-180 to +180) *
+                      Longitude *
                     </label>
                     <input
                       id="autopilot-dest-lon-input"
@@ -1812,7 +1925,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                         setDestManualLon(e.target.value);
                         if (destLonError) setDestLonError(undefined);
                       }}
-                      placeholder="e.g. 77.5946"
+                      placeholder="e.g. 80.2707"
                       className={`w-full bg-slate-950 border rounded px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none ${
                         destLonError
                           ? 'border-red-500 focus:border-red-400'
@@ -1830,44 +1943,34 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                     )}
                   </div>
                 </div>
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    Resolves address when available or uses exact coordinates directly.
-                  </span>
+                <div className="flex justify-end">
                   <button
                     type="button"
                     data-testid="confirm-dest-coords-btn"
                     disabled={destResolvingCoords}
                     onClick={() => handleConfirmManualCoordinates('dest')}
-                    className="px-3 py-1.5 rounded bg-[#FF5500] hover:bg-[#FF5500]/90 text-white font-mono text-[11px] uppercase font-bold flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                    className="px-3 py-1.5 rounded bg-[#FF5500] hover:bg-[#FF5500]/90 text-white font-mono text-[11px] uppercase font-bold flex items-center gap-1.5 disabled:opacity-50"
                   >
                     {destResolvingCoords ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <CheckCircle2 className="w-3.5 h-3.5" />
                     )}
-                    <span>Confirm Coordinates</span>
+                    <span>Confirm Destination</span>
                   </button>
                 </div>
               </div>
             )}
 
-            {destination ? (
+            {destination && (
               <div
                 data-testid="confirmed-dest-summary"
-                className="mt-1.5 text-[11px] text-slate-300 flex items-center justify-between gap-2 bg-slate-900/60 px-2.5 py-1.5 rounded border border-slate-800/80"
+                className="mt-1.5 text-[11px] text-slate-300 flex items-center justify-between gap-2 bg-slate-900/60 px-2.5 py-1 rounded border border-slate-800/80"
               >
                 <div className="truncate">
-                  <span className="font-bold text-[#FF5500] mr-1.5">{destination.name}:</span>
+                  <span className="font-bold text-[#FF5500] mr-1">{destination.name}</span>
                   <span className="text-slate-400">{destination.address}</span>
                 </div>
-                <span className="font-mono text-[10px] text-[#FF5500] shrink-0">
-                  {destination.latitude.toFixed(4)}, {destination.longitude.toFixed(4)}
-                </span>
-              </div>
-            ) : (
-              <div className="mt-1.5 text-[11px] font-mono text-amber-400/90 bg-amber-950/20 border border-amber-500/30 px-2.5 py-1 rounded">
-                Select a place from suggestions, enter coordinates, or pick on map to confirm destination.
               </div>
             )}
 
@@ -1875,12 +1978,12 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
               <div
                 role="listbox"
                 aria-label="Destination location suggestions"
-                className="absolute z-30 left-0 right-0 mt-1 bg-[#0D1322] border border-slate-700 rounded-lg shadow-2xl max-h-64 overflow-y-auto"
+                className="absolute z-30 left-0 right-0 mt-1 bg-[#0D1322] border border-slate-700 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
               >
                 {destLoading && (
                   <div className="px-3 py-2 text-xs font-mono text-slate-400 flex items-center gap-2 border-b border-slate-800/60">
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FF5500]" />
-                    Searching geographic locations...
+                    Searching locations...
                   </div>
                 )}
 
@@ -1904,7 +2007,7 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                     data-testid="dest-no-locations-found"
                     className="p-3 text-xs font-mono text-slate-400"
                   >
-                    No locations found for &ldquo;{destSearchText}&rdquo;. Try another place name or use ENTER COORDINATES.
+                    No locations found for &ldquo;{destSearchText}&rdquo;.
                   </div>
                 ) : (
                   destSuggestions.map((item, idx) => (
@@ -1949,608 +2052,467 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
           </div>
         )}
 
-        {/* Planning Interval, Plug Preferences & Optional Range Guard */}
-        <div className="mt-5 pt-4 border-t border-slate-800/80 grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-          {/* Target Stop Interval */}
-          <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 rounded-lg p-3">
-            <div className="flex items-center justify-between text-xs font-mono mb-1.5">
-              <span className="text-slate-400 uppercase flex items-center gap-1.5">
-                <SlidersHorizontal className="w-3.5 h-3.5 text-[#FF5500]" />
-                TARGET CHARGING INTERVAL
-              </span>
-              <span className="text-white font-bold">{targetIntervalKm} KM</span>
+        {/* Collapsible Route Options (Stop Interval, Plug Filter, Range Guard) */}
+        {showRouteOptions && (
+          <div className="mt-4 pt-3.5 border-t border-slate-800/80 grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-center">
+            <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 rounded-lg p-3">
+              <div className="flex items-center justify-between text-xs font-mono mb-1.5">
+                <span className="text-slate-400 uppercase">CHARGING STOP INTERVAL</span>
+                <span className="text-white font-bold">{targetIntervalKm} KM</span>
+              </div>
+              <input
+                type="range"
+                min={60}
+                max={180}
+                step={10}
+                aria-label="Target Charging Interval in Kilometers"
+                value={targetIntervalKm}
+                onChange={e => setTargetIntervalKm(Number(e.target.value))}
+                className="w-full accent-[#FF5500] cursor-pointer"
+              />
             </div>
-            <input
-              type="range"
-              min={60}
-              max={180}
-              step={10}
-              aria-label="Target Charging Interval in Kilometers"
-              value={targetIntervalKm}
-              onChange={e => setTargetIntervalKm(Number(e.target.value))}
-              className="w-full accent-[#FF5500] cursor-pointer"
-            />
-            <div className="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
-              <span>60 km (Conservative)</span>
-              <span>100 km (Default)</span>
-              <span>180 km (Long Leg)</span>
+
+            <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 rounded-lg p-3">
+              <div className="text-[10px] font-mono uppercase text-slate-400 mb-1.5">
+                PREFERRED CHARGER TYPE
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {VALID_CHARGER_PLUG_TYPES.map(plug => {
+                  const active = preferredChargerTypes.includes(plug);
+                  return (
+                    <button
+                      key={plug}
+                      type="button"
+                      onClick={() => handleTogglePlugPreference(plug)}
+                      className={`px-2.5 py-1 rounded text-[11px] font-mono uppercase font-bold border transition-colors ${
+                        active
+                          ? 'bg-[#FF5500]/20 border-[#FF5500] text-white'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {plug}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono uppercase text-cyan-400 font-bold">
+                  RANGE GUARD
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={rangeGuard.enabled}
+                  onClick={() =>
+                    setRangeGuard(prev => ({ ...prev, enabled: !prev.enabled }))
+                  }
+                  className={`px-2.5 py-0.5 rounded text-[10px] font-mono uppercase font-bold border transition-colors ${
+                    rangeGuard.enabled
+                      ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
+                      : 'bg-slate-900 border-slate-700 text-slate-400'
+                  }`}
+                >
+                  {rangeGuard.enabled ? 'ON' : 'OFF'}
+                </button>
+              </div>
+              {rangeGuard.enabled && (
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <div>
+                    <label className="block text-[9px] font-mono text-slate-400 uppercase">
+                      SOC %
+                    </label>
+                    <input
+                      type="number"
+                      min={15}
+                      max={100}
+                      value={rangeGuard.startingBatteryPercent ?? 90}
+                      onChange={e =>
+                        setRangeGuard(prev => ({
+                          ...prev,
+                          startingBatteryPercent: Number(e.target.value)
+                        }))
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-mono text-slate-400 uppercase">
+                      RANGE KM
+                    </label>
+                    <input
+                      type="number"
+                      min={50}
+                      max={320}
+                      value={rangeGuard.estimatedUsableRangeKm ?? 165}
+                      onChange={e =>
+                        setRangeGuard(prev => ({
+                          ...prev,
+                          estimatedUsableRangeKm: Number(e.target.value)
+                        }))
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-mono text-slate-400 uppercase">
+                      RESERVE KM
+                    </label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={80}
+                      value={rangeGuard.reserveRangeKm ?? 25}
+                      onChange={e =>
+                        setRangeGuard(prev => ({
+                          ...prev,
+                          reserveRangeKm: Number(e.target.value)
+                        }))
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
+        )}
+      </div>
 
-          {/* Preferred Plug Types */}
-          <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 rounded-lg p-3">
-            <div className="text-[11px] font-mono uppercase text-slate-400 mb-2">
-              PREFERRED PLUG PRIORITY (OPTIONAL)
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {VALID_CHARGER_PLUG_TYPES.map(plug => {
-                const active = preferredChargerTypes.includes(plug);
-                return (
-                  <button
-                    key={plug}
-                    type="button"
-                    onClick={() => handleTogglePlugPreference(plug)}
-                    className={`px-2.5 py-1 rounded text-[11px] font-mono uppercase font-bold border transition-colors ${
-                      active
-                        ? 'bg-[#FF5500]/20 border-[#FF5500] text-white'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {plug}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Optional Range Guard Toggle */}
-          <div className="lg:col-span-4 bg-slate-950/80 border border-slate-800 rounded-lg p-3">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-mono uppercase text-cyan-400 font-bold flex items-center gap-1.5">
-                <ShieldAlert className="w-3.5 h-3.5" />
-                RANGE GUARD (RIDER ESTIMATE)
-              </span>
+      {/* ========================================================= */}
+      {/* 2. INTERACTIVE ROUTE MAP                                  */}
+      {/* ========================================================= */}
+      {(!startLocation || !destination) && (
+        <div
+          data-testid="awaiting-confirmed-locations-banner"
+          className="bg-amber-950/30 border border-amber-500/40 rounded-xl px-4 py-3 text-xs font-mono text-amber-200 flex flex-wrap items-center justify-between gap-2"
+        >
+          <span>
+            Choose your <strong>Starting Location</strong> and <strong>Final Destination</strong> above or tap on the map below.
+          </span>
+          <div className="flex items-center gap-2">
+            {!startLocation && (
               <button
                 type="button"
-                role="switch"
-                aria-checked={rangeGuard.enabled}
-                onClick={() =>
-                  setRangeGuard(prev => ({ ...prev, enabled: !prev.enabled }))
-                }
-                className={`px-2.5 py-0.5 rounded text-[10px] font-mono uppercase font-bold border transition-colors ${
-                  rangeGuard.enabled
-                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
-                    : 'bg-slate-900 border-slate-700 text-slate-400'
-                }`}
+                onClick={() => setMapPickMode('start')}
+                className="px-2.5 py-1 rounded bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-bold uppercase"
               >
-                {rangeGuard.enabled ? 'ENABLED' : 'OPTIONAL / OFF'}
+                Set Start on Map
               </button>
-            </div>
-
-            {rangeGuard.enabled ? (
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                <div>
-                  <label className="block text-[9px] font-mono text-slate-400 uppercase">
-                    START SOC %
-                  </label>
-                  <input
-                    type="number"
-                    min={15}
-                    max={100}
-                    value={rangeGuard.startingBatteryPercent ?? 90}
-                    onChange={e =>
-                      setRangeGuard(prev => ({
-                        ...prev,
-                        startingBatteryPercent: Number(e.target.value)
-                      }))
-                    }
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[9px] font-mono text-slate-400 uppercase">
-                    USABLE KM
-                  </label>
-                  <input
-                    type="number"
-                    min={50}
-                    max={320}
-                    value={rangeGuard.estimatedUsableRangeKm ?? 165}
-                    onChange={e =>
-                      setRangeGuard(prev => ({
-                        ...prev,
-                        estimatedUsableRangeKm: Number(e.target.value)
-                      }))
-                    }
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[9px] font-mono text-slate-400 uppercase">
-                    RESERVE KM
-                  </label>
-                  <input
-                    type="number"
-                    min={5}
-                    max={80}
-                    value={rangeGuard.reserveRangeKm ?? 25}
-                    onChange={e =>
-                      setRangeGuard(prev => ({
-                        ...prev,
-                        reserveRangeKm: Number(e.target.value)
-                      }))
-                    }
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white"
-                  />
-                </div>
-              </div>
-            ) : (
-              <p className="text-[11px] text-slate-500">
-                Enable to enter starting battery %, usable full-charge range, and safety reserve buffer.
-              </p>
+            )}
+            {!destination && (
+              <button
+                type="button"
+                onClick={() => setMapPickMode('dest')}
+                className="px-2.5 py-1 rounded bg-[#FF5500]/20 border border-[#FF5500] text-[#FF5500] font-bold uppercase"
+              >
+                Set Destination on Map
+              </button>
             )}
           </div>
         </div>
-      </div>
-
-      {/* Unconfirmed Endpoint Notice & Map Picker when one or both locations are missing */}
-      {(!startLocation || !destination) && (
-        <div className="space-y-4">
-          <div
-            data-testid="awaiting-confirmed-locations-banner"
-            className="bg-amber-950/30 border border-amber-500/40 rounded-xl p-4 text-xs font-mono text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-          >
-            <div className="flex items-center gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>
-                Route calculation requires both a confirmed <strong>Starting Location</strong> and{' '}
-                <strong>Final Destination</strong>. Search &amp; select a suggestion, use{' '}
-                <strong>ENTER COORDINATES</strong>, or click directly on the OpenStreetMap below.
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {!startLocation && (
-                <button
-                  type="button"
-                  onClick={() => setMapPickMode('start')}
-                  className="px-2.5 py-1.5 rounded bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-bold uppercase"
-                >
-                  Pick Start on Map
-                </button>
-              )}
-              {!destination && (
-                <button
-                  type="button"
-                  onClick={() => setMapPickMode('dest')}
-                  className="px-2.5 py-1.5 rounded bg-[#FF5500]/20 border border-[#FF5500] text-[#FF5500] font-bold uppercase"
-                >
-                  Pick Destination on Map
-                </button>
-              )}
-            </div>
-          </div>
-
-          <AutoPilotRouteMap
-            startLocation={startLocation}
-            destination={destination}
-            routePolyline={[]}
-            chargingStops={[]}
-            pitStops={[]}
-            eligibleCorridorChargers={[]}
-            activeStopId={null}
-            mapPickMode={mapPickMode}
-            onChangeMapPickMode={setMapPickMode}
-            onConfirmMapLocation={handleConfirmMapLocation}
-            onSelectStop={() => {}}
-            onToggleReached={() => {}}
-            onToggleCharged={() => {}}
-            onReplaceWithBackup={() => {}}
-            onAddManualStop={() => {}}
-            onRemoveStop={() => {}}
-            onRemovePitStop={() => {}}
-          />
-        </div>
       )}
 
-      {/* Validation Error if Start == Destination */}
       {planResult && !planResult.valid && (
-        <div className="bg-red-950/40 border border-red-500/50 rounded-xl p-4 text-sm text-red-200 flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+        <div className="bg-red-950/40 border border-red-500/50 rounded-xl p-3.5 text-xs text-red-200 flex items-center gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
           <span>{planResult.error}</span>
         </div>
       )}
 
-      {planResult && planResult.valid && (
-        <>
-          {/* ========================================================= */}
-          {/* 2. INTERACTIVE ROUTE MAP & ROUTE SUMMARY GRID             */}
-          {/* ========================================================= */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-            {/* Left 7 Cols: Interactive Route Map + External Google Maps Handoff */}
-            <div className="xl:col-span-7 space-y-6">
-              <AutoPilotRouteMap
-                startLocation={startLocation}
-                destination={destination}
-                routePolyline={
-                  routePolyline.length >= 2
-                    ? routePolyline
-                    : startLocation && destination
-                    ? [
-                        [startLocation.latitude, startLocation.longitude],
-                        [destination.latitude, destination.longitude]
-                      ]
-                    : []
-                }
-                chargingStops={planResult.chargingStops}
-                pitStops={planResult.pitStops}
-                eligibleCorridorChargers={planResult.eligibleCorridorChargers}
-                activeStopId={activeStopId}
-                mapPickMode={mapPickMode}
-                onChangeMapPickMode={setMapPickMode}
-                onConfirmMapLocation={handleConfirmMapLocation}
-                onSelectStop={id => setActiveStopId(id)}
-                onToggleReached={handleToggleReached}
-                onToggleCharged={handleToggleCharged}
-                onReplaceWithBackup={handleReplaceWithBackup}
-                onAddManualStop={handleAddManualStop}
-                onRemoveStop={handleRemoveStop}
-                onRemovePitStop={handleRemovePitStop}
-              />
-
-              {/* External Google Maps Turn-by-Turn Navigation Handoff Deck */}
-              <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-5 shadow-xl">
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-800">
-                  <div>
-                    <div className="text-[10px] font-mono uppercase tracking-widest text-[#FF5500] font-bold">
-                      EXTERNAL TURN-BY-TURN HANDOFF // GOOGLE MAPS
-                    </div>
-                    <h4 className="text-base font-display font-bold text-white uppercase tracking-wider">
-                      Launch Multi-Stop Highway Navigation
-                    </h4>
-                  </div>
-                  <span className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 text-[10px] font-mono text-slate-300">
-                    {planResult.navigationStages.length === 1
-                      ? 'SINGLE-STAGE HANDOFF READY'
-                      : `${planResult.navigationStages.length}-STAGE SEQUENTIAL HANDOFF`}
-                  </span>
-                </div>
-
-                {/* Primary Full Route / Stage Buttons */}
-                <div className="space-y-3 mb-4">
-                  {planResult.navigationStages.map(stage => (
-                    <div
-                      key={`nav_stage_${stage.stageNumber}`}
-                      className="p-3.5 rounded-lg bg-slate-950/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                    >
-                      <div>
-                        <div className="text-xs font-mono font-bold text-white">
-                          {stage.label}
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          {stage.instruction}
-                        </div>
-                        {stage.waypointNames.length > 0 && (
-                          <div className="text-[10px] font-mono text-cyan-300 mt-1">
-                            Waypoints ({stage.waypointNames.length}): {stage.waypointNames.join(' → ')}
-                          </div>
-                        )}
-                      </div>
-
-                      <a
-                        href={stage.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        data-testid={`take-off-stage-${stage.stageNumber}-link`}
-                        className="px-4 py-2.5 rounded-lg bg-[#FF5500] hover:bg-[#FF5500]/90 text-white font-mono text-xs uppercase tracking-wider font-bold flex items-center justify-center gap-2 shrink-0 no-underline shadow-lg shadow-[#FF5500]/20"
-                      >
-                        <Navigation className="w-3.5 h-3.5" />
-                        <span>
-                          {planResult.navigationStages.length === 1
-                            ? 'TAKE OFF — START NAVIGATION IN GOOGLE MAPS'
-                            : `TAKE OFF — OPEN STAGE ${stage.stageNumber} IN GOOGLE MAPS`}
-                        </span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Navigate to Next Charger Action */}
-                {planResult.chargingStops.length > 0 && nextChargerNav && (
-                  <div className="p-3.5 rounded-lg bg-cyan-950/20 border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-bold">
-                        NEXT UNREACHED CHARGING STOP
-                      </div>
-                      {nextChargerNav.allReached ? (
-                        <div className="text-xs text-emerald-300 font-mono mt-0.5">
-                          All planned charging stops have been marked as reached! Proceed to final destination.
-                        </div>
-                      ) : nextChargerNav.nextStop ? (
-                        <>
-                          <div className="text-sm font-bold text-white mt-0.5">
-                            Stop #{nextChargerNav.nextStop.order}: {nextChargerNav.nextStop.station.name} (KM{' '}
-                            {nextChargerNav.nextStop.distanceFromStartKm})
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            {nextChargerNav.originDescription}
-                          </div>
-                        </>
-                      ) : null}
-                    </div>
-
-                    {!nextChargerNav.allReached && nextChargerNav.url && (
-                      <a
-                        href={nextChargerNav.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono text-xs uppercase tracking-wider font-bold flex items-center justify-center gap-2 shrink-0 no-underline"
-                      >
-                        <Zap className="w-3.5 h-3.5" />
-                        <span>NAVIGATE TO NEXT CHARGER</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
-                  </div>
-                )}
+      {/* ========================================================= */}
+      {/* 1B. AVAILABLE ROUTES SELECTOR (COMPARE ROUTES & CHARGERS) */}
+      {/* ========================================================= */}
+      {startLocation && destination && evaluatedRouteOptions.length > 0 && (
+        <div
+          data-testid="autopilot-multi-route-selector"
+          className="bg-[#0B0F19] border border-slate-800 rounded-xl p-4 sm:p-5 shadow-xl space-y-3.5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-[#FF5500]" />
+                <span className="text-xs sm:text-sm font-mono uppercase tracking-wider font-bold text-white">
+                  AVAILABLE ROUTES TO DESTINATION ({evaluatedRouteOptions.length}{' '}
+                  {evaluatedRouteOptions.length === 1 ? 'ROUTE' : 'ROUTES'} FOUND)
+                </span>
               </div>
+              <p className="text-[11px] font-mono text-slate-400 mt-0.5">
+                Compare total distance and total chargers on each route below — click any route to select it on the map.
+              </p>
             </div>
-
-            {/* Right 5 Cols: Route Summary Panel */}
-            <div className="xl:col-span-5 space-y-6">
-              <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-5 shadow-xl">
-                <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
-                  <div>
-                    <div className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold">
-                      PRE-FLIGHT TELEMETRY // ROUTE SUMMARY
-                    </div>
-                    <h4 className="text-lg font-display font-bold text-white uppercase tracking-wider">
-                      Route &amp; Charging Summary
-                    </h4>
-                  </div>
-                  <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px] font-mono text-slate-300">
-                    {planResult.briefing.routingSource}
-                  </span>
-                </div>
-
-                {/* Key Metrics Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
-                  <div className="bg-slate-950 border border-slate-800/90 rounded-lg p-3">
-                    <div className="text-[10px] font-mono text-slate-400 uppercase">TOTAL DISTANCE</div>
-                    <div className="text-lg font-mono font-bold text-white mt-0.5">
-                      {planResult.briefing.totalDrivingDistanceKm} <span className="text-xs text-slate-400">KM</span>
-                    </div>
-                  </div>
-                  <div className="bg-slate-950 border border-slate-800/90 rounded-lg p-3">
-                    <div className="text-[10px] font-mono text-slate-400 uppercase">EST. DRIVE TIME</div>
-                    <div className="text-lg font-mono font-bold text-white mt-0.5">
-                      {formatDuration(planResult.briefing.estimatedDrivingDurationMin)}
-                    </div>
-                  </div>
-                  <div className="bg-slate-950 border border-slate-800/90 rounded-lg p-3">
-                    <div className="text-[10px] font-mono text-slate-400 uppercase">CHARGING STOPS</div>
-                    <div className="text-lg font-mono font-bold text-cyan-400 mt-0.5">
-                      {planResult.briefing.selectedStopsCount}
-                    </div>
-                  </div>
-                  <div className="bg-slate-950 border border-slate-800/90 rounded-lg p-3">
-                    <div className="text-[10px] font-mono text-slate-400 uppercase">LONGEST LEG</div>
-                    <div
-                      className={`text-lg font-mono font-bold mt-0.5 ${
-                        planResult.briefing.longestGapKm > 125 ? 'text-amber-400' : 'text-emerald-400'
-                      }`}
-                    >
-                      {planResult.briefing.longestGapKm} <span className="text-xs">KM</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Detour Impact Summary */}
-                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-800 text-xs font-mono text-slate-300 mb-4">
-                  <span>
-                    Direct Corridor: <strong>{planResult.briefing.baseDirectDrivingDistanceKm} km</strong>
-                  </span>
-                  <span>
-                    Stop Detour Overhead:{' '}
-                    <strong className="text-[#FF5500]">
-                      +{planResult.briefing.totalDetourDistanceKm} km
-                    </strong>
-                    {planResult.briefing.estimatedDetourDurationMin !== null
-                      ? ` (~${planResult.briefing.estimatedDetourDurationMin} min)`
-                      : ''}
-                  </span>
-                </div>
-
-                {/* Weather & Riding Conditions Snapshot */}
-                {weather.available && weather.originWeather && weather.destinationWeather && (
-                  <div className="mb-4 p-3 rounded-lg bg-slate-950/90 border border-slate-800">
-                    <div className="flex items-center justify-between text-[10px] font-mono uppercase text-slate-400 mb-2">
-                      <span className="flex items-center gap-1.5 text-cyan-300 font-bold">
-                        <CloudRain className="w-3.5 h-3.5" />
-                        LIVE CORRIDOR WEATHER SNAPSHOT (OPEN-METEO)
-                      </span>
-                      <span>METEOROLOGICAL FEED</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                      <div className="p-2 rounded bg-slate-900/80 border border-slate-800">
-                        <div className="text-[10px] font-mono text-emerald-400 uppercase font-bold truncate">
-                          ORIGIN: {startLocation?.name}
-                        </div>
-                        <div className="flex items-center gap-3 mt-1 font-mono text-slate-200">
-                          <span className="flex items-center gap-1">
-                            <Thermometer className="w-3 h-3 text-[#FF5500]" />
-                            {weather.originWeather.temperatureC}°C
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Wind className="w-3 h-3 text-cyan-400" />
-                            {weather.originWeather.windSpeedKmh} km/h
-                          </span>
-                          <span className="text-slate-400">{weather.originWeather.condition}</span>
-                        </div>
-                      </div>
-                      <div className="p-2 rounded bg-slate-900/80 border border-slate-800">
-                        <div className="text-[10px] font-mono text-[#FF5500] uppercase font-bold truncate">
-                          DEST: {destination?.name}
-                        </div>
-                        <div className="flex items-center gap-3 mt-1 font-mono text-slate-200">
-                          <span className="flex items-center gap-1">
-                            <Thermometer className="w-3 h-3 text-[#FF5500]" />
-                            {weather.destinationWeather.temperatureC}°C
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Wind className="w-3 h-3 text-cyan-400" />
-                            {weather.destinationWeather.windSpeedKmh} km/h
-                          </span>
-                          <span className="text-slate-400">{weather.destinationWeather.condition}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Segment-by-Segment Breakdown */}
-                <div className="mb-4">
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-bold mb-2">
-                    ORDERED ROUTE LEG BREAKDOWN ({planResult.briefing.segments.length} LEG
-                    {planResult.briefing.segments.length === 1 ? '' : 'S'})
-                  </div>
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                    {planResult.briefing.segments.map((seg, idx) => (
-                      <div
-                        key={`seg_${idx}`}
-                        className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
-                          seg.isLongGap
-                            ? 'bg-amber-950/25 border-amber-500/40'
-                            : 'bg-slate-950/80 border-slate-800'
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <div className="font-mono text-[10px] text-slate-400 uppercase">
-                            LEG #{idx + 1} {seg.isLongGap ? '• LONG STRETCH WARNING' : ''}
-                          </div>
-                          <div className="text-white font-medium truncate">
-                            {seg.fromName} <span className="text-[#FF5500]">→</span> {seg.toName}
-                          </div>
-                        </div>
-                        <div className="text-right font-mono shrink-0">
-                          <div
-                            className={`font-bold ${
-                              seg.isLongGap ? 'text-amber-300' : 'text-cyan-300'
-                            }`}
-                          >
-                            {seg.distanceKm} km
-                          </div>
-                          {seg.durationMin !== null && (
-                            <div className="text-[10px] text-slate-400">~{seg.durationMin} min</div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Alerts: Routing Limitation, Sparse Network, Ineligible Chargers, Charger Report Warnings */}
-                <div className="space-y-2.5">
-                  {planResult.briefing.routingLimitationNote && (
-                    <div className="p-3 rounded-lg bg-amber-950/30 border border-amber-500/40 text-xs text-amber-200 flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <span>{planResult.briefing.routingLimitationNote}</span>
-                    </div>
-                  )}
-
-                  {planResult.briefing.networkSparseWarning && (
-                    <div className="p-3 rounded-lg bg-amber-950/30 border border-amber-500/40 text-xs text-amber-200 flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <span>{planResult.briefing.networkSparseWarning}</span>
-                    </div>
-                  )}
-
-                  {planResult.briefing.ineligibleChargerAlerts.map((alert, i) => (
-                    <div
-                      key={`ineligible_${i}`}
-                      className="p-3 rounded-lg bg-red-950/30 border border-red-500/40 text-xs text-red-200 flex items-start gap-2"
-                    >
-                      <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                      <span>{alert}</span>
-                    </div>
-                  ))}
-
-                  {planResult.briefing.chargerReportWarnings.map((warn, i) => (
-                    <div
-                      key={`crep_warn_${i}`}
-                      className="p-3 rounded-lg bg-amber-950/30 border border-amber-500/40 text-xs text-amber-200 flex items-start gap-2"
-                    >
-                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <span>{warn}</span>
-                    </div>
-                  ))}
-
-                  {/* Range Guard Warnings */}
-                  {planResult.briefing.rangeGuardEvaluation.enabled && (
-                    <div className="p-3 rounded-lg bg-cyan-950/20 border border-cyan-500/30 space-y-2">
-                      <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-300 font-bold flex items-center justify-between">
-                        <span>RANGE GUARD ASSESSMENT</span>
-                        <span>
-                          SAFE LEG LIMIT: {planResult.briefing.rangeGuardEvaluation.effectiveSafeLegKm ?? '--'} KM
-                        </span>
-                      </div>
-
-                      {planResult.briefing.rangeGuardEvaluation.warnings.length === 0 ? (
-                        <div className="text-xs text-emerald-300 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                          All route legs are within your rider-estimated usable range and reserve buffer.
-                        </div>
-                      ) : (
-                        planResult.briefing.rangeGuardEvaluation.warnings.map((w, idx) => (
-                          <div
-                            key={`rg_w_${idx}`}
-                            className="p-2.5 rounded bg-red-950/40 border border-red-500/40 text-xs text-red-200 space-y-1.5"
-                          >
-                            <div className="font-medium">{w.message}</div>
-                            {w.recommendedEarlierCharger && (
-                              <button
-                                type="button"
-                                onClick={() => handleAddManualStop(w.recommendedEarlierCharger!.id)}
-                                className="px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 font-mono text-[10px] uppercase font-bold inline-flex items-center gap-1"
-                              >
-                                <Plus className="w-3 h-3" />
-                                Add Earlier Stop: {w.recommendedEarlierCharger.name}
-                              </button>
-                            )}
-                          </div>
-                        ))
-                      )}
-
-                      <p className="text-[10px] text-slate-400 italic">
-                        {planResult.briefing.rangeGuardEvaluation.disclaimer}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Mandatory Range Disclaimer */}
-                  <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-[11px] text-slate-400 flex items-start gap-2">
-                    <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                    <span>{planResult.briefing.generalRangeDisclaimer}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {routeLoading && (
+              <span className="text-[10px] font-mono text-cyan-300 flex items-center gap-1.5">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Refining highway geometry...
+              </span>
+            )}
           </div>
 
-          {/* ========================================================= */}
-          {/* 3. ORDERED CHARGING STOPS, BACKUPS & COMMUNITY REPORTS    */}
-          {/* ========================================================= */}
-          <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-5 sm:p-6 shadow-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-5 border-b border-slate-800">
-              <div>
-                <div className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold">
-                  HIGHWAY CHARGING SEQUENCE // PRIMARY &amp; BACKUP PODS
-                </div>
-                <h4 className="text-lg font-display font-bold text-white uppercase tracking-wider">
-                  Ordered Charging Stops ({planResult.chargingStops.length})
-                </h4>
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {evaluatedRouteOptions.map((opt, idx) => {
+              const isSelected = activeRouteOption?.id === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  data-testid={`autopilot-route-option-${idx}`}
+                  onClick={() => handleSelectRouteOption(opt.id)}
+                  className={`text-left rounded-xl p-3.5 border transition-all flex flex-col justify-between gap-3 cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#FF5500]/12 border-[#FF5500] shadow-lg shadow-[#FF5500]/15 ring-1 ring-[#FF5500]/50'
+                      : 'bg-slate-950/90 border-slate-800 hover:border-cyan-400/60 hover:bg-slate-900/80'
+                  }`}
+                >
+                  <div className="space-y-1.5 w-full">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold border ${
+                          isSelected
+                            ? 'bg-[#FF5500] border-[#FF5500] text-black'
+                            : 'bg-slate-900 border-slate-700 text-cyan-300'
+                        }`}
+                      >
+                        ROUTE {idx + 1} • {opt.highwayBadge}
+                      </span>
+                      <span
+                        className={`text-[10px] font-mono uppercase font-bold px-2 py-0.5 rounded ${
+                          isSelected
+                            ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-300'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {isSelected ? '✓ SELECTED' : 'SELECT ROUTE'}
+                      </span>
+                    </div>
 
+                    <div className="text-sm font-bold text-white leading-snug pt-0.5">
+                      {opt.shortLabel}
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-400 leading-relaxed">
+                      {opt.viaSummary}
+                    </div>
+                  </div>
+
+                  {/* Total Distance & Total Chargers Metrics */}
+                  <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-slate-800/80 w-full">
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-2">
+                      <div className="text-[9px] font-mono uppercase text-slate-400">
+                        TOTAL DISTANCE
+                      </div>
+                      <div
+                        data-testid={`route-option-${idx}-distance`}
+                        className="text-sm font-mono font-bold text-white mt-0.5"
+                      >
+                        {opt.distanceKm} km
+                      </div>
+                      {opt.durationMin && (
+                        <div className="text-[10px] font-mono text-slate-400">
+                          ~{Math.floor(opt.durationMin / 60)}h {opt.durationMin % 60}m
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-2">
+                      <div className="text-[9px] font-mono uppercase text-slate-400">
+                        TOTAL CHARGERS
+                      </div>
+                      <div
+                        data-testid={`route-option-${idx}-chargers`}
+                        className="text-sm font-mono font-bold text-emerald-400 mt-0.5 flex items-center gap-1"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>
+                          {opt.totalChargersOnRoute} Charger{opt.totalChargersOnRoute === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-mono text-cyan-300">
+                        {opt.plannedStopsCount} Planned Stop{opt.plannedStopsCount === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <AutoPilotRouteMap
+        startLocation={startLocation}
+        destination={destination}
+        routePolyline={
+          planResult && planResult.valid
+            ? activeRouteOption && activeRouteOption.polyline.length >= 2
+              ? activeRouteOption.polyline
+              : routePolyline.length >= 2
+              ? routePolyline
+              : startLocation && destination
+              ? [
+                  [startLocation.latitude, startLocation.longitude],
+                  [destination.latitude, destination.longitude]
+                ]
+              : []
+            : []
+        }
+        chargingStops={planResult && planResult.valid ? planResult.chargingStops : []}
+        pitStops={planResult && planResult.valid ? planResult.pitStops : []}
+        eligibleCorridorChargers={
+          planResult && planResult.valid ? planResult.eligibleCorridorChargers : []
+        }
+        activeStopId={activeStopId}
+        mapPickMode={mapPickMode}
+        onChangeMapPickMode={setMapPickMode}
+        onConfirmMapLocation={handleConfirmMapLocation}
+        onSelectStop={id => setActiveStopId(id)}
+        onToggleReached={handleToggleReached}
+        onToggleCharged={handleToggleCharged}
+        onReplaceWithBackup={handleReplaceWithBackup}
+        onAddManualStop={handleAddManualStop}
+        onRemoveStop={handleRemoveStop}
+        onRemovePitStop={handleRemovePitStop}
+        routeOptions={evaluatedRouteOptions}
+        selectedRouteId={activeRouteOption?.id}
+        onSelectRouteOption={handleSelectRouteOption}
+      />
+
+      {/* ========================================================= */}
+      {/* 3. EASY-TO-UNDERSTAND JOURNEY SUMMARY BELOW THE MAP       */}
+      {/* ========================================================= */}
+      {planResult && planResult.valid && startLocation && destination && (
+        <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-4 sm:p-5 shadow-xl space-y-5">
+          {/* Top Journey Header + Primary Google Maps Launch */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 pb-4 border-b border-slate-800">
+            <div className="min-w-0">
+              <div className="text-xs font-mono uppercase tracking-widest text-emerald-400 font-bold">
+                YOUR JOURNEY SUMMARY
+              </div>
+              <h4 className="text-lg sm:text-xl font-display font-bold text-white mt-0.5 leading-snug">
+                {startLocation.name} <span className="text-[#FF5500]">→</span> {destination.name}
+              </h4>
+              {planResult.chargingStops.length > 0 && (
+                <div className="text-xs font-mono text-cyan-300 mt-1.5 flex flex-wrap items-center gap-1">
+                  <span className="text-slate-400">Via Auto Pilot Stops:</span>
+                  <span>
+                    {planResult.chargingStops
+                      .map((s, idx) => `Stop #${idx + 1} ${s.station.name}`)
+                      .join(' → ')}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* 1-Tap Google Maps Full Route Button (Start + All Charging Stops + Destination) */}
+            {planResult.navigationStages.length > 0 && (
+              <div className="flex flex-col sm:items-end gap-1.5 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                  {planResult.navigationStages.map(stage => (
+                    <a
+                      key={`nav_stage_${stage.stageNumber}`}
+                      href={stage.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid={`take-off-stage-${stage.stageNumber}-link`}
+                      className="w-full sm:w-auto px-4 py-3 rounded-xl bg-[#FF5500] hover:bg-[#FF5500]/90 text-white font-mono text-xs sm:text-sm uppercase tracking-wider font-bold flex items-center justify-center gap-2 no-underline shadow-lg shadow-[#FF5500]/25"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      <span>
+                        {planResult.navigationStages.length === 1
+                          ? 'Open Route in Google Maps'
+                          : `Open Stage ${stage.stageNumber} in Google Maps`}
+                      </span>
+                      {stage.waypointNames.length > 0 && (
+                        <span className="px-2 py-0.5 rounded bg-black/25 text-[11px] font-mono">
+                          +{stage.waypointNames.length} Stop{stage.waypointNames.length === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  ))}
+                </div>
+                {planResult.chargingStops.length > 0 && (
+                  <span className="text-[11px] font-mono text-slate-400">
+                    Includes Start, {planResult.chargingStops.length} Charging Stop
+                    {planResult.chargingStops.length === 1 ? '' : 's'} &amp; Final Destination
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 4 Simple Key Journey Stats (Including Total Chargers on Selected Route) */}
+          {(() => {
+            const longestSegment =
+              planResult.briefing.segments.length > 0
+                ? planResult.briefing.segments.reduce((max, seg) =>
+                    seg.distanceKm > max.distanceKm ? seg : max
+                  )
+                : null;
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
+                <div className="bg-slate-950 border border-slate-800/90 rounded-xl p-3 sm:p-4 text-center sm:text-left">
+                  <div className="text-[11px] font-mono text-slate-400 uppercase font-semibold">TOTAL DISTANCE</div>
+                  <div className="text-lg sm:text-2xl font-mono font-bold text-white mt-1">
+                    {planResult.briefing.totalDrivingDistanceKm}{' '}
+                    <span className="text-xs text-slate-400">km</span>
+                  </div>
+                  {activeRouteOption && (
+                    <div className="text-[10px] font-mono text-[#FF5500] truncate mt-0.5">
+                      {activeRouteOption.shortLabel}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-slate-950 border border-slate-800/90 rounded-xl p-3 sm:p-4 text-center sm:text-left">
+                  <div className="text-[11px] font-mono text-slate-400 uppercase font-semibold">TOTAL CHARGERS</div>
+                  <div className="text-lg sm:text-2xl font-mono font-bold text-emerald-400 mt-1">
+                    {planResult.eligibleCorridorChargers.length}{' '}
+                    <span className="text-xs text-slate-400">on route</span>
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                    Available along corridor
+                  </div>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-800/90 rounded-xl p-3 sm:p-4 text-center sm:text-left">
+                  <div className="text-[11px] font-mono text-slate-400 uppercase font-semibold">LONGEST STRETCH</div>
+                  <div className="text-lg sm:text-2xl font-mono font-bold text-amber-400 mt-1">
+                    {planResult.briefing.longestGapKm}{' '}
+                    <span className="text-xs text-slate-400">km</span>
+                  </div>
+                  {longestSegment && (
+                    <div
+                      className="text-[10px] font-mono text-slate-400 truncate mt-0.5"
+                      title={`${longestSegment.fromName} → ${longestSegment.toName}`}
+                    >
+                      {longestSegment.fromName} → {longestSegment.toName}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-slate-950 border border-slate-800/90 rounded-xl p-3 sm:p-4 text-center sm:text-left">
+                  <div className="text-[11px] font-mono text-slate-400 uppercase font-semibold">PLANNED STOPS</div>
+                  <div className="text-lg sm:text-2xl font-mono font-bold text-[#00E5FF] mt-1">
+                    {planResult.chargingStops.length}
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                    Every ~{targetIntervalKm} km
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Step-by-Step Visual Journey Timeline (Start -> Charging Stops -> Destination) */}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-mono uppercase tracking-wider text-slate-300 font-bold">
+                STEP-BY-STEP JOURNEY PLAN
+              </span>
+
+              {/* Optional Add Charger / Reset Controls */}
               <div className="flex flex-wrap items-center gap-2">
                 {unselectedCorridorChargers.length > 0 && (
                   <div className="flex items-center gap-1.5">
@@ -2558,23 +2520,24 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                       aria-label="Add eligible corridor charger to route"
                       value={manualCorridorChargerToAdd}
                       onChange={e => setManualCorridorChargerToAdd(e.target.value)}
-                      className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-200"
+                      className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200 max-w-[210px]"
                     >
-                      <option value="">+ Add Corridor Charger ({unselectedCorridorChargers.length})...</option>
+                      <option value="">+ Add Stop ({unselectedCorridorChargers.length})...</option>
                       {unselectedCorridorChargers.map(c => (
                         <option key={c.station.id} value={c.station.id}>
-                          KM {c.alongRouteKm} — {c.station.name} ({c.station.chargerType || 'Plug'})
+                          KM {c.alongRouteKm} — {c.station.name}
                         </option>
                       ))}
                     </select>
-                    <button
-                      type="button"
-                      disabled={!manualCorridorChargerToAdd}
-                      onClick={() => handleAddManualStop(manualCorridorChargerToAdd)}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 font-mono text-xs uppercase font-bold disabled:opacity-40"
-                    >
-                      Add
-                    </button>
+                    {manualCorridorChargerToAdd && (
+                      <button
+                        type="button"
+                        onClick={() => handleAddManualStop(manualCorridorChargerToAdd)}
+                        className="px-2.5 py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 font-mono text-[11px] uppercase font-bold"
+                      >
+                        Add
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -2584,689 +2547,325 @@ export const AutoPilotPlanner: React.FC<AutoPilotPlannerProps> = ({
                   <button
                     type="button"
                     onClick={handleResetAutomaticStops}
-                    className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-mono text-xs uppercase flex items-center gap-1.5"
+                    className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-mono text-[10px] uppercase flex items-center gap-1"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Reset to Auto-Selected Stops
+                    <RefreshCw className="w-3 h-3" />
+                    Reset
                   </button>
                 )}
               </div>
             </div>
 
-            {planResult.chargingStops.length === 0 ? (
-              <div className="p-6 rounded-xl bg-slate-950/80 border border-slate-800 text-center space-y-2">
-                <CheckCircle2 className="w-7 h-7 text-emerald-400 mx-auto" />
-                <div className="text-sm font-bold text-white uppercase font-mono">
-                  {planResult.briefing.baseDirectDrivingDistanceKm <= targetIntervalKm * 1.08
-                    ? `Direct Corridor Reachable (${planResult.briefing.baseDirectDrivingDistanceKm} km) — Zero Intermediate Charging Stops Needed`
-                    : 'No Eligible Chargers Selected on This Corridor'}
+            {/* Start Point Card */}
+            <div className="p-3 rounded-xl bg-emerald-950/15 border border-emerald-500/30 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-mono text-[11px] font-bold flex items-center justify-center shrink-0">
+                  A
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-mono uppercase text-emerald-400 font-bold">
+                    START • 0 KM
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-white truncate">
+                    {startLocation.name}
+                  </div>
                 </div>
-                <p className="text-xs text-slate-400 max-w-xl mx-auto">
-                  {planResult.briefing.baseDirectDrivingDistanceKm <= targetIntervalKm * 1.08
-                    ? `Your destination is within your ${targetIntervalKm} km target interval. You can still manually add any corridor charger from the dropdown above if you want a top-up.`
-                    : 'No approved chargers matched within the highway corridor. Adjust your preferred plug filter or add a charger along the route.'}
-                </p>
+              </div>
+              {weather.available && weather.originWeather && (
+                <span className="text-[11px] font-mono text-slate-300 shrink-0">
+                  {weather.originWeather.temperatureC}°C • {weather.originWeather.condition}
+                </span>
+              )}
+            </div>
+
+            {/* Intermediate Charging Stops */}
+            {planResult.chargingStops.length === 0 ? (
+              <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center gap-3 text-xs text-slate-300">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <div>
+                  <span className="font-bold text-white">Direct Ride — No Charging Stops Needed.</span>{' '}
+                  <span className="text-slate-400">
+                    Total distance is {planResult.briefing.totalDrivingDistanceKm} km.
+                  </span>
+                </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                {planResult.chargingStops.map(stop => {
-                  const navUrl = buildChargerNavigationUrl(stop.station);
-                  const isReportingThis = reportingChargerId === stop.station.id;
-                  const intel = stop.intelligence;
+              planResult.chargingStops.map(stop => {
+                const navUrl = buildChargerNavigationUrl(stop.station);
+                const stopSubmitter = resolveChargerSubmitterInfo(stop.station as any);
+                const isCommunity =
+                  stopSubmitter.isCommunityProvided || stopSubmitter.isUserSubmitted;
 
-                  return (
-                    <div
-                      key={stop.station.id}
-                      className={`rounded-xl border p-4 sm:p-5 transition-colors ${
-                        stop.reached
-                          ? 'bg-emerald-950/15 border-emerald-500/40'
-                          : intel.hasRecentIssue
-                          ? 'bg-amber-950/15 border-amber-500/40'
-                          : 'bg-slate-950/90 border-slate-800'
-                      }`}
-                    >
-                      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                        <div className="space-y-1.5 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-mono text-xs font-bold">
-                              STOP #{stop.order}
-                            </span>
-                            <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-200 font-mono text-xs">
-                              KM {stop.distanceFromStartKm} FROM START
-                            </span>
-                            <span className="px-2 py-0.5 rounded bg-[#FF5500]/15 border border-[#FF5500]/40 text-[#FF5500] font-mono text-xs font-bold">
-                              {stop.station.chargerType || 'Supernova'} • {stop.station.powerOutputKw} kW
-                            </span>
-                            {/* Community Report Confidence Badge */}
-                            <span
-                              className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase border ${
-                                intel.confidenceLabel === 'RECENTLY REPORTED WORKING'
-                                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                                  : intel.confidenceLabel === 'RECENT ISSUE REPORTED'
-                                  ? 'bg-red-500/15 border-red-500/40 text-red-300'
-                                  : intel.confidenceLabel === 'MIXED REPORTS'
-                                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                                  : 'bg-slate-900 border-slate-700 text-slate-400'
-                              }`}
-                            >
-                              {intel.confidenceLabel} ({intel.sourceLabel})
-                            </span>
-                          </div>
-
-                          <h5 className="text-base sm:text-lg font-bold text-white">
-                            {stop.station.name}
-                          </h5>
-                          <p className="text-xs text-slate-400">{stop.station.location}</p>
-
-                          {(() => {
-                            const stopSubmitter = resolveChargerSubmitterInfo(stop.station as any);
-                            if (!stopSubmitter.isCommunityProvided && !stopSubmitter.isUserSubmitted) {
-                              return null;
-                            }
-                            return (
-                              <div className="mt-1.5 px-3 py-1.5 rounded-lg bg-[#191610] border border-[#E8AA45]/45 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-                                <div className="flex items-center gap-1.5 text-slate-200">
-                                  <UserIcon className="w-3.5 h-3.5 text-[#E8AA45]" />
-                                  <span className="text-slate-400">Community Submitter:</span>
-                                  <span className="font-bold text-white">
-                                    {stopSubmitter.submitterName}
-                                  </span>
-                                </div>
-                                <a
-                                  href={stopSubmitter.telHref}
-                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-[11px]"
-                                >
-                                  <Phone className="w-3 h-3" />
-                                  <span>{stopSubmitter.submitterPhone}</span>
-                                </a>
-                              </div>
-                            );
-                          })()}
-
-                          {/* Distance & Selection Telemetry */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-[11px] font-mono">
-                            <div className="bg-slate-900/80 border border-slate-800 rounded p-2">
-                              <span className="text-slate-500 block text-[9px]">FROM PREV STOP</span>
-                              <span className="text-white font-bold">{stop.distanceFromPrevStopKm} km</span>
-                            </div>
-                            <div className="bg-slate-900/80 border border-slate-800 rounded p-2">
-                              <span className="text-slate-500 block text-[9px]">TO NEXT POINT</span>
-                              <span className="text-white font-bold">{stop.distanceToNextStopKm} km</span>
-                            </div>
-                            <div className="bg-slate-900/80 border border-slate-800 rounded p-2">
-                              <span className="text-slate-500 block text-[9px]">DETOUR IMPACT</span>
-                              <span className="text-[#FF5500] font-bold">
-                                +{stop.detourDistanceKm} km
-                                {stop.estimatedDetourDurationMin !== null
-                                  ? ` (~${stop.estimatedDetourDurationMin}m)`
-                                  : ''}
-                              </span>
-                            </div>
-                            <div className="bg-slate-900/80 border border-slate-800 rounded p-2">
-                              <span className="text-slate-500 block text-[9px]">ACCESS / STATUS</span>
-                              <span className="text-emerald-300 font-bold">
-                                {stop.station.accessConditions}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="text-[11px] text-slate-400 pt-1">
-                            <strong className="text-slate-300 font-mono uppercase text-[10px]">
-                              Why Selected:{' '}
-                            </strong>
-                            {stop.selectionReason} — {intel.shortSummary}
-                          </div>
+                return (
+                  <div
+                    key={stop.station.id}
+                    className={`rounded-xl border p-3.5 sm:p-4 transition-colors ${
+                      stop.reached
+                        ? 'bg-emerald-950/15 border-emerald-500/40'
+                        : 'bg-slate-950/90 border-slate-800'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] font-bold">
+                            STOP #{stop.order}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-200 font-mono text-[10px]">
+                            KM {stop.distanceFromStartKm} ({stop.distanceFromPrevStopKm} km leg)
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-[#FF5500]/15 border border-[#FF5500]/40 text-[#FF5500] font-mono text-[10px] font-bold">
+                            {stop.station.chargerType || 'Supernova'} • {stop.station.powerOutputKw} kW
+                          </span>
                         </div>
 
-                        {/* Action Buttons */}
-                        <div className="flex flex-wrap lg:flex-col gap-2 shrink-0">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleReached(stop.station.id)}
-                              className={`px-3 py-1.5 rounded-lg font-mono text-xs uppercase font-bold border flex items-center gap-1.5 transition-colors ${
-                                stop.reached
-                                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
-                              }`}
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              {stop.reached ? 'Reached' : 'Mark Reached'}
-                            </button>
+                        <div className="text-sm font-bold text-white truncate">
+                          {stop.station.name}
+                        </div>
+                        <div className="text-xs text-slate-400 line-clamp-1">
+                          {stop.station.location}
+                        </div>
 
-                            <button
-                              type="button"
-                              onClick={() => handleToggleCharged(stop.station.id)}
-                              className={`px-3 py-1.5 rounded-lg font-mono text-xs uppercase font-bold border flex items-center gap-1.5 transition-colors ${
-                                stop.chargingConfirmed
-                                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
-                                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
-                              }`}
-                            >
-                              <Zap className="w-3.5 h-3.5" />
-                              {stop.chargingConfirmed ? 'Charged' : 'Confirm Charged'}
-                            </button>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
+                        {isCommunity && (
+                          <div className="pt-1 flex flex-wrap items-center gap-2 text-[11px] font-mono text-amber-300">
+                            <span>Host: {stopSubmitter.submitterName}</span>
                             <a
-                              href={navUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex-1 px-3 py-1.5 rounded-lg bg-[#FF5500] hover:bg-[#FF5500]/90 text-white font-mono text-xs uppercase font-bold flex items-center justify-center gap-1.5 no-underline"
+                              href={stopSubmitter.telHref}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold"
                             >
-                              <Navigation className="w-3.5 h-3.5" />
-                              Navigate
+                              <Phone className="w-3 h-3" />
+                              <span>{stopSubmitter.submitterPhone}</span>
                             </a>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setReportingChargerId(isReportingThis ? null : stop.station.id)
-                              }
-                              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 font-mono text-xs uppercase font-bold flex items-center gap-1"
-                            >
-                              <MessageSquarePlus className="w-3.5 h-3.5" />
-                              Report Status
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={`Remove Stop ${stop.station.name}`}
-                              onClick={() => handleRemoveStop(stop.station.id)}
-                              className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/50 border border-red-500/30 text-red-300"
-                              title="Remove this stop from route"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Community Charger Status Reporting Drawer */}
-                      {isReportingThis && (
-                        <div className="mt-4 pt-3 border-t border-slate-800 bg-slate-900/70 rounded-lg p-3.5 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-mono uppercase text-cyan-300 font-bold">
-                              LOG COMMUNITY REPORT FOR {stop.station.name}
-                            </span>
-                            <span className="text-[10px] font-mono text-slate-400">
-                              Labeled as: Community Report (Not live hardware telemetry)
-                            </span>
-                          </div>
-
-                          <div className="flex flex-wrap gap-2">
-                            {VALID_CHARGER_REPORT_CATEGORIES.map(cat => (
-                              <button
-                                key={cat}
-                                type="button"
-                                onClick={() => setReportCategory(cat)}
-                                className={`px-3 py-1.5 rounded text-xs font-mono font-bold uppercase border transition-colors ${
-                                  reportCategory === cat
-                                    ? 'bg-[#FF5500] border-[#FF5500] text-white'
-                                    : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500'
-                                }`}
-                              >
-                                {cat}
-                              </button>
-                            ))}
-                          </div>
-
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <input
-                              type="text"
-                              value={reportComment}
-                              onChange={e => setReportComment(e.target.value)}
-                              placeholder="Optional observation (e.g., Charged from 20% to 85%, Bay 1 working, ask security for key)..."
-                              className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                            />
-                            <button
-                              type="button"
-                              disabled={submittingReport}
-                              onClick={() => handleSubmitChargerReport(stop.station.id)}
-                              className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono text-xs uppercase font-bold shrink-0"
-                            >
-                              {submittingReport ? 'Saving...' : 'Submit Report'}
-                            </button>
-                          </div>
-
-                          {reportFeedback && (
-                            <div className="text-xs font-mono text-emerald-300">{reportFeedback}</div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Backup Chargers Along Route for this Primary Stop */}
-                      <div className="mt-4 pt-3 border-t border-slate-800/80">
-                        <div className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold mb-2">
-                          BACKUP CHARGERS COVERING THIS SEGMENT ({stop.backupChargers.length})
-                        </div>
-                        {stop.backupChargers.length === 0 ? (
-                          <div className="text-xs font-mono text-slate-500">
-                            No secondary approved backup charger within 45 km of this segment. Carry your portable 15A adapter.
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                            {stop.backupChargers.map(bkp => (
-                              <div
-                                key={`bkp_${stop.station.id}_${bkp.station.id}`}
-                                className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-3"
-                              >
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[9px] font-mono font-bold">
-                                      BACKUP
-                                    </span>
-                                    <span className="text-xs font-bold text-white truncate">
-                                      {bkp.station.name}
-                                    </span>
-                                  </div>
-                                  <div className="text-[11px] text-slate-400 mt-0.5">
-                                    {bkp.distanceFromPrimaryKm} km from primary • +{bkp.detourDistanceKm} km detour •{' '}
-                                    {bkp.intelligence.confidenceLabel}
-                                  </div>
-                                  <div className="text-[10px] font-mono text-amber-300/90 mt-0.5">
-                                    {bkp.reason}
-                                  </div>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleReplaceWithBackup(stop.station.id, bkp.station.id)
-                                  }
-                                  className="px-2.5 py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-mono text-[10px] uppercase font-bold shrink-0 flex items-center gap-1"
-                                >
-                                  <RefreshCw className="w-3 h-3" />
-                                  Use as Primary
-                                </button>
-                              </div>
-                            ))}
                           </div>
                         )}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
 
-          {/* ========================================================= */}
-          {/* 4. RIDER PIT STOPS ALONG THE ROUTE & SAVED MISSIONS       */}
-          {/* ========================================================= */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-            {/* Left 6 Cols: Rider Pit Stops Along the Route */}
-            <div className="xl:col-span-6 bg-[#0B0F19] border border-slate-800 rounded-xl p-5 shadow-xl space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
-                <div>
-                  <div className="text-[10px] font-mono uppercase tracking-widest text-violet-400 font-bold flex items-center gap-1.5">
-                    <Coffee className="w-3.5 h-3.5" />
-                    RIDER PIT STOPS // RESTAURANTS, CAFÉS &amp; REST HALTS
-                  </div>
-                  <h4 className="text-base font-display font-bold text-white uppercase tracking-wider">
-                    Optional Corridor Pit Stops ({planResult.pitStops.length} Selected)
-                  </h4>
-                </div>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <a
+                          href={navUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3.5 py-2 rounded-lg bg-[#FF5500] hover:bg-[#FF5500]/90 text-white font-mono text-xs uppercase font-bold flex items-center gap-1.5 no-underline"
+                        >
+                          <Navigation className="w-3.5 h-3.5" />
+                          <span>Navigate</span>
+                        </a>
 
-                <div className="flex flex-wrap gap-1">
-                  {['ALL', 'Restaurant', 'Cafe', 'Fuel', 'Hotel'].map(cat => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setPitStopCategoryFilter(cat)}
-                      className={`px-2 py-1 rounded text-[10px] font-mono uppercase font-bold border ${
-                        pitStopCategoryFilter === cat
-                          ? 'bg-violet-500/20 border-violet-400 text-violet-200'
-                          : 'bg-slate-900 border-slate-800 text-slate-400'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Selected Pit Stops */}
-              {planResult.pitStops.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-[10px] font-mono uppercase text-violet-300 font-bold">
-                    INCLUDED IN CURRENT MISSION:
-                  </div>
-                  {planResult.pitStops.map(pit => (
-                    <div
-                      key={pit.id}
-                      className="p-3 rounded-lg bg-violet-950/20 border border-violet-500/40 flex items-center justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-white">
-                          {pit.name}{' '}
-                          <span className="text-[10px] font-mono text-violet-300">
-                            (KM {pit.distanceFromStartKm} • +{pit.detourDistanceKm} km)
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 truncate">{pit.address}</div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          onClick={() => handleTogglePitStopNav(pit.id)}
-                          className={`px-2 py-1 rounded text-[10px] font-mono uppercase border ${
-                            pit.includedInNavigation
-                              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                              : 'bg-slate-900 border-slate-700 text-slate-400'
+                          onClick={() => handleToggleReached(stop.station.id)}
+                          className={`px-2.5 py-2 rounded-lg font-mono text-xs uppercase font-bold border flex items-center gap-1 transition-colors ${
+                            stop.reached
+                              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
+                              : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
                           }`}
                         >
-                          {pit.includedInNavigation ? 'In Google Maps' : 'Map Only'}
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{stop.reached ? 'Reached' : 'Mark Reached'}</span>
                         </button>
+
                         <button
                           type="button"
-                          onClick={() => handleRemovePitStop(pit.id)}
-                          className="p-1 text-red-400 hover:text-red-300"
-                          title="Remove Pit Stop"
+                          aria-label={`Remove Stop ${stop.station.name}`}
+                          onClick={() => handleRemoveStop(stop.station.id)}
+                          className="p-2 rounded-lg bg-slate-900 hover:bg-red-950/50 border border-slate-800 hover:border-red-500/40 text-slate-400 hover:text-red-300"
+                          title="Remove stop"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                );
+              })
+            )}
+
+            {/* Final Destination Card */}
+            <div className="p-3 rounded-xl bg-[#FF5500]/10 border border-[#FF5500]/30 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-6 h-6 rounded-full bg-[#FF5500]/20 border border-[#FF5500] text-[#FF5500] font-mono text-[11px] font-bold flex items-center justify-center shrink-0">
+                  B
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-mono uppercase text-[#FF5500] font-bold">
+                    FINAL DESTINATION • {planResult.briefing.totalDrivingDistanceKm} KM
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-white truncate">
+                    {destination.name}
+                  </div>
                 </div>
+              </div>
+              {weather.available && weather.destinationWeather && (
+                <span className="text-[11px] font-mono text-slate-300 shrink-0">
+                  {weather.destinationWeather.temperatureC}°C • {weather.destinationWeather.condition}
+                </span>
               )}
-
-              {/* Discoverable Corridor Pit Stops */}
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                <div className="text-[10px] font-mono uppercase text-slate-400 font-bold">
-                  DISCOVERED ALONG ROUTE CORRIDOR ({availableCorridorPitStops.length}):
-                </div>
-                {availableCorridorPitStops.length === 0 ? (
-                  <div className="text-xs font-mono text-slate-500 py-3">
-                    No matching corridor pit stops found within 20 km of this route for filter &ldquo;{pitStopCategoryFilter}&rdquo;.
-                  </div>
-                ) : (
-                  availableCorridorPitStops.map(place => {
-                    const alreadyAdded = selectedPitStops.some(p => p.id === place.id);
-                    return (
-                      <div
-                        key={`disc_pit_${place.id}`}
-                        className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[9px] font-mono text-violet-300">
-                              {place.category}
-                            </span>
-                            <span className="text-xs font-bold text-white truncate">
-                              {place.name}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                            KM {place.distanceFromStartKm} • +{place.detourDistanceKm} km detour •{' '}
-                            {place.address}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={alreadyAdded}
-                          onClick={() => handleAddPitStop(place)}
-                          className={`px-2.5 py-1 rounded font-mono text-[10px] uppercase font-bold border shrink-0 flex items-center gap-1 ${
-                            alreadyAdded
-                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                              : 'bg-violet-500/20 hover:bg-violet-500/30 border-violet-500/40 text-violet-200'
-                          }`}
-                        >
-                          {alreadyAdded ? (
-                            <>
-                              <Check className="w-3 h-3" /> Added
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="w-3 h-3" /> Add Pit Stop
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Right 6 Cols: Save Mission, Ride History & Squadron Sharing */}
-            <div className="xl:col-span-6 bg-[#0B0F19] border border-slate-800 rounded-xl p-5 shadow-xl space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div>
-                  <div className="text-[10px] font-mono uppercase tracking-widest text-[#FF5500] font-bold flex items-center gap-1.5">
-                    <Bookmark className="w-3.5 h-3.5" />
-                    FLIGHT LOG // SAVE MISSION &amp; SQUADRON SHARING
-                  </div>
-                  <h4 className="text-base font-display font-bold text-white uppercase tracking-wider">
-                    Save or Share Auto Pilot Route
-                  </h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsFavourite(prev => !prev)}
-                  className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase font-bold border flex items-center gap-1 ${
-                    isFavourite
-                      ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                      : 'bg-slate-900 border-slate-700 text-slate-400'
-                  }`}
-                >
-                  <Star className="w-3 h-3" />
-                  {isFavourite ? 'Favourite Corridor' : 'Mark Favourite'}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
-                    MISSION CALLSIGN / NAME
-                  </label>
-                  <input
-                    type="text"
-                    value={missionNameInput}
-                    onChange={e => setMissionNameInput(e.target.value)}
-                    placeholder="e.g., Sunday Breakfast Run to Mysuru"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
-                      DEPARTURE TIME
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={departureDateTime}
-                      onChange={e => setDepartureDateTime(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
-                      RIDE STATUS
-                    </label>
-                    <select
-                      value={missionStatus}
-                      onChange={e =>
-                        setMissionStatus(
-                          e.target.value as 'Planned' | 'In Progress' | 'Completed'
-                        )
-                      }
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white font-mono"
-                    >
-                      <option value="Planned">Planned</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Completed">Completed</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
-                  PERSONAL RIDER NOTES
-                </label>
-                <input
-                  type="text"
-                  value={riderNotes}
-                  onChange={e => setRiderNotes(e.target.value)}
-                  placeholder="Adapter checklist, tyre pressure, regen preferences..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                />
-              </div>
-
-              {/* Squadron Sharing Controls */}
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono uppercase text-cyan-300 font-bold flex items-center gap-1.5">
-                    <Share2 className="w-3.5 h-3.5" />
-                    SHARE WITH SQUADRON RIDERS
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShareEnabled(prev => !prev)}
-                    className={`px-2.5 py-0.5 rounded text-[10px] font-mono uppercase font-bold border ${
-                      shareEnabled
-                        ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
-                        : 'bg-slate-900 border-slate-700 text-slate-400'
-                    }`}
-                  >
-                    {shareEnabled ? 'SHARING ENABLED' : 'PRIVATE MISSION'}
-                  </button>
-                </div>
-
-                {shareEnabled && (
-                  <div className="space-y-2 pt-1">
-                    <div className="flex flex-wrap gap-1.5">
-                      {SQUADRON_ROSTER.map(member => {
-                        const selected = sharedWithUserIds.includes(member.id);
-                        return (
-                          <button
-                            key={member.id}
-                            type="button"
-                            onClick={() =>
-                              setSharedWithUserIds(prev =>
-                                prev.includes(member.id)
-                                  ? prev.filter(id => id !== member.id)
-                                  : [...prev, member.id]
-                              )
-                            }
-                            className={`px-2 py-1 rounded text-[10px] font-mono border ${
-                              selected
-                                ? 'bg-cyan-500/20 border-cyan-400 text-white'
-                                : 'bg-slate-900 border-slate-700 text-slate-400'
-                            }`}
-                          >
-                            {member.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={meetingPointName}
-                        onChange={e => setMeetingPointName(e.target.value)}
-                        placeholder="Optional Meeting Point..."
-                        className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white"
-                      />
-                      <input
-                        type="text"
-                        value={groupNotes}
-                        onChange={e => setGroupNotes(e.target.value)}
-                        placeholder="Optional Group Ride Notes..."
-                        className="bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  disabled={savingMission}
-                  onClick={handleSaveMission}
-                  className="px-5 py-2.5 rounded-lg bg-[#FF5500] hover:bg-[#FF5500]/90 text-white font-mono text-xs uppercase tracking-wider font-bold flex items-center gap-2"
-                >
-                  <Bookmark className="w-3.5 h-3.5" />
-                  {savingMission
-                    ? 'Saving Mission...'
-                    : activeMissionId
-                    ? 'Update Saved Mission'
-                    : 'Save Mission to Flight Log'}
-                </button>
-                {saveFeedback && (
-                  <span className="text-xs font-mono text-emerald-400">{saveFeedback}</span>
-                )}
-              </div>
-
-              {/* Saved Missions List */}
-              <div className="pt-3 border-t border-slate-800 space-y-2">
-                <div className="text-[10px] font-mono uppercase text-slate-400 font-bold">
-                  SAVED MISSIONS &amp; SHARED SQUADRON ROUTES ({savedMissions.length})
-                </div>
-                {savedMissions.length === 0 ? (
-                  <div className="text-xs font-mono text-slate-500">
-                    No saved Auto Pilot missions yet.
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {savedMissions.map(m => (
-                      <div
-                        key={m.id}
-                        className={`p-3 rounded-lg border flex items-center justify-between gap-3 ${
-                          activeMissionId === m.id
-                            ? 'bg-[#FF5500]/10 border-[#FF5500]/50'
-                            : 'bg-slate-950 border-slate-800'
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            {m.isFavourite && (
-                              <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
-                            )}
-                            <span className="text-xs font-bold text-white truncate">
-                              {m.missionName}
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[9px] font-mono text-cyan-300">
-                              {m.status}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                            {m.startLocation.name} → {m.destination.name} ({m.plannedRouteDistanceKm} km •{' '}
-                            {m.chargingStops.length} stop{m.chargingStops.length === 1 ? '' : 's'})
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleLoadSavedMission(m)}
-                            className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono text-white"
-                          >
-                            Load
-                          </button>
-                          {m.userId === currentUserId && (
-                            <button
-                              type="button"
-                              aria-label={`Delete saved mission ${m.missionName}`}
-                              onClick={() => handleDeleteSavedMission(m.id)}
-                              className="p-1 text-red-400 hover:text-red-300"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           </div>
-        </>
+
+          {/* Alerts if Sparse Network or Range Guard Warning */}
+          {(planResult.briefing.networkSparseWarning ||
+            (planResult.briefing.rangeGuardEvaluation.enabled &&
+              planResult.briefing.rangeGuardEvaluation.warnings.length > 0)) && (
+            <div className="space-y-2 pt-1">
+              {planResult.briefing.networkSparseWarning && (
+                <div className="p-3 rounded-lg bg-amber-950/30 border border-amber-500/40 text-xs text-amber-200 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>{planResult.briefing.networkSparseWarning}</span>
+                </div>
+              )}
+              {planResult.briefing.rangeGuardEvaluation.enabled &&
+                planResult.briefing.rangeGuardEvaluation.warnings.map((w, idx) => (
+                  <div
+                    key={`rg_w_${idx}`}
+                    className="p-3 rounded-lg bg-red-950/40 border border-red-500/40 text-xs text-red-200 flex items-start gap-2"
+                  >
+                    <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>{w.message}</span>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {/* Optional Collapsible Drawer for Pit Stops & Saving Route */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={() => setShowMoreTools(prev => !prev)}
+              className="w-full py-2 px-3 rounded-lg bg-slate-900/70 hover:bg-slate-900 border border-slate-800 text-xs font-mono text-slate-300 flex items-center justify-between"
+            >
+              <span className="flex items-center gap-2 font-bold uppercase">
+                <Bookmark className="w-3.5 h-3.5 text-[#FF5500]" />
+                Save Route &amp; Optional Pit Stops ({savedMissions.length} Saved)
+              </span>
+              <span className="text-[10px] uppercase text-[#FF5500]">
+                {showMoreTools ? 'Hide ▲' : 'Expand ▼'}
+              </span>
+            </button>
+
+            {showMoreTools && (
+              <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+                {/* Save Route */}
+                <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-3">
+                  <div className="text-xs font-mono uppercase text-[#FF5500] font-bold">
+                    Save or Load Journey
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={missionNameInput}
+                      onChange={e => setMissionNameInput(e.target.value)}
+                      placeholder="Route Name (e.g., Weekend Ride to Mysuru)"
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                    <button
+                      type="button"
+                      disabled={savingMission}
+                      onClick={handleSaveMission}
+                      className="px-4 py-2 rounded-lg bg-[#FF5500] hover:bg-[#FF5500]/90 text-white font-mono text-xs uppercase font-bold shrink-0"
+                    >
+                      {savingMission ? 'Saving...' : 'Save Route'}
+                    </button>
+                  </div>
+                  {saveFeedback && (
+                    <div className="text-xs font-mono text-emerald-400">{saveFeedback}</div>
+                  )}
+
+                  {savedMissions.length > 0 && (
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto pt-1">
+                      {savedMissions.map(m => (
+                        <div
+                          key={m.id}
+                          className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-white truncate">
+                              {m.missionName}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {m.startLocation.name} → {m.destination.name} ({m.plannedRouteDistanceKm} km)
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleLoadSavedMission(m)}
+                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-mono text-white"
+                            >
+                              Load
+                            </button>
+                            {m.userId === currentUserId && (
+                              <button
+                                type="button"
+                                aria-label={`Delete saved mission ${m.missionName}`}
+                                onClick={() => handleDeleteSavedMission(m.id)}
+                                className="p-1 text-red-400 hover:text-red-300"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Optional Pit Stops */}
+                <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono uppercase text-violet-400 font-bold">
+                      Optional Pit Stops ({planResult.pitStops.length})
+                    </span>
+                    <div className="flex gap-1">
+                      {['ALL', 'Restaurant', 'Cafe'].map(cat => (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setPitStopCategoryFilter(cat)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase border ${
+                            pitStopCategoryFilter === cat
+                              ? 'bg-violet-500/20 border-violet-400 text-violet-200'
+                              : 'bg-slate-900 border-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                    {availableCorridorPitStops.slice(0, 6).map(place => {
+                      const alreadyAdded = selectedPitStops.some(p => p.id === place.id);
+                      return (
+                        <div
+                          key={`disc_pit_${place.id}`}
+                          className="p-2 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-white truncate">{place.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              KM {place.distanceFromStartKm} • {place.category}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={alreadyAdded}
+                            onClick={() => handleAddPitStop(place)}
+                            className="px-2 py-1 rounded bg-violet-500/20 border border-violet-500/40 text-violet-200 font-mono text-[10px] uppercase font-bold shrink-0"
+                          >
+                            {alreadyAdded ? 'Added' : '+ Add'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

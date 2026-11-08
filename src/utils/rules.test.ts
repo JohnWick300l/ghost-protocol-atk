@@ -99,8 +99,27 @@ import {
   DEFAULT_VISITED_DESTINATIONS,
   sanitizeGoogleMapsUrl,
   openInGoogleMaps,
+  parseMinimalCoordinatePairs,
+  formatMinimalChargerType,
+  parseMinimalChargingStationsDatabase,
+  searchAndFilterChargingStations,
+  COCKPIT_INTERACTIVE_ZONES,
+  getCockpitZoneById,
+  computeShortestRotationDelta,
+  resolveCockpitZoneFromCanvasPoint,
+  cycleCockpitSector,
+  resolveCockpitBootPhase,
+  shouldSkipCockpitBootAnimation,
+  getCockpitBootTransformSpec,
+  resolveCockpitOperatorBadge,
+  COCKPIT_RADIAL_EXPANSION_RAYS,
+  COCKPIT_COMMUNITY_DISCLAIMER_TEXT,
+  COCKPIT_COMMUNITY_DISCLAIMER_TAGLINE,
+  type ParsedMinimalChargingDatabaseResult,
   type RiderParticipant
 } from './rules.ts';
+import fs from 'node:fs';
+import path from 'node:path';
 
 test('validateRideDistance enforces strictly positive finite kilometers', () => {
   assert.equal(validateRideDistance(150).valid, true);
@@ -739,6 +758,10 @@ test('Rotary navigation registry enforces role security (11 main pages including
   const autoPilotDirItem = ALL_SYSTEM_CONTROLS_DIRECTORY.find(i => i.id === 'dir_route_planner');
   assert.equal(autoPilotDirItem?.label, 'AUTO PILOT');
   assert.equal(autoPilotDirItem?.chargingMode, 'autopilot');
+  const showdownDirItem = ALL_SYSTEM_CONTROLS_DIRECTORY.find(i => i.id === 'dir_squadron_showdown');
+  assert.ok(showdownDirItem, 'Expected SQUADRON SHOWDOWN option in ALL_SYSTEM_CONTROLS_DIRECTORY');
+  assert.equal(showdownDirItem?.label, 'SQUADRON SHOWDOWN');
+  assert.equal(showdownDirItem?.routeId, 'squadron-showdown');
 
   // Ordinary verified member also sees 11 destinations without ADMIN CENTRE
   const memberItems = getAuthorizedRotaryDestinations({
@@ -1593,8 +1616,8 @@ test('Mission Mode: buildGoogleMapsUrl and buildMasterRouteGoogleMapsUrl format 
     buildMasterRouteGoogleMapsUrl,
     extractCoordinatesFromGoogleMapsUrl,
     resolveTrueWaypointCoordinates
-  } = await import('./rules');
-  const { INDIA_TOWN_PLACE_SUGGESTIONS } = await import('./indiaLocations');
+  } = await import('./rules.ts');
+  const { INDIA_TOWN_PLACE_SUGGESTIONS } = await import('./indiaLocations.ts');
 
   // Single waypoint coordinate URL
   const gmapsCoord = buildGoogleMapsUrl(13.2085, 77.7082, 'Devanahalli Regroup');
@@ -1758,7 +1781,7 @@ test('Charging Network: 24h new charger detection, composition breakdown (UV vs 
     isChargerAddedInLast24Hours,
     calculateChargingNetworkComposition,
     matchesChargingStationFilter
-  } = await import('./rules');
+  } = await import('./rules.ts');
 
   const now = Date.now();
   const threeHoursAgo = new Date(now - 3 * 3600 * 1000).toISOString();
@@ -1820,6 +1843,18 @@ test('Charging Network: 24h new charger detection, composition breakdown (UV vs 
   assert.equal(composition.segments.boltType6.count, 1);
   assert.equal(composition.segments.boltType6.totalKw, 6);
 
+  const stationType2 = {
+    id: 'cs_t2_1',
+    name: 'Mumbai Bandra Type 2 Hub',
+    chargerType: 'Type 2',
+    isSupernova: false,
+    isCommunityReported: false,
+    chargerSource: '3rd Party Station' as const,
+    powerOutputKw: 7.2,
+    createdAt: twoDaysAgo,
+    connectorTypes: ['Type 2 AC (7.2 kW)']
+  };
+
   // 3. Check matchesChargingStationFilter
   assert.equal(matchesChargingStationFilter(stationUv, 'LAST_24H', now), true);
   assert.equal(matchesChargingStationFilter(stationOwner, 'LAST_24H', now), false);
@@ -1832,6 +1867,568 @@ test('Charging Network: 24h new charger detection, composition breakdown (UV vs 
 
   assert.equal(matchesChargingStationFilter(stationType6, 'BOLT_TYPE_6'), true);
   assert.equal(matchesChargingStationFilter(stationUv, 'BOLT_TYPE_6'), false);
+
+  assert.equal(matchesChargingStationFilter(stationType2, 'TYPE_2'), true);
+  assert.equal(matchesChargingStationFilter(stationUv, 'TYPE_2'), false);
+
+  assert.equal(matchesChargingStationFilter(stationOwner, 'SOCKET'), true);
+  assert.equal(matchesChargingStationFilter(stationType6, 'SOCKET'), false);
+
+  // 4. Supernova stations with mixed connector labels must NEVER leak into Type 2, Type 6, Socket, or Community filters
+  const supernovaWithMixedConnectors = {
+    id: 'cs_supernova_mixed',
+    name: 'UV Supernova Hub with Secondary Labels',
+    chargerType: 'Supernova',
+    isSupernova: true,
+    isCommunityReported: false,
+    chargerSource: 'Supernova' as const,
+    powerOutputKw: 30,
+    createdAt: twoDaysAgo,
+    connectorTypes: [
+      'IEC 62196-3 Type 6 (UV DC Fast)',
+      'Type 2 AC (7.2 kW)',
+      '15A 3-Pin Industrial Socket'
+    ]
+  };
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'SUPERNOVA'), true);
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'UV_SUPERNOVA'), true);
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'ALL'), true);
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'TYPE_2'), false);
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'Type 2'), false);
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'BOLT_TYPE_6'), false);
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'Type 6'), false);
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'SOCKET'), false);
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'Socket'), false);
+  assert.equal(matchesChargingStationFilter(supernovaWithMixedConnectors, 'Community Provided Chargers'), false);
+});
+
+test('parseMinimalChargingStationsDatabase parses all 182 records, 76 valid coordinate markers, and 153 skipped records from charging_stations_minimal.json', () => {
+  const filePath = path.resolve(process.cwd(), 'public/data/charging_stations_minimal.json');
+  let result: ParsedMinimalChargingDatabaseResult;
+
+  if (fs.existsSync(filePath)) {
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    result = parseMinimalChargingStationsDatabase(raw);
+
+    // 182 total records, 29 records with coordinates, 76 valid map markers, 153 skipped records
+    assert.equal(result.totalRecordsLoaded, 182);
+    assert.equal(result.recordsWithValidCoordinatesCount, 29);
+    assert.equal(result.validMapMarkersCount, 76);
+    assert.equal(result.skippedRecordsCount, 153);
+    assert.equal(result.validStations.length, 76);
+    assert.equal(result.skippedRecords.length, 153);
+
+    // Check duplicate coordinate preservation (e.g. 10.710361, 76.428667 appears in two records)
+    const dupMatches = result.validStations.filter(
+      s => s.exactLocationCoordinates === '10.710361, 76.428667'
+    );
+    assert.equal(dupMatches.length, 2);
+    assert.equal(result.validStations.every(s => s.isUnverifiedAssociation === true), true);
+  } else {
+    const sample = [
+      { reference_name: 'ChargeMod Station A', exact_location_coordinates: '10.710361, 76.428667', charger_type: 'Blaze DC' },
+      { reference_name: 'ChargeMod Station B', exact_location_coordinates: '10.710361, 76.428667', charger_type: '' },
+      { reference_name: 'Station C', exact_location_coordinates: '', charger_type: 'Type 2' }
+    ];
+    result = parseMinimalChargingStationsDatabase(sample);
+    assert.equal(result.validStations.length, 2);
+    assert.equal(result.skippedRecords.length, 1);
+  }
+
+  // Check blank charger_type fallback
+  assert.equal(formatMinimalChargerType(''), 'Charger type unavailable');
+  assert.equal(formatMinimalChargerType(null), 'Charger type unavailable');
+  assert.equal(formatMinimalChargerType('3.3kW AC charging point'), '3.3kW AC charging point');
+
+  // Check search by reference_name, charger_type, and coordinates
+  const byName = searchAndFilterChargingStations(result.validStations, 'ChargeMod', 'ALL');
+  assert.ok(byName.length >= 1);
+
+  const byChargerType = searchAndFilterChargingStations(result.validStations, 'Blaze DC', 'ALL');
+  assert.ok(byChargerType.length >= 1);
+
+  const byCoords = searchAndFilterChargingStations(result.validStations, '10.710361', 'ALL');
+  assert.equal(byCoords.length, 2);
+});
+
+test('Interactive Cockpit Red-Glow Zone Registry: rotary hit-testing, directional cycling, and shortest bearing rotation', () => {
+  assert.equal(COCKPIT_INTERACTIVE_ZONES.length, 20);
+
+  // Default priority issues zone has valid mask and border SVG paths
+  const prio = getCockpitZoneById('sector_priority_issues');
+  assert.equal(prio.label, 'PRIORITY ISSUES');
+  assert.equal(prio.routeId, 'problems');
+  assert.ok(prio.svgMaskPath.startsWith('M '));
+  assert.ok(prio.svgBorderPath.startsWith('M '));
+
+  // Rotary canvas hit-testing resolves all 8 dial sectors + center reticle accurately
+  assert.equal(resolveCockpitZoneFromCanvasPoint(470.5, 810)?.id, 'sector_center_core');
+  assert.equal(resolveCockpitZoneFromCanvasPoint(470.5, 560)?.id, 'sector_jet_engineer');
+  assert.equal(resolveCockpitZoneFromCanvasPoint(700, 810)?.id, 'sector_charging_network');
+  assert.equal(resolveCockpitZoneFromCanvasPoint(470.5, 1050)?.id, 'sector_mission_mode');
+  assert.equal(resolveCockpitZoneFromCanvasPoint(240, 810)?.id, 'sector_squadron_assist');
+  assert.equal(resolveCockpitZoneFromCanvasPoint(85, 720)?.id, 'sector_priority_issues');
+  assert.equal(resolveCockpitZoneFromCanvasPoint(85, 900)?.id, 'sector_mod_lab');
+  assert.equal(resolveCockpitZoneFromCanvasPoint(855, 720)?.id, 'sector_marketplace');
+  assert.equal(resolveCockpitZoneFromCanvasPoint(855, 900)?.id, 'sector_discussions');
+  assert.equal(resolveCockpitZoneFromCanvasPoint(470.5, 100), null);
+
+  // Directional and sequential cycling around the dial
+  assert.equal(cycleCockpitSector('sector_priority_issues', 'up').id, 'sector_jet_engineer');
+  assert.equal(cycleCockpitSector('sector_jet_engineer', 'down').id, 'sector_mission_mode');
+  assert.equal(cycleCockpitSector('sector_jet_engineer', 'right').id, 'sector_charging_network');
+  assert.equal(cycleCockpitSector('sector_charging_network', 'right').id, 'sector_marketplace');
+  assert.equal(cycleCockpitSector('sector_jet_engineer', 'next').id, 'sector_marketplace');
+
+  // Shortest rotation delta across 0/360 boundary
+  assert.equal(computeShortestRotationDelta(350, 10), 20);
+  assert.equal(computeShortestRotationDelta(10, 350), -20);
+});
+
+test('Cockpit Core-to-Full-Interface Transforming Boot Animation: phase timeline, iris expansion specs, and radial rays', () => {
+  // Phase timeline resolution
+  assert.equal(resolveCockpitBootPhase(0, false), 'core_logo');
+  assert.equal(resolveCockpitBootPhase(300, false), 'core_logo');
+  assert.equal(resolveCockpitBootPhase(700, false), 'dial_expand');
+  assert.equal(resolveCockpitBootPhase(1500, false), 'full_deploy');
+  assert.equal(resolveCockpitBootPhase(2500, false), 'ready');
+
+  // Reduced motion immediately resolves to ready
+  assert.equal(resolveCockpitBootPhase(0, true), 'ready');
+
+  // Transform specs progress monotonically from central logo core -> circular interface -> full buttons -> ready
+  const specCore = getCockpitBootTransformSpec('core_logo');
+  const specDial = getCockpitBootTransformSpec('dial_expand');
+  const specFull = getCockpitBootTransformSpec('full_deploy');
+  const specReady = getCockpitBootTransformSpec('ready');
+
+  assert.ok(specCore.irisRadiusPct < specDial.irisRadiusPct);
+  assert.ok(specDial.irisRadiusPct < specFull.irisRadiusPct);
+  assert.ok(specFull.irisRadiusPct < specReady.irisRadiusPct);
+
+  assert.equal(specCore.centerLogoOpacity, 1);
+  assert.equal(specReady.centerLogoOpacity, 0);
+  assert.equal(specReady.clipPathCss, 'none');
+
+  // Lower chassis extension transforms in sync with boot phases (hidden in core_logo & dial_expand, deploys in full_deploy & ready)
+  assert.equal(specCore.lowerChassisOpacity, 0);
+  assert.equal(specDial.lowerChassisOpacity, 0);
+  assert.equal(specFull.lowerChassisOpacity, 1);
+  assert.equal(specReady.lowerChassisOpacity, 1);
+  assert.equal(specReady.lowerChassisClipPathCss, 'none');
+
+  // 8 radial expansion rays emanate from (470.5, 810)
+  assert.equal(COCKPIT_RADIAL_EXPANSION_RAYS.length, 8);
+  assert.ok(COCKPIT_RADIAL_EXPANSION_RAYS.every(r => Number.isFinite(r.x1) && Number.isFinite(r.y2)));
+
+  // First app start plays animation; subsequent back / previous page navigation skips animation
+  assert.equal(
+    shouldSkipCockpitBootAnimation({
+      hasBootedInSession: false,
+      skipBootAnimation: false,
+      reducedMotion: false,
+      initialShowSystemControls: false
+    }),
+    false
+  );
+  assert.equal(
+    shouldSkipCockpitBootAnimation({
+      hasBootedInSession: true,
+      skipBootAnimation: false,
+      reducedMotion: false,
+      initialShowSystemControls: false
+    }),
+    true
+  );
+  assert.equal(
+    shouldSkipCockpitBootAnimation({
+      hasBootedInSession: false,
+      skipBootAnimation: true,
+      reducedMotion: false,
+      initialShowSystemControls: false
+    }),
+    true
+  );
+});
+
+test('resolveCockpitOperatorBadge dynamically resolves user name, ID, and bike model pilot tag for every user', () => {
+  // Unauthenticated visitor
+  const guestBadge = resolveCockpitOperatorBadge(null);
+  assert.equal(guestBadge.displayName, 'SIGN IN');
+  assert.equal(guestBadge.pilotLabel, 'UV PILOT');
+
+  // Vikram Sengupta on F77
+  const vikramF77 = resolveCockpitOperatorBadge({
+    id: 'u_pilot07',
+    fullName: 'Vikram Sengupta',
+    motorcycleModel: 'F77',
+    pilotNickname: 'F77 PILOT'
+  });
+  assert.equal(vikramF77.displayName, 'VIKRAM');
+  assert.equal(vikramF77.pilotLabel, 'F77 PILOT');
+  assert.equal(vikramF77.userId, 'U_PILOT07');
+
+  // Rider on X47 automatically shows X47 PILOT even if legacy pilotNickname had F77 PILOT
+  const x47Pilot = resolveCockpitOperatorBadge({
+    id: 'u_pilot99',
+    fullName: 'Rohan Kulkarni',
+    motorcycleModel: 'X47 Crossover',
+    pilotNickname: 'F77 PILOT'
+  });
+  assert.equal(x47Pilot.displayName, 'ROHAN');
+  assert.equal(x47Pilot.pilotLabel, 'X47 PILOT');
+  assert.equal(x47Pilot.userId, 'U_PILOT99');
+
+  // Custom primary name and custom nickname override
+  const customPilot = resolveCockpitOperatorBadge({
+    id: 'u_custom',
+    fullName: 'Devika Nair',
+    customPrimaryName: 'APEX_01',
+    motorcycleModel: 'F77',
+    pilotNickname: 'NIGHTHAWK'
+  });
+  assert.equal(customPilot.displayName, 'APEX_01');
+  assert.equal(customPilot.pilotLabel, 'NIGHTHAWK');
+});
+
+test('Cockpit Community Disclaimer: verifies official community notice text and purpose', () => {
+  assert.ok(COCKPIT_COMMUNITY_DISCLAIMER_TEXT.includes('not official Ultraviolette Automotive app'));
+  assert.ok(COCKPIT_COMMUNITY_DISCLAIMER_TEXT.includes('discover, help , assist Ultraviolette owners'));
+  assert.ok(COCKPIT_COMMUNITY_DISCLAIMER_TEXT.includes('have some fun!'));
+  assert.equal(COCKPIT_COMMUNITY_DISCLAIMER_TAGLINE, 'COMMUNITY PLATFORM • NOT AN OFFICIAL APP');
+});
+
+test('UPI App Launch Android WebView Protection: buildUpiIntentUri and openInUpiApp generate intent:// URIs for UPI App, GPay, PhonePe, and Paytm without raw upi:// or tez:// schemes', async () => {
+  const {
+    buildUpiPaymentUri,
+    buildUpiIntentUri,
+    openInUpiApp,
+    UPI_APP_PACKAGE_MAP
+  } = await import('./rules.ts');
+
+  const rawUpi = buildUpiPaymentUri({
+    upiId: 'abinavthejas2001-1@okaxis',
+    amountInr: 20,
+    note: 'Get us a chai (Ghost Protocol)'
+  });
+  assert.ok(rawUpi.startsWith('upi://pay?'));
+
+  // 1. Generic UPI App intent
+  const upiIntent = buildUpiIntentUri(rawUpi, 'upi');
+  assert.ok(upiIntent.startsWith('intent://pay?pa=abinavthejas2001-1%40okaxis'));
+  assert.ok(upiIntent.includes('#Intent;scheme=upi;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;'));
+  assert.ok(upiIntent.includes('S.browser_fallback_url=upi%3A%2F%2Fpay%3F'));
+  assert.ok(!upiIntent.includes('package='));
+  assert.ok(upiIntent.endsWith(';end'));
+
+  // 2. GPay intent targets com.google.android.apps.nbu.paisa.user
+  const gpayIntent = buildUpiIntentUri(rawUpi, 'gpay');
+  assert.ok(gpayIntent.startsWith('intent://pay?pa=abinavthejas2001-1%40okaxis'));
+  assert.ok(gpayIntent.includes(`package=${UPI_APP_PACKAGE_MAP.gpay};`));
+  assert.ok(gpayIntent.includes('S.browser_fallback_url=upi%3A%2F%2Fpay%3F'));
+  assert.ok(gpayIntent.endsWith(';end'));
+
+  // 3. PhonePe intent targets com.phonepe.app
+  const phonepeIntent = buildUpiIntentUri(rawUpi, 'phonepe');
+  assert.ok(phonepeIntent.startsWith('intent://pay?pa=abinavthejas2001-1%40okaxis'));
+  assert.ok(phonepeIntent.includes(`package=${UPI_APP_PACKAGE_MAP.phonepe};`));
+  assert.ok(phonepeIntent.includes('S.browser_fallback_url=upi%3A%2F%2Fpay%3F'));
+  assert.ok(phonepeIntent.endsWith(';end'));
+
+  // 4. Paytm intent targets net.one97.paytm
+  const paytmIntent = buildUpiIntentUri(rawUpi, 'paytm');
+  assert.ok(paytmIntent.startsWith('intent://pay?pa=abinavthejas2001-1%40okaxis'));
+  assert.ok(paytmIntent.includes(`package=${UPI_APP_PACKAGE_MAP.paytm};`));
+  assert.ok(paytmIntent.includes('S.browser_fallback_url=upi%3A%2F%2Fpay%3F'));
+  assert.ok(paytmIntent.endsWith(';end'));
+
+  // 5. openInUpiApp returns the clean intent:// URI
+  assert.equal(openInUpiApp(rawUpi, 'gpay', 'Mozilla/5.0 (X11; Linux x86_64)'), gpayIntent);
+  assert.equal(openInUpiApp(rawUpi, 'phonepe', 'Mozilla/5.0 (X11; Linux x86_64)'), phonepeIntent);
+  assert.equal(openInUpiApp(rawUpi, 'paytm', 'Mozilla/5.0 (X11; Linux x86_64)'), paytmIntent);
+  assert.equal(openInUpiApp(rawUpi, 'upi', 'Mozilla/5.0 (X11; Linux x86_64)'), upiIntent);
+});
+
+test('Squadron Assist Call 112 & Phone Dialer Android WebView Protection: buildPhoneDialIntentUri and openPhoneDialer generate intent:// URIs with tel: fallback', async () => {
+  const {
+    buildPhoneDialIntentUri,
+    openPhoneDialer,
+    buildMailtoIntentUri,
+    openMailClient
+  } = await import('./rules.ts');
+
+  // 1. Call 112 emergency button
+  const call112Intent = buildPhoneDialIntentUri('112');
+  assert.equal(
+    call112Intent,
+    'intent://112#Intent;scheme=tel;action=android.intent.action.DIAL;category=android.intent.category.BROWSABLE;S.browser_fallback_url=tel%3A112;end'
+  );
+  assert.ok(call112Intent.startsWith('intent://112#Intent;scheme=tel;'));
+  assert.equal(openPhoneDialer('tel:112', 'Mozilla/5.0 (X11; Linux x86_64)'), call112Intent);
+
+  // 2. Formatted Indian mobile number with spaces
+  const riderPhoneIntent = buildPhoneDialIntentUri('tel:+91 98450 11223');
+  assert.equal(
+    riderPhoneIntent,
+    'intent://+919845011223#Intent;scheme=tel;action=android.intent.action.DIAL;category=android.intent.category.BROWSABLE;S.browser_fallback_url=tel%3A%2B919845011223;end'
+  );
+  assert.equal(openPhoneDialer('+91 98450 11223', 'Mozilla/5.0 (X11; Linux x86_64)'), riderPhoneIntent);
+
+  // 3. Mailto link conversion
+  const mailIntent = buildMailtoIntentUri('mailto:pilot@ghostprotocol.io?subject=SOS');
+  assert.ok(mailIntent.startsWith('intent://pilot@ghostprotocol.io?subject=SOS#Intent;scheme=mailto;'));
+  assert.ok(mailIntent.includes('S.browser_fallback_url=mailto%3Apilot%40ghostprotocol.io'));
+  assert.equal(openMailClient('mailto:pilot@ghostprotocol.io?subject=SOS', 'Mozilla/5.0 (X11; Linux x86_64)'), mailIntent);
+});
+
+test('Charging Network Co-Located & Same-City Clustering: groups 2+ chargers sharing exact coordinates, same address, or same city/town across Community, Supernova, Type 6, Type 2, and Socket types', async () => {
+  const {
+    normalizeChargerLocationKey,
+    extractChargerCityOrTownKey,
+    areChargingStationsCoLocated,
+    groupCoLocatedChargingStations,
+    resolveClusterLocationLabel,
+    clusterChargingStations
+  } = await import('./rules.ts');
+
+  // 1. Address and city normalization
+  assert.equal(
+    normalizeChargerLocationKey('NH 275 Bengaluru–Mysuru Access Controlled Hwy, Maddur, Karnataka'),
+    normalizeChargerLocationKey('NH 275 Bengaluru-Mysuru Access Controlled Hwy, Maddur, Karnataka!')
+  );
+  assert.equal(extractChargerCityOrTownKey('MG Road, Kolar, Karnataka 563101'), 'kolar');
+  assert.equal(extractChargerCityOrTownKey('NH 75 Bypass, Kolar'), 'kolar');
+  assert.equal(extractChargerCityOrTownKey('Mysore, Karnataka'), 'mysuru');
+  assert.equal(extractChargerCityOrTownKey('Mysuru, Karnataka'), 'mysuru');
+
+  // 2. Three heterogeneous chargers (Community Socket, Supernova, Type 6) submitted in the same town/location (Maddur)
+  const maddurCommunitySocket = {
+    id: 'cs_maddur_comm',
+    name: 'Maddur Rider Hangar 15A Socket',
+    location: 'Maddur Tiffany Bypass Plaza, Maddur, Karnataka 571428',
+    latitude: 12.5841,
+    longitude: 77.0428,
+    chargerType: 'Socket',
+    chargerSource: 'Community Provided Charger',
+    isCommunityReported: true,
+    powerOutputKw: 3.3
+  };
+  const maddurType2 = {
+    id: 'cs_maddur_t2',
+    name: 'Maddur Express AC Type 2 Pod',
+    location: 'NH 275 Service Road, Maddur, Karnataka',
+    latitude: 12.5890,
+    longitude: 77.0480,
+    chargerType: 'Type 2',
+    chargerSource: '3rd Party Station',
+    isCommunityReported: true,
+    powerOutputKw: 7.2
+  };
+  const maddurSupernova = {
+    id: 'cs_maddur_sn',
+    name: 'UV Supernova — Maddur Highway Hub',
+    location: 'Maddur, Karnataka',
+    latitude: 12.5920,
+    longitude: 77.0510,
+    chargerType: 'Supernova',
+    chargerSource: 'Supernova',
+    isSupernova: true,
+    powerOutputKw: 30
+  };
+  const standaloneTumakuru = {
+    id: 'cs_tumakuru_sn',
+    name: 'UV Supernova — Tumakuru Bypass',
+    location: 'NH 48 Sira Road, Tumakuru, Karnataka 572106',
+    latitude: 13.3409,
+    longitude: 77.1010,
+    chargerType: 'Supernova',
+    chargerSource: 'Supernova',
+    isSupernova: true,
+    powerOutputKw: 30
+  };
+
+  assert.equal(areChargingStationsCoLocated(maddurCommunitySocket, maddurType2), true);
+  assert.equal(areChargingStationsCoLocated(maddurType2, maddurSupernova), true);
+  assert.equal(areChargingStationsCoLocated(maddurCommunitySocket, standaloneTumakuru), false);
+
+  // 3. groupCoLocatedChargingStations groups the 3 Maddur chargers into 1 cluster with count = 3 while keeping Tumakuru as count = 1
+  const grouped = groupCoLocatedChargingStations([
+    maddurCommunitySocket,
+    maddurType2,
+    maddurSupernova,
+    standaloneTumakuru
+  ]);
+  assert.equal(grouped.length, 2);
+
+  const maddurCluster = grouped.find(c => c.count === 3);
+  assert.ok(maddurCluster, 'Expected a cluster of 3 Maddur chargers');
+  assert.equal(maddurCluster.isCluster, true);
+  assert.equal(maddurCluster.stations.length, 3);
+  assert.ok(resolveClusterLocationLabel(maddurCluster.stations).includes('Maddur'));
+
+  const tumakuruSingle = grouped.find(c => c.count === 1);
+  assert.ok(tumakuruSingle, 'Expected standalone Tumakuru charger to remain unclustered');
+  assert.equal(tumakuruSingle.isCluster, false);
+  assert.equal(tumakuruSingle.stations[0].id, 'cs_tumakuru_sn');
+
+  // 4. Even at max zoom (zoom 16), clusterChargingStations keeps co-located / same-city chargers grouped together
+  const highZoomClusters = clusterChargingStations(
+    [maddurCommunitySocket, maddurType2, maddurSupernova, standaloneTumakuru],
+    16
+  );
+  const highZoomMaddur = highZoomClusters.find(c => c.count === 3);
+  assert.ok(highZoomMaddur);
+  assert.equal(highZoomMaddur.isCluster, true);
+});
+
+import {
+  discoverRouteCorridorDefinitions,
+  buildFallbackRouteCandidates,
+  evaluateAutoPilotRouteOptions,
+  type EligibleChargerRecord
+} from './autopilot.ts';
+
+test('AutoPilot Multi-Route Engine: discovers multiple routes (including Bengaluru -> Kerala via Salem/Coimbatore and via Mysuru) and computes total distance and total chargers for each route', () => {
+  const blrStart = {
+    name: 'Ultraviolette Hangar Indiranagar',
+    locality: 'Indiranagar, Bengaluru',
+    address: '100 Feet Road, Indiranagar, Bengaluru, Karnataka',
+    latitude: 12.9719,
+    longitude: 77.6412
+  };
+  const keralaDest = {
+    name: 'Kerala — Kochi (Edappally NH 66 Hub)',
+    locality: 'Kochi, Kerala',
+    address: 'Edappally Junction, Kochi, Kerala',
+    latitude: 10.0190,
+    longitude: 76.3142
+  };
+
+  const sampleStations: EligibleChargerRecord[] = [
+    {
+      id: 'st_mysuru_1',
+      name: 'Bolt.Earth Mysuru',
+      location: 'Mysuru, Karnataka',
+      latitude: 12.3010,
+      longitude: 76.6341,
+      chargerType: 'Type 6',
+      connectorTypes: ['Type 6'],
+      powerOutputKw: 6,
+      isSupernova: false,
+      isCommunityReported: false,
+      verifiedByAdmin: true,
+      approvalStatus: 'approved',
+      published: true,
+      operatingStatus: 'Operational',
+      accessConditions: 'Public 24/7',
+      lastVerifiedDate: '2026-10-20'
+    },
+    {
+      id: 'st_nilambur_1',
+      name: 'Bolt.Earth Nilambur',
+      location: 'Nilambur, Kerala',
+      latitude: 11.2448,
+      longitude: 76.1831,
+      chargerType: 'Type 6',
+      connectorTypes: ['Type 6'],
+      powerOutputKw: 6,
+      isSupernova: false,
+      isCommunityReported: false,
+      verifiedByAdmin: true,
+      approvalStatus: 'approved',
+      published: true,
+      operatingStatus: 'Operational',
+      accessConditions: 'Public 24/7',
+      lastVerifiedDate: '2026-10-20'
+    },
+    {
+      id: 'st_salem_1',
+      name: 'Zeon Salem Highway',
+      location: 'Salem, Tamil Nadu',
+      latitude: 11.6646,
+      longitude: 78.1233,
+      chargerType: 'Socket',
+      connectorTypes: ['15A Socket'],
+      powerOutputKw: 3.3,
+      isSupernova: false,
+      isCommunityReported: false,
+      verifiedByAdmin: true,
+      approvalStatus: 'approved',
+      published: true,
+      operatingStatus: 'Operational',
+      accessConditions: 'Public 24/7',
+      lastVerifiedDate: '2026-10-20'
+    },
+    {
+      id: 'st_thrissur_1',
+      name: 'Bolt.Earth Thrissur',
+      location: 'Thrissur, Kerala',
+      latitude: 10.4937,
+      longitude: 76.2541,
+      chargerType: 'Type 6',
+      connectorTypes: ['Type 6'],
+      powerOutputKw: 6,
+      isSupernova: false,
+      isCommunityReported: false,
+      verifiedByAdmin: true,
+      approvalStatus: 'approved',
+      published: true,
+      operatingStatus: 'Operational',
+      accessConditions: 'Public 24/7',
+      lastVerifiedDate: '2026-10-20'
+    }
+  ];
+
+  // 1. Discover corridors between Bengaluru and Kerala
+  const corridors = discoverRouteCorridorDefinitions(blrStart, keralaDest, sampleStations);
+  assert.equal(corridors.length, 3);
+  assert.ok(
+    corridors.some(c => c.shortLabel.toLowerCase().includes('salem')),
+    'Expected a route via Salem & Coimbatore'
+  );
+  assert.ok(
+    corridors.some(c => c.shortLabel.toLowerCase().includes('mysuru')),
+    'Expected a route via Mysuru (Mysore)'
+  );
+
+  // 2. Build candidate route geometries and evaluate each route
+  const candidateGeoms = buildFallbackRouteCandidates(
+    blrStart,
+    keralaDest,
+    sampleStations,
+    corridors
+  );
+  assert.equal(candidateGeoms.length, 3);
+
+  const evaluated = evaluateAutoPilotRouteOptions(candidateGeoms, {
+    startLocation: blrStart,
+    destination: keralaDest,
+    allStations: sampleStations,
+    reports: [],
+    targetIntervalKm: 100
+  });
+  assert.equal(evaluated.length, 3);
+
+  for (const opt of evaluated) {
+    assert.ok(opt.distanceKm > 350, `Expected realistic distance > 350 km for ${opt.shortLabel}`);
+    assert.ok(
+      opt.totalChargersOnRoute >= 2,
+      `Expected chargers on route for ${opt.shortLabel}, got ${opt.totalChargersOnRoute}`
+    );
+  }
+
+  const salemRoute = evaluated.find(r => r.id === 'route_salem_coimbatore')!;
+  const mysuruRoute = evaluated.find(r => r.id === 'route_mysuru_nilambur')!;
+  assert.ok(salemRoute);
+  assert.ok(mysuruRoute);
+
+  // Verify Mysuru route includes the Mysuru & Nilambur chargers, while Salem route includes the Salem charger
+  const mysuruChargerIds = mysuruRoute.planResult.eligibleCorridorChargers.map(c => c.station.id);
+  assert.ok(mysuruChargerIds.includes('st_mysuru_1'));
+  assert.ok(mysuruChargerIds.includes('st_nilambur_1'));
+
+  const salemChargerIds = salemRoute.planResult.eligibleCorridorChargers.map(c => c.station.id);
+  assert.ok(salemChargerIds.includes('st_salem_1'));
 });
 
 

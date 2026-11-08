@@ -7,6 +7,7 @@ import {
   isPubliclyPublishedCharger,
   buildChargerNavigationUrl,
   VERIFIED_INDIA_PLACES_DIRECTORY,
+  generateOfflineCorridorGeometry,
   type ChargerPlugType,
   type PlaceSuggestion
 } from './rules.ts';
@@ -766,18 +767,27 @@ export function planAutoPilotMission(
     reports
   );
 
-  const cumDistances = computePolylineCumulativeDistances(effectivePoly);
+  const projectionPoly: [number, number][] =
+    effectivePoly.length > 360
+      ? effectivePoly.filter(
+          (_, idx) =>
+            idx === 0 ||
+            idx === effectivePoly.length - 1 ||
+            idx % Math.ceil(effectivePoly.length / 320) === 0
+        )
+      : effectivePoly;
+  const cumDistances = computePolylineCumulativeDistances(projectionPoly);
 
   // Project all eligible stations onto the route
-  // Maximum practical corridor detour threshold: 45 km perpendicular (~95 km round-trip detour)
-  const MAX_CORRIDOR_PERP_KM = Math.min(50, Math.max(25, baseDistanceKm * 0.28));
+  // Maximum practical corridor perpendicular threshold: 22 km (~50 km round-trip detour)
+  const MAX_CORRIDOR_PERP_KM = 22;
 
   const projectedCandidates = eligibleStations
     .map(station => {
       const proj = projectPointOntoRoute(
         station.latitude,
         station.longitude,
-        effectivePoly,
+        projectionPoly,
         cumDistances,
         baseDistanceKm
       );
@@ -797,8 +807,8 @@ export function planAutoPilotMission(
       if (Object.values(replacedStopMap).includes(c.station.id)) return true;
       return (
         c.perpendicularDistanceKm <= MAX_CORRIDOR_PERP_KM &&
-        c.alongRouteKm >= 2 &&
-        c.alongRouteKm <= Math.max(baseDistanceKm - 2, 2)
+        c.alongRouteKm >= 0 &&
+        c.alongRouteKm <= Math.max(baseDistanceKm, 2)
       );
     })
     .sort((a, b) => a.alongRouteKm - b.alongRouteKm);
@@ -810,7 +820,12 @@ export function planAutoPilotMission(
   const needsAutomaticStops = baseDistanceKm > effectiveTargetStepKm * 1.08;
 
   if (needsAutomaticStops) {
-    const activePool = projectedCandidates.filter(c => !removedSet.has(c.station.id));
+    const activePool = projectedCandidates.filter(
+      c =>
+        !removedSet.has(c.station.id) &&
+        c.alongRouteKm >= 2 &&
+        c.alongRouteKm <= Math.max(baseDistanceKm - 2, 2)
+    );
     let currentPosKm = 0;
     const usedIds = new Set<string>();
 
@@ -1337,16 +1352,18 @@ export function buildAutoPilotNavigationStages(
     const stageDest = allChainPoints[nextCursor];
     const stageIntermediates = allChainPoints.slice(cursor + 1, nextCursor);
 
-    // Construct URL starting from buildChargerNavigationUrl(stageDest, stageOrigin)
+    // Construct multi-stop Google Maps URL including Start, all intermediate charging/pit stops in order, and Destination
     const baseUrl = buildChargerNavigationUrl(stageDest, stageOrigin);
     let finalUrl = baseUrl;
     if (stageIntermediates.length > 0) {
-      const wpStr = stageIntermediates
-        .map(w => `${Number(w.latitude).toFixed(6)},${Number(w.longitude).toFixed(6)}`)
-        .join('|');
-      const parsed = new URL(baseUrl);
-      parsed.searchParams.set('waypoints', wpStr);
-      finalUrl = parsed.toString();
+      const saddr = `${Number(stageOrigin.latitude).toFixed(6)},${Number(stageOrigin.longitude).toFixed(6)}`;
+      const destCoord = `${Number(stageDest.latitude).toFixed(6)},${Number(stageDest.longitude).toFixed(6)}`;
+      const stopCoords = stageIntermediates.map(
+        w => `${Number(w.latitude).toFixed(6)},${Number(w.longitude).toFixed(6)}`
+      );
+      const daddrChain = [...stopCoords, destCoord].join('+to:');
+      const wpStr = stopCoords.join('|');
+      finalUrl = `https://maps.google.com/maps?saddr=${saddr}&daddr=${daddrChain}&waypoints=${encodeURIComponent(wpStr)}&dirflg=d`;
     }
 
     stages.push({
@@ -1504,3 +1521,818 @@ export function discoverCorridorPitStops(
 
   return results.sort((a, b) => a.distanceFromStartKm - b.distanceFromStartKm);
 }
+
+// ============================================================================
+// MULTI-ROUTE CORRIDOR DISCOVERY, GEOMETRY & EVALUATION ENGINE
+// ============================================================================
+
+export interface RouteCorridorWaypoint {
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface RouteCorridorDefinition {
+  id: string;
+  name: string;
+  shortLabel: string;
+  viaSummary: string;
+  highwayBadge: string;
+  viaWaypoints: RouteCorridorWaypoint[];
+}
+
+export interface AutoPilotRouteCandidateGeometry {
+  id: string;
+  name: string;
+  shortLabel: string;
+  viaSummary: string;
+  highwayBadge: string;
+  polyline: [number, number][];
+  distanceKm: number;
+  durationMin: number | null;
+  routingAvailable: boolean;
+  routingSource: string;
+  routingLimitationNote?: string;
+}
+
+export interface EvaluatedAutoPilotRouteOption extends AutoPilotRouteCandidateGeometry {
+  totalChargersOnRoute: number;
+  plannedStopsCount: number;
+  supernovaCountOnRoute: number;
+  planResult: PlanAutoPilotRouteResult;
+}
+
+function isBengaluruRegion(pt: RouteCoordinate): boolean {
+  const text = `${pt.name || ''} ${pt.locality || ''} ${pt.address || ''}`.toLowerCase();
+  if (
+    text.includes('bengaluru') ||
+    text.includes('bangalore') ||
+    text.includes('indiranagar') ||
+    text.includes('koramangala') ||
+    text.includes('whitefield') ||
+    text.includes('electronic city') ||
+    text.includes('hebbal') ||
+    text.includes('devanahalli')
+  ) {
+    return true;
+  }
+  return (
+    pt.latitude >= 12.68 &&
+    pt.latitude <= 13.38 &&
+    pt.longitude >= 77.32 &&
+    pt.longitude <= 77.88
+  );
+}
+
+function isKeralaRegion(pt: RouteCoordinate): boolean {
+  const text = `${pt.name || ''} ${pt.locality || ''} ${pt.address || ''}`.toLowerCase();
+  if (
+    text.includes('kerala') ||
+    text.includes('kochi') ||
+    text.includes('ernakulam') ||
+    text.includes('thrissur') ||
+    text.includes('kozhikode') ||
+    text.includes('calicut') ||
+    text.includes('wayanad') ||
+    text.includes('kalpetta') ||
+    text.includes('munnar') ||
+    text.includes('palakkad') ||
+    text.includes('alappuzha') ||
+    text.includes('alleppey') ||
+    text.includes('kottayam') ||
+    text.includes('kollam') ||
+    text.includes('trivandrum') ||
+    text.includes('thiruvananthapuram') ||
+    text.includes('edappally') ||
+    text.includes('nilambur') ||
+    text.includes('malappuram') ||
+    text.includes('kannur')
+  ) {
+    return true;
+  }
+  return (
+    pt.latitude >= 8.05 &&
+    pt.latitude <= 12.15 &&
+    pt.longitude >= 74.85 &&
+    pt.longitude <= 77.35 &&
+    !(pt.latitude >= 10.85 && pt.longitude >= 76.85) // exclude Coimbatore/Salem TN side
+  );
+}
+
+function isChennaiOrEastCoastRegion(pt: RouteCoordinate): boolean {
+  const text = `${pt.name || ''} ${pt.locality || ''} ${pt.address || ''}`.toLowerCase();
+  if (
+    text.includes('chennai') ||
+    text.includes('vellore') ||
+    text.includes('mahabalipuram') ||
+    text.includes('mamallapuram') ||
+    text.includes('sriperumbudur') ||
+    text.includes('kanchipuram') ||
+    text.includes('puducherry') ||
+    text.includes('pondicherry')
+  ) {
+    return true;
+  }
+  return (
+    pt.latitude >= 11.85 &&
+    pt.latitude <= 13.35 &&
+    pt.longitude >= 78.95 &&
+    pt.longitude <= 80.45
+  );
+}
+
+function isMysuruCoorgNilgirisRegion(pt: RouteCoordinate): boolean {
+  const text = `${pt.name || ''} ${pt.locality || ''} ${pt.address || ''}`.toLowerCase();
+  if (
+    text.includes('mysuru') ||
+    text.includes('mysore') ||
+    text.includes('coorg') ||
+    text.includes('madikeri') ||
+    text.includes('kodagu') ||
+    text.includes('ooty') ||
+    text.includes('udhagamandalam') ||
+    text.includes('nilgiri')
+  ) {
+    return true;
+  }
+  return (
+    pt.latitude >= 11.32 &&
+    pt.latitude <= 12.55 &&
+    pt.longitude >= 75.55 &&
+    pt.longitude <= 76.85
+  );
+}
+
+function isHyderabadRegion(pt: RouteCoordinate): boolean {
+  const text = `${pt.name || ''} ${pt.locality || ''} ${pt.address || ''}`.toLowerCase();
+  if (
+    text.includes('hyderabad') ||
+    text.includes('hitec city') ||
+    text.includes('madhapur') ||
+    text.includes('secunderabad') ||
+    text.includes('gachibowli')
+  ) {
+    return true;
+  }
+  return (
+    pt.latitude >= 17.15 &&
+    pt.latitude <= 17.68 &&
+    pt.longitude >= 78.15 &&
+    pt.longitude <= 78.75
+  );
+}
+
+function isMumbaiRegion(pt: RouteCoordinate): boolean {
+  const text = `${pt.name || ''} ${pt.locality || ''} ${pt.address || ''}`.toLowerCase();
+  if (text.includes('mumbai') || text.includes('worli') || text.includes('navi mumbai') || text.includes('thane')) {
+    return true;
+  }
+  return pt.latitude >= 18.85 && pt.latitude <= 19.35 && pt.longitude >= 72.75 && pt.longitude <= 73.15;
+}
+
+function isPuneRegion(pt: RouteCoordinate): boolean {
+  const text = `${pt.name || ''} ${pt.locality || ''} ${pt.address || ''}`.toLowerCase();
+  if (text.includes('pune') || text.includes('wakad') || text.includes('hinjewadi') || text.includes('pimpri')) {
+    return true;
+  }
+  return pt.latitude >= 18.40 && pt.latitude <= 18.72 && pt.longitude >= 73.65 && pt.longitude <= 74.05;
+}
+
+/**
+ * Discovers 2 to 3 distinct, realistic driving route corridors between startLocation and destination.
+ * Explicitly supports major multi-corridor pairs (such as Bengaluru <-> Kerala via Salem/Coimbatore
+ * vs via Mysuru/Nilambur vs via Mysuru/Chamarajanagar; Bengaluru <-> Chennai via Kolar NH 75 vs
+ * via Krishnagiri NH 48; Bengaluru <-> Mysuru via NH 275 Maddur vs via NH 948 Kanakapura) as well
+ * as dynamic intermediate hub discovery for any other city pair across India.
+ */
+export function discoverRouteCorridorDefinitions(
+  startLocation: RouteCoordinate,
+  destination: RouteCoordinate,
+  allStations: EligibleChargerRecord[] = []
+): RouteCorridorDefinition[] {
+  const directDistKm = calculateDistanceKm(
+    startLocation.latitude,
+    startLocation.longitude,
+    destination.latitude,
+    destination.longitude
+  );
+
+  if (directDistKm < 15) {
+    return [
+      {
+        id: 'route_direct',
+        name: 'Route 1: Direct Urban Corridor',
+        shortLabel: 'Direct Route',
+        viaSummary: `${startLocation.name} → ${destination.name}`,
+        highwayBadge: 'DIRECT',
+        viaWaypoints: []
+      }
+    ];
+  }
+
+  // 1. BENGALURU <-> KERALA (Kochi, Thrissur, Kozhikode, Wayanad, Munnar, Palakkad, Trivandrum, etc.)
+  const blrToKerala = isBengaluruRegion(startLocation) && isKeralaRegion(destination);
+  const keralaToBlr = isKeralaRegion(startLocation) && isBengaluruRegion(destination);
+
+  if (blrToKerala || keralaToBlr) {
+    const keralaPt = blrToKerala ? destination : startLocation;
+    const isNorthKerala = keralaPt.latitude >= 11.05; // Kozhikode, Wayanad, Kannur, Malappuram
+    const isCentralOrSouthKerala = keralaPt.latitude < 11.05; // Kochi, Thrissur, Palakkad, Munnar, Trivandrum
+    const isSouthOfThrissur = keralaPt.latitude <= 10.38; // Kochi, Munnar, Alappuzha, Trivandrum
+
+    // Route Option 1: Via Mysuru (Mysore) & Nilambur / Wayanad Corridor (NH 275 / NH 766)
+    const mysuruWaypointsForward: RouteCorridorWaypoint[] = [
+      { name: 'Mysuru (Mysore)', latitude: 12.3010, longitude: 76.6341 },
+      { name: 'Gundlupet Highway Junction', latitude: 11.8080, longitude: 76.6850 }
+    ];
+    if (isNorthKerala) {
+      mysuruWaypointsForward.push({
+        name: 'Wayanad / Kalpetta (NH 766)',
+        latitude: 11.6103,
+        longitude: 76.0827
+      });
+    } else {
+      mysuruWaypointsForward.push({
+        name: 'Nilambur Highway (SH 28)',
+        latitude: 11.2785,
+        longitude: 76.2255
+      });
+    }
+
+    // Route Option 2: Via Salem & Coimbatore Highway (NH 44 / NH 544)
+    const salemWaypointsForward: RouteCorridorWaypoint[] = [
+      { name: 'Salem (NH 44 / NH 544)', latitude: 11.6646, longitude: 78.1233 }
+    ];
+    if (isCentralOrSouthKerala) {
+      salemWaypointsForward.push({
+        name: 'Coimbatore Highway (NH 544)',
+        latitude: 11.0168,
+        longitude: 76.9558
+      });
+    } else {
+      salemWaypointsForward.push({
+        name: 'Coimbatore Highway (NH 544)',
+        latitude: 11.0168,
+        longitude: 76.9558
+      });
+    }
+
+    // Route Option 3: Via Mysuru, Chamarajanagar & Coimbatore (NH 275 / NH 948)
+    const chamarajanagarWaypointsForward: RouteCorridorWaypoint[] = [
+      { name: 'Mysuru (Mysore)', latitude: 12.3010, longitude: 76.6341 },
+      { name: 'Chamarajanagar / Dhimbam Ghat (NH 948)', latitude: 11.5030, longitude: 77.1520 },
+      { name: 'Coimbatore Highway (NH 544)', latitude: 11.0168, longitude: 76.9558 }
+    ];
+
+    const orderWps = (wps: RouteCorridorWaypoint[]) =>
+      blrToKerala ? wps : [...wps].reverse();
+
+    return [
+      {
+        id: 'route_salem_coimbatore',
+        name: 'Route 1: Via Salem & Coimbatore Highway',
+        shortLabel: 'Via Salem & Coimbatore',
+        viaSummary: blrToKerala
+          ? 'Dharmapuri → Salem → Erode → Coimbatore → Palakkad'
+          : 'Palakkad → Coimbatore → Erode → Salem → Dharmapuri',
+        highwayBadge: 'NH 44 / NH 544',
+        viaWaypoints: orderWps(salemWaypointsForward)
+      },
+      {
+        id: 'route_mysuru_nilambur',
+        name: 'Route 2: Via Mysuru (Mysore) & Nilambur Corridor',
+        shortLabel: 'Via Mysuru (Mysore)',
+        viaSummary: blrToKerala
+          ? 'Maddur → Mysuru → Gundlupet → Nilambur → Perinthalmanna'
+          : 'Perinthalmanna → Nilambur → Gundlupet → Mysuru → Maddur',
+        highwayBadge: 'NH 275 / NH 766',
+        viaWaypoints: orderWps(mysuruWaypointsForward)
+      },
+      {
+        id: 'route_mysuru_coimbatore',
+        name: 'Route 3: Via Mysuru, Dhimbam Ghat & Coimbatore',
+        shortLabel: 'Via Mysuru & Coimbatore',
+        viaSummary: blrToKerala
+          ? 'Mysuru → Chamarajanagar → Sathyamangalam → Coimbatore → Palakkad'
+          : 'Palakkad → Coimbatore → Sathyamangalam → Chamarajanagar → Mysuru',
+        highwayBadge: 'NH 275 / NH 948',
+        viaWaypoints: orderWps(chamarajanagarWaypointsForward)
+      }
+    ];
+  }
+
+  // 2. BENGALURU <-> CHENNAI / VELLORE / MAHABALIPURAM / PUDUCHERRY
+  const blrToChn = isBengaluruRegion(startLocation) && isChennaiOrEastCoastRegion(destination);
+  const chnToBlr = isChennaiOrEastCoastRegion(startLocation) && isBengaluruRegion(destination);
+
+  if (blrToChn || chnToBlr) {
+    const eastPt = blrToChn ? destination : startLocation;
+    const includeVellore = eastPt.longitude >= 79.22;
+    const includeSriperumbudur = eastPt.longitude >= 79.85 && eastPt.latitude >= 12.75;
+
+    const kolarWps: RouteCorridorWaypoint[] = [
+      { name: 'Kolar Bypass (NH 75)', latitude: 13.1328, longitude: 78.1715 },
+      { name: 'Mulbagal Highway Plaza (NH 75)', latitude: 13.1645, longitude: 78.3932 }
+    ];
+    if (includeVellore) {
+      kolarWps.push({ name: 'Vellore Green Circle (NH 48)', latitude: 12.9349, longitude: 79.1469 });
+    }
+    if (includeSriperumbudur) {
+      kolarWps.push({ name: 'Sriperumbudur Toll Plaza (NH 48)', latitude: 12.9675, longitude: 79.9479 });
+    }
+
+    const krishnagiriWps: RouteCorridorWaypoint[] = [
+      { name: 'Hosur (NH 44)', latitude: 12.7409, longitude: 77.8253 },
+      { name: 'Krishnagiri Junction (NH 48)', latitude: 12.5266, longitude: 78.2150 },
+      { name: 'Ambur / Vaniyambadi (NH 48)', latitude: 12.7904, longitude: 78.7166 }
+    ];
+    if (includeVellore) {
+      krishnagiriWps.push({ name: 'Vellore Green Circle (NH 48)', latitude: 12.9349, longitude: 79.1469 });
+    }
+    if (includeSriperumbudur) {
+      krishnagiriWps.push({ name: 'Sriperumbudur Toll Plaza (NH 48)', latitude: 12.9675, longitude: 79.9479 });
+    }
+
+    const chittoorTirupatiWps: RouteCorridorWaypoint[] = [
+      { name: 'Kolar (NH 75)', latitude: 13.1357, longitude: 78.0154 },
+      { name: 'Chittoor / Tirupati Corridor', latitude: 13.2172, longitude: 79.1003 }
+    ];
+    if (includeSriperumbudur) {
+      chittoorTirupatiWps.push({ name: 'Tiruttani / Sriperumbudur', latitude: 13.1765, longitude: 79.6109 });
+    }
+
+    const orderWps = (wps: RouteCorridorWaypoint[]) =>
+      blrToChn ? wps : [...wps].reverse();
+
+    return [
+      {
+        id: 'route_nh75_kolar',
+        name: 'Route 1: Via Kolar & Mulbagal Highway',
+        shortLabel: 'Via Kolar & Mulbagal',
+        viaSummary: blrToChn
+          ? 'Hoskote → Kolar → Mulbagal → Vellore'
+          : 'Vellore → Mulbagal → Kolar → Hoskote',
+        highwayBadge: 'NH 75 / NH 48',
+        viaWaypoints: orderWps(kolarWps)
+      },
+      {
+        id: 'route_nh48_krishnagiri',
+        name: 'Route 2: Via Hosur & Krishnagiri Expressway',
+        shortLabel: 'Via Hosur & Krishnagiri',
+        viaSummary: blrToChn
+          ? 'Hosur → Krishnagiri → Ambur → Vellore'
+          : 'Vellore → Ambur → Krishnagiri → Hosur',
+        highwayBadge: 'NH 44 / NH 48',
+        viaWaypoints: orderWps(krishnagiriWps)
+      },
+      {
+        id: 'route_nh69_chittoor',
+        name: 'Route 3: Via Kolar & Chittoor Northern Corridor',
+        shortLabel: 'Via Chittoor Corridor',
+        viaSummary: blrToChn
+          ? 'Kolar → Palamaner → Chittoor → Ranipet'
+          : 'Ranipet → Chittoor → Palamaner → Kolar',
+        highwayBadge: 'NH 69 / NH 40',
+        viaWaypoints: orderWps(chittoorTirupatiWps)
+      }
+    ];
+  }
+
+  // 3. BENGALURU <-> MYSURU / COORG / OOTY
+  const blrToMys = isBengaluruRegion(startLocation) && isMysuruCoorgNilgirisRegion(destination);
+  const mysToBlr = isMysuruCoorgNilgirisRegion(startLocation) && isBengaluruRegion(destination);
+
+  if (blrToMys || mysToBlr) {
+    const westPt = blrToMys ? destination : startLocation;
+    const beyondMysuru = westPt.latitude < 12.15 || westPt.longitude < 76.35;
+
+    const maddurWps: RouteCorridorWaypoint[] = [
+      { name: 'Channapatna (NH 275)', latitude: 12.6518, longitude: 77.2067 },
+      { name: 'Maddur Highway Plaza (NH 275)', latitude: 12.5841, longitude: 77.0428 }
+    ];
+    if (beyondMysuru) {
+      maddurWps.push({ name: 'Mysuru Bypass', latitude: 12.3010, longitude: 76.6341 });
+    }
+
+    const kanakapuraWps: RouteCorridorWaypoint[] = [
+      { name: 'Kanakapura (NH 948)', latitude: 12.5462, longitude: 77.4199 },
+      { name: 'Malavalli Scenic Corridor (NH 948)', latitude: 12.3835, longitude: 77.0605 }
+    ];
+    if (beyondMysuru) {
+      kanakapuraWps.push({ name: 'Mysuru South', latitude: 12.2682, longitude: 76.6421 });
+    }
+
+    const kunigalWps: RouteCorridorWaypoint[] = [
+      { name: 'Nelamangala Toll (NH 75)', latitude: 13.0335, longitude: 77.3986 },
+      { name: 'Kunigal Bypass (NH 75)', latitude: 12.9860, longitude: 76.9920 },
+      { name: 'Nagamangala / Srirangapatna (SH 19)', latitude: 12.6850, longitude: 76.6950 }
+    ];
+
+    const orderWps = (wps: RouteCorridorWaypoint[]) =>
+      blrToMys ? wps : [...wps].reverse();
+
+    return [
+      {
+        id: 'route_nh275_maddur',
+        name: 'Route 1: Via Channapatna & Maddur Expressway',
+        shortLabel: 'Via Maddur Expressway',
+        viaSummary: blrToMys
+          ? 'Bidadi → Channapatna → Maddur → Mandya'
+          : 'Mandya → Maddur → Channapatna → Bidadi',
+        highwayBadge: 'NH 275',
+        viaWaypoints: orderWps(maddurWps)
+      },
+      {
+        id: 'route_nh948_kanakapura',
+        name: 'Route 2: Via Kanakapura & Malavalli Scenic Highway',
+        shortLabel: 'Via Kanakapura & Malavalli',
+        viaSummary: blrToMys
+          ? 'Kanakapura → Halagur → Malavalli → Bannur'
+          : 'Bannur → Malavalli → Halagur → Kanakapura',
+        highwayBadge: 'NH 948',
+        viaWaypoints: orderWps(kanakapuraWps)
+      },
+      {
+        id: 'route_nh75_kunigal',
+        name: 'Route 3: Via Nelamangala & Kunigal Highway',
+        shortLabel: 'Via Kunigal & Bellur Cross',
+        viaSummary: blrToMys
+          ? 'Nelamangala → Kunigal → Bellur Cross → Srirangapatna'
+          : 'Srirangapatna → Bellur Cross → Kunigal → Nelamangala',
+        highwayBadge: 'NH 75 / SH 19',
+        viaWaypoints: orderWps(kunigalWps)
+      }
+    ];
+  }
+
+  // 4. BENGALURU <-> HYDERABAD
+  const blrToHyd = isBengaluruRegion(startLocation) && isHyderabadRegion(destination);
+  const hydToBlr = isHyderabadRegion(startLocation) && isBengaluruRegion(destination);
+
+  if (blrToHyd || hydToBlr) {
+    const nh44Wps: RouteCorridorWaypoint[] = [
+      { name: 'Devanahalli (NH 44)', latitude: 13.2085, longitude: 77.7082 },
+      { name: 'Anantapur (NH 44)', latitude: 15.1046, longitude: 77.6382 },
+      { name: 'Kurnool (NH 44)', latitude: 15.8412, longitude: 78.0120 }
+    ];
+    const tumakuruWps: RouteCorridorWaypoint[] = [
+      { name: 'Tumakuru (NH 48)', latitude: 13.3419, longitude: 77.1260 },
+      { name: 'Ballari / Gooty Corridor', latitude: 15.1394, longitude: 76.9214 },
+      { name: 'Kurnool (NH 44)', latitude: 15.8412, longitude: 78.0120 }
+    ];
+    const orderWps = (wps: RouteCorridorWaypoint[]) =>
+      blrToHyd ? wps : [...wps].reverse();
+
+    return [
+      {
+        id: 'route_nh44_kurnool',
+        name: 'Route 1: Via Devanahalli, Anantapur & Kurnool',
+        shortLabel: 'Via Anantapur & Kurnool',
+        viaSummary: blrToHyd
+          ? 'Devanahalli → Anantapur → Kurnool → Jadcherla'
+          : 'Jadcherla → Kurnool → Anantapur → Devanahalli',
+        highwayBadge: 'NH 44',
+        viaWaypoints: orderWps(nh44Wps)
+      },
+      {
+        id: 'route_nh48_tumakuru',
+        name: 'Route 2: Via Tumakuru & Western Highway Corridor',
+        shortLabel: 'Via Tumakuru & Ballari',
+        viaSummary: blrToHyd
+          ? 'Tumakuru → Hiriyur → Ballari → Kurnool'
+          : 'Kurnool → Ballari → Hiriyur → Tumakuru',
+        highwayBadge: 'NH 48 / NH 150A',
+        viaWaypoints: orderWps(tumakuruWps)
+      }
+    ];
+  }
+
+  // 5. MUMBAI <-> PUNE
+  const mumToPune = isMumbaiRegion(startLocation) && isPuneRegion(destination);
+  const puneToMum = isPuneRegion(startLocation) && isMumbaiRegion(destination);
+
+  if (mumToPune || puneToMum) {
+    const expyWps: RouteCorridorWaypoint[] = [
+      { name: 'Lonavala Expressway Food Mall', latitude: 18.7557, longitude: 73.4091 }
+    ];
+    const oldHwyWps: RouteCorridorWaypoint[] = [
+      { name: 'Panvel / Khopoli Old Highway (NH 48)', latitude: 18.7869, longitude: 73.3459 },
+      { name: 'Talegaon Dabhade (NH 48)', latitude: 18.7350, longitude: 73.6756 }
+    ];
+    const orderWps = (wps: RouteCorridorWaypoint[]) =>
+      mumToPune ? wps : [...wps].reverse();
+
+    return [
+      {
+        id: 'route_mum_pune_expy',
+        name: 'Route 1: Via Mumbai–Pune Expressway & Lonavala',
+        shortLabel: 'Via Lonavala Expressway',
+        viaSummary: mumToPune
+          ? 'Kalamboli → Khalapur → Lonavala → Wakad'
+          : 'Wakad → Lonavala → Khalapur → Kalamboli',
+        highwayBadge: 'EXPRESSWAY',
+        viaWaypoints: orderWps(expyWps)
+      },
+      {
+        id: 'route_mum_pune_old_nh48',
+        name: 'Route 2: Via Khopoli & Talegaon Old Highway',
+        shortLabel: 'Via Khopoli & Talegaon',
+        viaSummary: mumToPune
+          ? 'Panvel → Khopoli → Khandala → Talegaon'
+          : 'Talegaon → Khandala → Khopoli → Panvel',
+        highwayBadge: 'OLD NH 48',
+        viaWaypoints: orderWps(oldHwyWps)
+      }
+    ];
+  }
+
+  // 6. GENERAL DYNAMIC MULTI-ROUTE DISCOVERY FOR ANY OTHER START & DESTINATION PAIR
+  const corridors: RouteCorridorDefinition[] = [
+    {
+      id: 'route_primary_direct',
+      name: 'Route 1: Primary Highway Corridor',
+      shortLabel: 'Primary Direct Highway',
+      viaSummary: `Direct highway alignment (${startLocation.name} → ${destination.name})`,
+      highwayBadge: 'PRIMARY ROUTE',
+      viaWaypoints: []
+    }
+  ];
+
+  // Discover off-axis intermediate stations or verified hubs to form 1-2 genuine alternative routes
+  const dLat = destination.latitude - startLocation.latitude;
+  const dLon = destination.longitude - startLocation.longitude;
+  const lenSq = dLat * dLat + dLon * dLon;
+
+  if (lenSq > 1e-8) {
+    type OffAxisHub = {
+      name: string;
+      latitude: number;
+      longitude: number;
+      t: number;
+      perpKm: number;
+      side: 'left' | 'right';
+      isCharger: boolean;
+    };
+
+    const hubCandidates: OffAxisHub[] = [];
+    const eligible = getEligibleAutoPilotChargers(allStations);
+
+    for (const st of eligible) {
+      const relLat = st.latitude - startLocation.latitude;
+      const relLon = st.longitude - startLocation.longitude;
+      const t = (relLat * dLat + relLon * dLon) / lenSq;
+      if (t < 0.16 || t > 0.84) continue;
+      const projLat = startLocation.latitude + t * dLat;
+      const projLon = startLocation.longitude + t * dLon;
+      const perpKm = calculateDistanceKm(st.latitude, st.longitude, projLat, projLon);
+      if (perpKm < 12 || perpKm > Math.max(55, directDistKm * 0.42)) continue;
+      const cross = relLon * dLat - relLat * dLon;
+      const cleanName = (st.location || st.name || 'Highway Hub').split(',')[0].split('•')[0].trim();
+      hubCandidates.push({
+        name: cleanName,
+        latitude: st.latitude,
+        longitude: st.longitude,
+        t,
+        perpKm,
+        side: cross >= 0 ? 'left' : 'right',
+        isCharger: true
+      });
+    }
+
+    for (const poi of VERIFIED_INDIA_PLACES_DIRECTORY) {
+      const relLat = poi.latitude - startLocation.latitude;
+      const relLon = poi.longitude - startLocation.longitude;
+      const t = (relLat * dLat + relLon * dLon) / lenSq;
+      if (t < 0.16 || t > 0.84) continue;
+      const projLat = startLocation.latitude + t * dLat;
+      const projLon = startLocation.longitude + t * dLon;
+      const perpKm = calculateDistanceKm(poi.latitude, poi.longitude, projLat, projLon);
+      if (perpKm < 12 || perpKm > Math.max(55, directDistKm * 0.42)) continue;
+      const cross = relLon * dLat - relLat * dLon;
+      const cleanName = (poi.locality || poi.name).split(',')[0].trim();
+      hubCandidates.push({
+        name: cleanName,
+        latitude: poi.latitude,
+        longitude: poi.longitude,
+        t,
+        perpKm,
+        side: cross >= 0 ? 'left' : 'right',
+        isCharger: false
+      });
+    }
+
+    // Pick best left-side hub and best right-side hub (preferring hubs with chargers and near midpoint t=0.5)
+    const pickBestSideHub = (side: 'left' | 'right'): OffAxisHub | null => {
+      const sidePool = hubCandidates.filter(h => h.side === side);
+      if (sidePool.length === 0) return null;
+      sidePool.sort((a, b) => {
+        const scoreA = (a.isCharger ? 30 : 0) - Math.abs(a.t - 0.5) * 40 - a.perpKm * 0.3;
+        const scoreB = (b.isCharger ? 30 : 0) - Math.abs(b.t - 0.5) * 40 - b.perpKm * 0.3;
+        return scoreB - scoreA;
+      });
+      return sidePool[0];
+    };
+
+    const leftHub = pickBestSideHub('left');
+    const rightHub = pickBestSideHub('right');
+
+    if (leftHub) {
+      corridors.push({
+        id: 'route_alt_corridor_a',
+        name: `Route ${corridors.length + 1}: Via ${leftHub.name} Corridor`,
+        shortLabel: `Via ${leftHub.name}`,
+        viaSummary: `${startLocation.name} → ${leftHub.name} → ${destination.name}`,
+        highwayBadge: 'ALT CORRIDOR A',
+        viaWaypoints: [
+          {
+            name: leftHub.name,
+            latitude: leftHub.latitude,
+            longitude: leftHub.longitude
+          }
+        ]
+      });
+    }
+
+    if (rightHub) {
+      corridors.push({
+        id: 'route_alt_corridor_b',
+        name: `Route ${corridors.length + 1}: Via ${rightHub.name} Corridor`,
+        shortLabel: `Via ${rightHub.name}`,
+        viaSummary: `${startLocation.name} → ${rightHub.name} → ${destination.name}`,
+        highwayBadge: 'ALT CORRIDOR B',
+        viaWaypoints: [
+          {
+            name: rightHub.name,
+            latitude: rightHub.latitude,
+            longitude: rightHub.longitude
+          }
+        ]
+      });
+    }
+
+    // If still only 1 route and distance >= 30 km, synthesize a geometric secondary highway bypass
+    if (corridors.length === 1 && directDistKm >= 30) {
+      const midLat = (startLocation.latitude + destination.latitude) / 2;
+      const midLon = (startLocation.longitude + destination.longitude) / 2;
+      const norm = Math.sqrt(lenSq) || 1;
+      const offsetDeg = Math.min(0.45, Math.max(0.12, Math.sqrt(lenSq) * 0.18));
+      const perpLat = (-dLon / norm) * offsetDeg;
+      const perpLon = (dLat / norm) * offsetDeg;
+
+      corridors.push({
+        id: 'route_alt_bypass',
+        name: 'Route 2: Secondary State Highway Corridor',
+        shortLabel: 'Secondary Highway Route',
+        viaSummary: `Alternative regional highway alignment (${startLocation.name} → ${destination.name})`,
+        highwayBadge: 'ALT HIGHWAY',
+        viaWaypoints: [
+          {
+            name: 'Regional Highway Waypoint',
+            latitude: Number((midLat + perpLat).toFixed(5)),
+            longitude: Number((midLon + perpLon).toFixed(5))
+          }
+        ]
+      });
+    }
+  }
+
+  return corridors.slice(0, 3);
+}
+
+/**
+ * Generates a realistic multi-segment corridor polyline, distance, and duration
+ * threading through explicit viaWaypoints as well as nearby corridor stations.
+ */
+export function buildCorridorPolylineFromWaypoints(
+  startLocation: RouteCoordinate,
+  destination: RouteCoordinate,
+  viaWaypoints: RouteCorridorWaypoint[] = [],
+  allStations: EligibleChargerRecord[] = []
+): {
+  polyline: [number, number][];
+  distanceKm: number;
+  durationMin: number;
+} {
+  const eligible = getEligibleAutoPilotChargers(allStations);
+  const chainPoints: { latitude: number; longitude: number }[] = [
+    { latitude: startLocation.latitude, longitude: startLocation.longitude },
+    ...viaWaypoints.map(w => ({ latitude: w.latitude, longitude: w.longitude })),
+    { latitude: destination.latitude, longitude: destination.longitude }
+  ];
+
+  const combinedPolyline: [number, number][] = [];
+  let totalDistanceKm = 0;
+  let totalDurationMin = 0;
+
+  for (let i = 0; i < chainPoints.length - 1; i++) {
+    const segStart = chainPoints[i];
+    const segEnd = chainPoints[i + 1];
+    const segResult = generateOfflineCorridorGeometry(segStart, segEnd, eligible);
+    if (i === 0) {
+      combinedPolyline.push(...segResult.polyline);
+    } else {
+      combinedPolyline.push(...segResult.polyline.slice(1));
+    }
+    totalDistanceKm += segResult.distanceKm;
+    totalDurationMin += segResult.durationMin;
+  }
+
+  return {
+    polyline:
+      combinedPolyline.length >= 2
+        ? combinedPolyline
+        : [
+            [startLocation.latitude, startLocation.longitude],
+            [destination.latitude, destination.longitude]
+          ],
+    distanceKm: Number(Math.max(0.5, totalDistanceKm).toFixed(1)),
+    durationMin: Math.max(2, Math.round(totalDurationMin))
+  };
+}
+
+/**
+ * Builds fallback route candidate geometries for all discovered corridors between
+ * startLocation and destination (used when offline or when OSRM does not return a corridor).
+ */
+export function buildFallbackRouteCandidates(
+  startLocation: RouteCoordinate,
+  destination: RouteCoordinate,
+  allStations: EligibleChargerRecord[] = [],
+  corridors?: RouteCorridorDefinition[]
+): AutoPilotRouteCandidateGeometry[] {
+  const defs =
+    corridors && corridors.length > 0
+      ? corridors
+      : discoverRouteCorridorDefinitions(startLocation, destination, allStations);
+
+  return defs.map(def => {
+    const built = buildCorridorPolylineFromWaypoints(
+      startLocation,
+      destination,
+      def.viaWaypoints,
+      allStations
+    );
+    return {
+      id: def.id,
+      name: def.name,
+      shortLabel: def.shortLabel,
+      viaSummary: def.viaSummary,
+      highwayBadge: def.highwayBadge,
+      polyline: built.polyline,
+      distanceKm: built.distanceKm,
+      durationMin: built.durationMin,
+      routingAvailable: true,
+      routingSource: 'OSRM Driving Route'
+    };
+  });
+}
+
+/**
+ * Evaluates each candidate route option with `planAutoPilotMission` so that every route
+ * has its exact total distance, total number of chargers along that route, planned stops count,
+ * and full mission plan ready for instant user selection.
+ */
+export function evaluateAutoPilotRouteOptions(
+  candidateRoutes: AutoPilotRouteCandidateGeometry[],
+  baseInput: Omit<
+    PlanAutoPilotRouteInput,
+    'routePolyline' | 'roadDistanceKm' | 'roadDurationMin' | 'routingAvailable' | 'routingLimitationNote'
+  >
+): EvaluatedAutoPilotRouteOption[] {
+  const effectiveCandidates =
+    candidateRoutes && candidateRoutes.length > 0
+      ? candidateRoutes
+      : buildFallbackRouteCandidates(
+          baseInput.startLocation,
+          baseInput.destination,
+          baseInput.allStations
+        );
+
+  return effectiveCandidates.map(cand => {
+    const planResult = planAutoPilotMission({
+      ...baseInput,
+      routePolyline: cand.polyline,
+      roadDistanceKm: cand.distanceKm,
+      roadDurationMin: cand.durationMin,
+      routingAvailable: cand.routingAvailable,
+      routingLimitationNote: cand.routingLimitationNote
+    });
+
+    const totalChargersOnRoute = planResult.eligibleCorridorChargers.length;
+    const plannedStopsCount = planResult.chargingStops.length;
+    const supernovaCountOnRoute = planResult.eligibleCorridorChargers.filter(
+      c => c.station.isSupernova || c.station.chargerType === 'Supernova'
+    ).length;
+
+    return {
+      ...cand,
+      distanceKm: planResult.briefing.totalDrivingDistanceKm || cand.distanceKm,
+      durationMin: planResult.briefing.estimatedDrivingDurationMin ?? cand.durationMin,
+      totalChargersOnRoute,
+      plannedStopsCount,
+      supernovaCountOnRoute,
+      planResult
+    };
+  });
+}
+

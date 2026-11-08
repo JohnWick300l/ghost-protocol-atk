@@ -22,6 +22,7 @@ export type FighterActionState =
   | 'BLOCK'
   | 'DODGE'
   | 'SPECIAL'
+  | 'TAUNT'
   | 'HIT_STUN'
   | 'KNOCKDOWN'
   | 'VICTORY'
@@ -32,6 +33,17 @@ export interface FighterStats {
   speed: number;    // 0-100
   defense: number;  // 0-100
   stamina: number;  // 0-100
+}
+
+export interface FighterActionSprites {
+  idle: string;
+  punch: string;
+  kick: string;
+  jump: string;
+  block: string;
+  special: string;
+  victory: string;
+  defeat: string;
 }
 
 export interface FighterDefinition {
@@ -50,6 +62,7 @@ export interface FighterDefinition {
   tagline?: string;
   lore: string;
   stats: FighterStats;
+  actionSprites?: FighterActionSprites;
 }
 
 export interface ArenaDefinition {
@@ -124,6 +137,7 @@ export interface CombatInputFrame {
   block: boolean;
   dodge: boolean;
   special: boolean;
+  taunt?: boolean;
 }
 
 export interface CombatHitEvent {
