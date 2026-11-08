@@ -38,6 +38,8 @@ interface NavigationProps {
   notifications: NotificationItem[];
   onMarkNotificationRead: (id: string) => void;
   onMarkAllNotificationsRead: () => void;
+  onClearAllNotifications?: () => void;
+  onClearNotification?: (id: string) => void;
   isOffline?: boolean;
   cacheAge?: string;
   queuedActionCount?: number;
@@ -52,6 +54,8 @@ export const Navigation: React.FC<NavigationProps> = ({
   notifications,
   onMarkNotificationRead,
   onMarkAllNotificationsRead,
+  onClearAllNotifications,
+  onClearNotification,
   isOffline = false,
   cacheAge = 'Live',
   queuedActionCount = 0,
@@ -305,16 +309,26 @@ export const Navigation: React.FC<NavigationProps> = ({
                 >
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#282D34]">
                     <span className="text-xs font-mono font-semibold text-[#D4D8DE] tracking-wide">
-                      SQUADRON NOTIFICATIONS
+                      SQUADRON NOTIFICATIONS {unreadCount > 0 && `(${unreadCount})`}
                     </span>
-                    {unreadCount > 0 && (
-                      <button
-                        onClick={onMarkAllNotificationsRead}
-                        className="text-[10px] font-mono text-[#729BCB] hover:underline"
-                      >
-                        MARK ALL READ
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={onMarkAllNotificationsRead}
+                          className="text-[10px] font-mono text-[#729BCB] hover:underline"
+                        >
+                          MARK READ
+                        </button>
+                      )}
+                      {notifications.length > 0 && onClearAllNotifications && (
+                        <button
+                          onClick={onClearAllNotifications}
+                          className="text-[10px] font-mono text-[#E04F5F] hover:underline"
+                        >
+                          CLEAR
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="max-h-72 overflow-y-auto space-y-2">
                     {notifications.length === 0 ? (

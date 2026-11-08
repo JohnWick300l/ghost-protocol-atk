@@ -23,7 +23,9 @@ import {
   Clock,
   Maximize2,
   Minimize2,
-  ArrowLeft
+  ArrowLeft,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { ChargingStation, ChargerPlugType, User } from '../types';
 import {
@@ -100,8 +102,8 @@ const MAP_STATION_FILTER_OPTIONS = [
     id: 'SUPERNOVA',
     label: 'Supernova',
     shortLabel: 'Supernova',
-    dotColor: 'bg-[#42B883]',
-    activeStyle: 'bg-[#42B883] text-[#08090B] border-[#42B883] shadow-sm shadow-[#42B883]/20'
+    dotColor: 'bg-[#3B82F6]',
+    activeStyle: 'bg-[#3B82F6] text-[#FFFFFF] border-[#3B82F6] shadow-sm shadow-[#3B82F6]/30'
   },
   {
     id: 'Community Provided Chargers',
@@ -114,22 +116,22 @@ const MAP_STATION_FILTER_OPTIONS = [
     id: 'TYPE_2',
     label: 'Type 2',
     shortLabel: 'Type 2',
-    dotColor: 'bg-[#38BDF8]',
-    activeStyle: 'bg-[#38BDF8] text-[#08090B] border-[#38BDF8] shadow-sm shadow-[#38BDF8]/20'
+    dotColor: 'bg-[#94A3B8]',
+    activeStyle: 'bg-[#94A3B8] text-[#08090B] border-[#94A3B8] shadow-sm shadow-[#94A3B8]/30'
   },
   {
     id: 'BOLT_TYPE_6',
     label: 'Type 6',
     shortLabel: 'Type 6',
-    dotColor: 'bg-[#729BCB]',
-    activeStyle: 'bg-[#729BCB] text-[#08090B] border-[#729BCB] shadow-sm shadow-[#729BCB]/20'
+    dotColor: 'bg-[#42B883]',
+    activeStyle: 'bg-[#42B883] text-[#08090B] border-[#42B883] shadow-sm shadow-[#42B883]/20'
   },
   {
     id: 'SOCKET',
     label: 'Sockets',
     shortLabel: 'Sockets',
-    dotColor: 'bg-[#D4D8DE]',
-    activeStyle: 'bg-[#D4D8DE] text-[#08090B] border-[#D4D8DE] shadow-sm'
+    dotColor: 'bg-[#EF4444]',
+    activeStyle: 'bg-[#EF4444] text-[#FFFFFF] border-[#EF4444] shadow-sm shadow-[#EF4444]/30'
   }
 ] as const;
 
@@ -142,32 +144,32 @@ function getChargerTypeBadgeStyle(type?: ChargerPlugType): {
   switch (type) {
     case 'Supernova':
       return {
+        bg: 'bg-[#3B82F6]/20',
+        text: 'text-[#3B82F6]',
+        border: 'border-[#3B82F6]/50',
+        hex: '#3B82F6'
+      };
+    case 'Type 6':
+      return {
         bg: 'bg-[#42B883]/20',
         text: 'text-[#42B883]',
         border: 'border-[#42B883]/50',
         hex: '#42B883'
       };
-    case 'Type 6':
-      return {
-        bg: 'bg-[#729BCB]/20',
-        text: 'text-[#729BCB]',
-        border: 'border-[#729BCB]/50',
-        hex: '#729BCB'
-      };
     case 'Type 2':
       return {
-        bg: 'bg-[#E8AA45]/20',
-        text: 'text-[#E8AA45]',
-        border: 'border-[#E8AA45]/50',
-        hex: '#E8AA45'
+        bg: 'bg-[#94A3B8]/20',
+        text: 'text-[#94A3B8]',
+        border: 'border-[#94A3B8]/50',
+        hex: '#94A3B8'
       };
     case 'Socket':
     default:
       return {
-        bg: 'bg-[#D4D8DE]/15',
-        text: 'text-[#D4D8DE]',
-        border: 'border-[#D4D8DE]/40',
-        hex: '#D4D8DE'
+        bg: 'bg-[#EF4444]/20',
+        text: 'text-[#EF4444]',
+        border: 'border-[#EF4444]/50',
+        hex: '#EF4444'
       };
   }
 }
@@ -202,6 +204,7 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
   const [internalFilter, setInternalFilter] = useState<string>('ALL');
   const [isFullNavigation, setIsFullNavigation] = useState(false);
   const [showIndividualMarkers, setShowIndividualMarkers] = useState<boolean>(false);
+  const [isTypeFiltersExpanded, setIsTypeFiltersExpanded] = useState<boolean>(false);
 
   const currentStationFilter = activeFilter !== undefined ? activeFilter : internalFilter;
   const handleSelectStationFilter = (nextFilter: string) => {
@@ -465,11 +468,11 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
         const hasSelectedInside = item.stations.some(s => s.id === selectedStation?.id);
         const locTitle = item.locationLabel || `${item.count} Chargers`;
         const clusterSize = hasSelectedInside ? 44 : 38;
-        const ringColor = hasSelectedInside ? '#42B883' : '#38BDF8';
-        const boltColor = hasSelectedInside ? '#6EE7B7' : '#E8AA45';
+        const ringColor = hasSelectedInside ? '#A855F7' : '#8B5CF6';
+        const boltColor = hasSelectedInside ? '#F0ABFC' : '#D8B4FE';
         const outerHalo = hasSelectedInside
-          ? '0 0 0 4px rgba(66, 184, 131, 0.25), 0 0 16px rgba(66, 184, 131, 0.55), 0 4px 10px rgba(0, 0, 0, 0.9)'
-          : '0 0 0 4px rgba(56, 189, 248, 0.18), 0 0 12px rgba(56, 189, 248, 0.4), 0 4px 10px rgba(0, 0, 0, 0.88)';
+          ? '0 0 0 4px rgba(168, 85, 247, 0.35), 0 0 18px rgba(168, 85, 247, 0.65), 0 4px 10px rgba(0, 0, 0, 0.9)'
+          : '0 0 0 4px rgba(139, 92, 246, 0.25), 0 0 14px rgba(139, 92, 246, 0.5), 0 4px 10px rgba(0, 0, 0, 0.88)';
 
         const clusterHtml = `
           <div data-testid="charger-cluster-pin" data-cluster-count="${item.count}" style="
@@ -477,7 +480,7 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
             width: ${clusterSize}px;
             height: ${clusterSize}px;
             border-radius: 9999px;
-            background: radial-gradient(circle at 32% 28%, #172336 0%, #0A101B 75%, #060911 100%);
+            background: radial-gradient(circle at 32% 28%, #2A1742 0%, #120A1F 75%, #08040D 100%);
             border: 2px solid ${ringColor};
             box-shadow: ${outerHalo};
             display: flex;
@@ -587,23 +590,23 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
         const iconAnchor: [number, number] = [size / 2, size / 2];
         const glyphSize = isSelected ? 16 : 13;
 
-        let ringColor = '#38BDF8';
-        let glowRgba = 'rgba(56, 189, 248, 0.5)';
-        let coreBg = 'radial-gradient(circle at 30% 30%, #142234, #080D15 85%)';
+        let ringColor = '#94A3B8';
+        let glowRgba = 'rgba(148, 163, 184, 0.5)';
+        let coreBg = 'radial-gradient(circle at 30% 30%, #1E293B, #0F172A 85%)';
         let innerSvg = `
-          <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="#38BDF8">
+          <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="#94A3B8">
             <path d="M13 2L4 14h7l-2 8 9-12h-7l2-8z" />
           </svg>
         `;
         let typeLabel = 'Type 2 AC';
 
         if (isSupernova) {
-          ringColor = '#42B883';
-          glowRgba = 'rgba(66, 184, 131, 0.65)';
-          coreBg = 'radial-gradient(circle at 30% 30%, #0F2922, #07120F 85%)';
+          ringColor = '#3B82F6';
+          glowRgba = 'rgba(59, 130, 246, 0.65)';
+          coreBg = 'radial-gradient(circle at 30% 30%, #0D2342, #061021 85%)';
           typeLabel = 'Supernova DC Fast';
           innerSvg = `
-            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="#42B883">
+            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="#3B82F6">
               <path d="M13 2L4 14h7l-2 8 9-12h-7l2-8z" />
             </svg>
           `;
@@ -619,25 +622,25 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
             </svg>
           `;
         } else if (isType6) {
-          ringColor = '#729BCB';
-          glowRgba = 'rgba(114, 155, 203, 0.6)';
-          coreBg = 'radial-gradient(circle at 30% 30%, #162436, #090F18 85%)';
+          ringColor = '#42B883';
+          glowRgba = 'rgba(66, 184, 131, 0.6)';
+          coreBg = 'radial-gradient(circle at 30% 30%, #0F2922, #07120F 85%)';
           typeLabel = 'Type 6 Fast Charging';
           innerSvg = `
-            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="#729BCB">
+            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="#42B883">
               <path d="M13 2L4 14h7l-2 8 9-12h-7l2-8z" />
             </svg>
           `;
         } else if (isSocket) {
-          ringColor = '#D4D8DE';
-          glowRgba = 'rgba(212, 216, 222, 0.45)';
-          coreBg = 'radial-gradient(circle at 30% 30%, #20252D, #0B0E12 85%)';
+          ringColor = '#EF4444';
+          glowRgba = 'rgba(239, 68, 68, 0.5)';
+          coreBg = 'radial-gradient(circle at 30% 30%, #2A0F0F, #120606 85%)';
           typeLabel = '15A/16A Socket';
           innerSvg = `
-            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="none" stroke="#F1F3F5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="8.5" r="1.4" fill="#F1F3F5" stroke="none" />
-              <circle cx="8.5" cy="14" r="1.3" fill="#F1F3F5" stroke="none" />
-              <circle cx="15.5" cy="14" r="1.3" fill="#F1F3F5" stroke="none" />
+            <svg viewBox="0 0 24 24" width="${glyphSize}" height="${glyphSize}" fill="none" stroke="#EF4444" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8.5" r="1.4" fill="#EF4444" stroke="none" />
+              <circle cx="8.5" cy="14" r="1.3" fill="#EF4444" stroke="none" />
+              <circle cx="15.5" cy="14" r="1.3" fill="#EF4444" stroke="none" />
             </svg>
           `;
         }
@@ -942,9 +945,6 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
                   {visibleStations.length} Active
                 </span>
               </div>
-              <p className="text-[10px] text-[#8E96A4] font-sans hidden sm:block">
-                Tap any circular station pin or multi-charger circle to view details and navigate
-              </p>
             </div>
           </div>
 
@@ -1196,91 +1196,91 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
           )}
         </div>
 
-        {/* Row 3: Charger Type Filter Bar (Clean 3x2 Mobile / 6-Col Desktop, Zero Truncation) */}
-        <div
-          data-testid="map-charger-type-filter-bar"
-          role="group"
-          aria-label="Filter charging stations on map by type"
-          className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 font-sans"
-        >
-          {MAP_STATION_FILTER_OPTIONS.map(opt => {
-            const isSelected =
-              currentStationFilter === opt.id ||
-              (opt.id === 'SUPERNOVA' &&
-                (currentStationFilter === 'Supernova' || currentStationFilter === 'UV_SUPERNOVA')) ||
-              (opt.id === 'Community Provided Chargers' &&
-                (currentStationFilter === 'COMMUNITY' || currentStationFilter === 'OWNERS')) ||
-              (opt.id === 'BOLT_TYPE_6' &&
-                (currentStationFilter === 'Type 6' || currentStationFilter === 'TYPE_6')) ||
-              (opt.id === 'TYPE_2' && currentStationFilter === 'Type 2') ||
-              (opt.id === 'SOCKET' &&
-                (currentStationFilter === 'Socket' || currentStationFilter === 'SOCKETS'));
-            const count = filterCounts[opt.id] ?? 0;
-
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                data-testid={`map-filter-chip-${opt.id.toLowerCase().replace(/\s+/g, '-')}`}
-                aria-pressed={isSelected}
-                onClick={() => handleSelectStationFilter(opt.id)}
-                className={`px-1.5 sm:px-2.5 py-1.5 sm:py-2 rounded-xl text-[9.5px] sm:text-xs font-bold whitespace-nowrap transition-all flex items-center justify-between gap-0.5 sm:gap-1 border cursor-pointer ${
-                  isSelected
-                    ? opt.activeStyle
-                    : 'bg-[#12161F] hover:bg-[#181E2A] text-[#E2E8F0] border-[#242B38]'
-                }`}
-              >
-                <span className="flex items-center gap-1 min-w-0">
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      isSelected ? 'bg-[#08090B]' : opt.dotColor
-                    }`}
-                  />
-                  <span className="tracking-tight">{opt.shortLabel}</span>
-                </span>
-                <span
-                  className={`px-1 py-0.5 rounded-full text-[8.5px] sm:text-[10px] font-mono font-bold shrink-0 ${
-                    isSelected
-                      ? 'bg-[#08090B]/20 text-[#08090B]'
-                      : 'bg-[#1C222E] text-[#94A3B8]'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Row 4: Quick Region Jump Bar */}
-        <div className="grid grid-cols-5 sm:flex sm:flex-wrap items-center gap-1 sm:gap-1.5">
+        {/* Row 3: Collapsible & Expandable Charger Type Filter Bar */}
+        <div className="bg-[#10141D] border border-[#242C3A] rounded-xl overflow-hidden font-sans">
           <button
             type="button"
-            data-testid="fit-all-stations-btn"
-            onClick={handleFitAllStationsOnMap}
-            className={`px-1 sm:px-2.5 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold text-center whitespace-nowrap transition-colors border cursor-pointer ${
-              activeRegionPreset === 'all_markers'
-                ? 'bg-[#42B883]/20 text-[#42B883] border-[#42B883]/50'
-                : 'bg-[#12161F] hover:bg-[#181E2A] text-[#42B883] border-[#242B38]'
-            }`}
+            data-testid="toggle-charger-type-filters-btn"
+            aria-expanded={isTypeFiltersExpanded}
+            onClick={() => {
+              playTacticalClick();
+              setIsTypeFiltersExpanded(prev => !prev);
+            }}
+            className="w-full px-3 py-2 flex items-center justify-between gap-2 hover:bg-[#161C28] transition-colors cursor-pointer text-left"
           >
-            FIT ALL
+            <div className="flex items-center gap-2 min-w-0">
+              <Zap className="w-3.5 h-3.5 text-[#E8AA45] shrink-0" />
+              <span className="text-xs font-bold text-[#F1F3F5] tracking-wide uppercase">
+                Charger Type Filters
+              </span>
+              {currentStationFilter !== 'ALL' && (
+                <span className="text-[10px] px-2 py-0.5 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40 font-bold uppercase shrink-0">
+                  Filter: {currentStationFilter}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 text-[10px] font-mono text-[#E8AA45] font-bold">
+              <span>{isTypeFiltersExpanded ? 'Collapse Filters' : 'Filter by Plug Type'}</span>
+              {isTypeFiltersExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </div>
           </button>
-          {REGION_PRESETS.map(preset => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => handleFlyToPreset(preset)}
-              className={`px-1 sm:px-2.5 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-bold text-center whitespace-nowrap transition-colors border cursor-pointer ${
-                activeRegionPreset === preset.id
-                  ? 'bg-[#38BDF8]/20 text-[#38BDF8] border-[#38BDF8]/50'
-                  : 'bg-[#12161F] hover:bg-[#181E2A] text-[#94A3B8] hover:text-[#F8FAFC] border-[#242B38]'
-              }`}
+
+          {isTypeFiltersExpanded && (
+            <div
+              data-testid="map-charger-type-filter-bar"
+              role="group"
+              aria-label="Filter charging stations on map by type"
+              className="p-2.5 border-t border-[#242C3A] grid grid-cols-3 sm:grid-cols-6 gap-1.5"
             >
-              <span className="sm:hidden">{preset.shortLabel}</span>
-              <span className="hidden sm:inline">{preset.label}</span>
-            </button>
-          ))}
+              {MAP_STATION_FILTER_OPTIONS.map(opt => {
+                const isSelected =
+                  currentStationFilter === opt.id ||
+                  (opt.id === 'SUPERNOVA' &&
+                    (currentStationFilter === 'Supernova' || currentStationFilter === 'UV_SUPERNOVA')) ||
+                  (opt.id === 'Community Provided Chargers' &&
+                    (currentStationFilter === 'COMMUNITY' || currentStationFilter === 'OWNERS')) ||
+                  (opt.id === 'BOLT_TYPE_6' &&
+                    (currentStationFilter === 'Type 6' || currentStationFilter === 'TYPE_6')) ||
+                  (opt.id === 'TYPE_2' && currentStationFilter === 'Type 2') ||
+                  (opt.id === 'SOCKET' &&
+                    (currentStationFilter === 'Socket' || currentStationFilter === 'SOCKETS'));
+                const count = filterCounts[opt.id] ?? 0;
+
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    data-testid={`map-filter-chip-${opt.id.toLowerCase().replace(/\s+/g, '-')}`}
+                    aria-pressed={isSelected}
+                    onClick={() => handleSelectStationFilter(opt.id)}
+                    className={`px-1.5 sm:px-2.5 py-1.5 sm:py-2 rounded-xl text-[9.5px] sm:text-xs font-bold whitespace-nowrap transition-all flex items-center justify-between gap-0.5 sm:gap-1 border cursor-pointer ${
+                      isSelected
+                        ? opt.activeStyle
+                        : 'bg-[#12161F] hover:bg-[#181E2A] text-[#E2E8F0] border-[#242B38]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1 min-w-0">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          isSelected ? 'bg-[#08090B]' : opt.dotColor
+                        }`}
+                      />
+                      <span className="tracking-tight">{opt.shortLabel}</span>
+                    </span>
+                    <span
+                      className={`px-1 py-0.5 rounded-full text-[8.5px] sm:text-[10px] font-mono font-bold shrink-0 ${
+                        isSelected
+                          ? 'bg-[#08090B]/20 text-[#08090B]'
+                          : 'bg-[#1C222E] text-[#94A3B8]'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1369,28 +1369,28 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
           {/* Clean Circular Icon Legend & Full Screen Footer Bar */}
           <div className="bg-[#0E131B] border-t border-[#222936] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-[11px] font-sans z-20">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-              <span className="flex items-center gap-1.5 text-[#42B883] font-medium">
-                <span className="w-3.5 h-3.5 rounded-full bg-[#091512] border-2 border-[#42B883] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
+              <span className="flex items-center gap-1.5 text-[#3B82F6] font-medium">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#0D2342] border-2 border-[#3B82F6] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
                 Supernova
               </span>
               <span className="flex items-center gap-1.5 text-[#E8AA45] font-medium">
                 <span className="w-3.5 h-3.5 rounded-full bg-[#191309] border-2 border-[#E8AA45] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
                 Community
               </span>
-              <span className="flex items-center gap-1.5 text-[#729BCB] font-medium">
-                <span className="w-3.5 h-3.5 rounded-full bg-[#0B1420] border-2 border-[#729BCB] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
+              <span className="flex items-center gap-1.5 text-[#42B883] font-medium">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#0F2922] border-2 border-[#42B883] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
                 Type 6
               </span>
-              <span className="flex items-center gap-1.5 text-[#38BDF8] font-medium">
-                <span className="w-3.5 h-3.5 rounded-full bg-[#0A1622] border-2 border-[#38BDF8] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
+              <span className="flex items-center gap-1.5 text-[#94A3B8] font-medium">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#1E293B] border-2 border-[#94A3B8] inline-flex items-center justify-center text-[8px] shadow-sm">⚡</span>
                 Type 2
               </span>
-              <span className="flex items-center gap-1.5 text-[#D4D8DE] font-medium">
-                <span className="w-3.5 h-3.5 rounded-full bg-[#14181F] border-2 border-[#D4D8DE] inline-flex items-center justify-center text-[8px] shadow-sm">•</span>
+              <span className="flex items-center gap-1.5 text-[#EF4444] font-medium">
+                <span className="w-3.5 h-3.5 rounded-full bg-[#2A0F0F] border-2 border-[#EF4444] inline-flex items-center justify-center text-[8px] shadow-sm">•</span>
                 Socket
               </span>
-              <span className="flex items-center gap-1.5 text-[#F8FAFC] font-medium">
-                <span className="w-4 h-4 rounded-full bg-[#0E1726] border-2 border-[#38BDF8] inline-flex items-center justify-center text-[8px] text-[#E8AA45] font-mono font-bold shadow-sm">3</span>
+              <span className="flex items-center gap-1.5 text-[#A855F7] font-medium">
+                <span className="w-4 h-4 rounded-full bg-[#2A1742] border-2 border-[#A855F7] inline-flex items-center justify-center text-[8px] text-[#E9D5FF] font-mono font-bold shadow-sm">3</span>
                 Multi-Charger Circle
               </span>
             </div>
@@ -2024,12 +2024,7 @@ export const ChargingIndiaMap: React.FC<ChargingIndiaMapProps> = ({
               {/* Interactive Reservation System & Charger Intelligence Slot */}
               {selectedChargerReservationAndIntelSlot}
             </div>
-          ) : (
-            <div className="bg-[#13161A]/60 border border-[#282D34] rounded-xl px-4 py-3 text-center text-xs text-[#A0A7B0] flex items-center justify-center gap-2">
-              <MapPin className="w-4 h-4 text-[#E8AA45] shrink-0" />
-              <span>Tap any charger pin on the map to view details or launch Google Maps navigation.</span>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

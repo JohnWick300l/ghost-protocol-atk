@@ -117,6 +117,7 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
   const [isMobileViewport, setIsMobileViewport] = useState<boolean>(false);
   const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(false);
   const [showBonusFighters, setShowBonusFighters] = useState<boolean>(false);
+  const [showMoveGuide, setShowMoveGuide] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const phaserHostRef = useRef<HTMLDivElement | null>(null);
@@ -404,49 +405,50 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
     >
       {/* Top Tactical Navigation Header (Hidden during active battle so arena fills viewport) */}
       {screen !== 'BATTLE' && (
-        <header className="w-full border-b border-cyan-500/20 bg-[#070b16]/95 backdrop-blur-md px-4 sm:px-8 py-3 flex flex-wrap items-center justify-between gap-3 z-20">
-          <div className="flex items-center gap-4">
+        <header className="w-full border-b border-cyan-500/20 bg-[#070b16]/95 backdrop-blur-md px-3 sm:px-8 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 z-20">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             <button
               type="button"
               onClick={handleBackToGhostProtocol}
               data-testid="back-to-ghost-protocol-btn"
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-xs font-bold tracking-wider text-cyan-400 transition cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-[11px] sm:text-xs font-bold tracking-wider text-cyan-400 transition cursor-pointer shrink-0"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>BACK TO GHOST PROTOCOL</span>
+              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden xs:inline">EXIT</span>
+              <span className="inline xs:hidden">BACK</span>
             </button>
 
-            <div className="flex items-center gap-2.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-sm shadow-cyan-400" />
-              <div>
-                <div className="text-sm sm:text-base font-black tracking-widest text-white uppercase flex items-center gap-2">
-                  <span>SQUADRON SHOWDOWN</span>
-                  <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[9px] font-bold">
-                    ARCADE 1V1
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-sm shadow-cyan-400 shrink-0" />
+              <div className="min-w-0">
+                <div className="text-xs sm:text-base font-black tracking-wider sm:tracking-widest text-white uppercase flex items-center gap-1.5 truncate">
+                  <span className="truncate">SQUADRON SHOWDOWN</span>
+                  <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 text-[8px] sm:text-[9px] font-bold shrink-0">
+                    1V1
                   </span>
                 </div>
-                <div className="text-[10px] tracking-[0.25em] text-cyan-400 font-semibold uppercase">
-                  FIGHT. RIDE. DOMINATE. • LOCAL OFFLINE READY
+                <div className="text-[9px] sm:text-[10px] tracking-[0.15em] sm:tracking-[0.25em] text-cyan-400 font-semibold uppercase truncate">
+                  MOBILE ARCADE ARENA
                 </div>
               </div>
             </div>
           </div>
 
           {/* Clean Nav Tabs */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={() => {
                 gameAudio.playMenuClick();
                 setScreen('CHARACTER_SELECT');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1 ${
                 screen === 'MAIN_MENU' || screen === 'CHARACTER_SELECT'
                   ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
                   : 'bg-slate-900/80 text-slate-300 border border-slate-800 hover:border-slate-700'
               }`}
             >
-              <Swords className="w-3.5 h-3.5" />
+              <Swords className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               <span>ARENA</span>
             </button>
 
@@ -457,14 +459,15 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                 gameAudio.playMenuClick();
                 setScreen('PROFILE');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1 ${
                 screen === 'PROFILE'
                   ? 'bg-purple-500 text-white shadow-md shadow-purple-500/20'
                   : 'bg-slate-900/80 text-slate-300 border border-slate-800 hover:border-slate-700'
               }`}
             >
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span>DOSSIER</span>
+              <Trophy className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">DOSSIER</span>
+              <span className="inline sm:hidden">STATS</span>
             </button>
 
             <button
@@ -474,13 +477,13 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                 gameAudio.playMenuClick();
                 setScreen('HISTORY');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1 ${
                 screen === 'HISTORY'
                   ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                   : 'bg-slate-900/80 text-slate-300 border border-slate-800 hover:border-slate-700'
               }`}
             >
-              <History className="w-3.5 h-3.5 text-emerald-400" />
+              <History className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
               <span>LOGS</span>
             </button>
 
@@ -491,33 +494,26 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                 gameAudio.playMenuClick();
                 setScreen('SETTINGS');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1 ${
                 screen === 'SETTINGS'
                   ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
                   : 'bg-slate-900/80 text-slate-300 border border-slate-800 hover:border-slate-700'
               }`}
             >
-              <Settings className="w-3.5 h-3.5 text-sky-400" />
-              <span>CONFIG</span>
+              <Settings className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-400" />
+              <span className="hidden sm:inline">CONFIG</span>
             </button>
-
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs">
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-slate-400">LVL {profile.level}</span>
-              <span className="text-slate-600">•</span>
-              <span className="text-cyan-400 font-bold">{profile.totalWins} WINS</span>
-            </div>
 
             <button
               type="button"
               onClick={() => updateSettingsState({ muted: !settings.muted })}
               aria-label={settings.muted ? 'Unmute Audio' : 'Mute Audio'}
-              className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-slate-300 cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-slate-300 cursor-pointer shrink-0"
             >
               {settings.muted ? (
-                <VolumeX className="w-4 h-4 text-rose-400" />
+                <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400" />
               ) : (
-                <Volume2 className="w-4 h-4 text-cyan-400" />
+                <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400" />
               )}
             </button>
           </div>
@@ -528,114 +524,139 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
       {/* SCREEN 1 & 2: REFINED ARCADE BATTLE HUB & FIGHTER SELECTOR            */}
       {/* ===================================================================== */}
       {(screen === 'MAIN_MENU' || screen === 'CHARACTER_SELECT') && (
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
-          {/* Top Matchup Bar */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-            {/* Player Fighter Preview Card */}
-            <div
-              onClick={() => setSelectTarget('PLAYER')}
-              className={`lg:col-span-5 rounded-2xl p-4 border transition cursor-pointer flex gap-4 items-center ${
-                selectTarget === 'PLAYER'
-                  ? 'border-cyan-400 bg-cyan-950/25 shadow-lg shadow-cyan-500/10'
-                  : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
-              }`}
+        <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5 space-y-3.5 sm:space-y-4">
+          {/* 1. HERO MATCHUP & INSTANT START CARD */}
+          <div className="rounded-2xl border border-cyan-500/40 bg-gradient-to-b from-slate-900/95 via-slate-900/90 to-slate-950/98 p-3 sm:p-4 shadow-xl space-y-3">
+            {/* Top Action Row: Prominent 1-Tap START FIGHT */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="launch-battle-btn"
+                onClick={() => startBattleNow(false)}
+                className="flex-1 py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 active:scale-[0.98] text-slate-950 font-black tracking-wider text-sm sm:text-base uppercase shadow-lg shadow-cyan-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Swords className="w-5 h-5 text-slate-950 shrink-0" />
+                <span>START FIGHT!</span>
+              </button>
+
+              <button
+                type="button"
+                data-testid="menu-training-btn"
+                onClick={() => startBattleNow(true)}
+                className="py-3.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-300 font-bold text-xs uppercase flex items-center justify-center gap-1.5 cursor-pointer transition shrink-0"
+                title="Practice moves without taking match damage"
+              >
+                <Flame className="w-4 h-4 text-amber-400" />
+                <span className="hidden xs:inline">TRAINING</span>
+              </button>
+            </div>
+
+            {/* Hidden Test Compatibility Buttons */}
+            <button
+              type="button"
+              data-testid="menu-start-battle-btn"
+              onClick={() => startBattleNow(false)}
+              className="sr-only"
+              aria-hidden="true"
+              tabIndex={-1}
             >
-              <InteractiveFighterPreview
-                fighter={playerDef}
-                mirrored={false}
-                showMoveTester={true}
-              />
-              <div className="flex-1 min-w-0 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-black tracking-widest uppercase">
-                    MY FIGHTER (P1)
+              Start Battle
+            </button>
+            <button
+              type="button"
+              data-testid="menu-character-select-btn"
+              onClick={() => setScreen('CHARACTER_SELECT')}
+              className="sr-only"
+              aria-hidden="true"
+              tabIndex={-1}
+            >
+              Character Select
+            </button>
+
+            {/* Matchup Showcase: Clean side-by-side fighter preview */}
+            <div className="grid grid-cols-11 items-center gap-1.5 sm:gap-3 bg-slate-950/70 rounded-xl p-2.5 sm:p-3 border border-slate-800/80">
+              {/* P1 Section */}
+              <div
+                onClick={() => setSelectTarget('PLAYER')}
+                className={`col-span-5 p-2 rounded-xl transition cursor-pointer flex flex-col sm:flex-row items-center gap-2 ${
+                  selectTarget === 'PLAYER'
+                    ? 'bg-cyan-950/50 border border-cyan-400 ring-2 ring-cyan-500/30'
+                    : 'hover:bg-slate-900/60 border border-transparent'
+                }`}
+              >
+                <img
+                  src={playerDef.spriteAsset}
+                  alt={playerDef.name}
+                  className="w-14 h-20 sm:w-16 sm:h-24 object-contain drop-shadow"
+                />
+                <div className="text-center sm:text-left min-w-0 flex-1">
+                  <span className="inline-block px-1.5 py-0.5 rounded bg-cyan-400 text-slate-950 text-[9px] font-black tracking-wider uppercase">
+                    P1 (YOU)
                   </span>
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    {playerDef.code}
+                  <h3 className="text-xs sm:text-sm font-black text-white uppercase truncate mt-0.5">
+                    {playerDef.name}
+                  </h3>
+                  <p className="text-[10px] text-cyan-300 font-bold truncate">
+                    {playerDef.title}
+                  </p>
+                  <p className="text-[9px] text-amber-300 truncate mt-0.5 hidden xs:block">
+                    ⚡ {playerDef.specialName}
+                  </p>
+                </div>
+              </div>
+
+              {/* Center VS & Quick Swap */}
+              <div className="col-span-1 flex flex-col items-center justify-center gap-1.5">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 via-amber-500 to-cyan-400 flex items-center justify-center font-black text-xs text-slate-950 shadow-md animate-pulse">
+                  VS
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSwapFighters}
+                  title="Swap P1 & CPU"
+                  className="p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                >
+                  <Shuffle className="w-3 h-3 text-cyan-400" />
+                </button>
+              </div>
+
+              {/* CPU Section */}
+              <div
+                onClick={() => setSelectTarget('AI')}
+                className={`col-span-5 p-2 rounded-xl transition cursor-pointer flex flex-col sm:flex-row-reverse items-center gap-2 ${
+                  selectTarget === 'AI'
+                    ? 'bg-rose-950/50 border border-rose-400 ring-2 ring-rose-500/30'
+                    : 'hover:bg-slate-900/60 border border-transparent'
+                }`}
+              >
+                <img
+                  src={opponentDef.spriteAsset}
+                  alt={opponentDef.name}
+                  className="w-14 h-20 sm:w-16 sm:h-24 object-contain drop-shadow transform scale-x-[-1]"
+                />
+                <div className="text-center sm:text-right min-w-0 flex-1">
+                  <span className="inline-block px-1.5 py-0.5 rounded bg-rose-500 text-white text-[9px] font-black tracking-wider uppercase">
+                    CPU RIVAL
                   </span>
-                </div>
-                <h2 className="text-xl font-black text-white uppercase truncate">
-                  {playerDef.name}
-                </h2>
-                <div className="text-[11px] text-cyan-300 font-bold tracking-wider uppercase truncate">
-                  {playerDef.title}
-                </div>
-                {playerDef.tagline && (
-                  <div className="text-[11px] italic font-semibold text-cyan-300/90 bg-cyan-950/40 border-l-2 border-cyan-400 px-2 py-1 rounded-r">
-                    &ldquo;{playerDef.tagline}&rdquo;
-                  </div>
-                )}
-                <p className="text-xs text-slate-400 line-clamp-2">
-                  {playerDef.style} — {playerDef.specialDescription}
-                </p>
-                {/* Stat Bars */}
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1 text-[10px]">
-                  <div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>STR</span>
-                      <span>{playerDef.stats.strength}</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-rose-500"
-                        style={{ width: `${playerDef.stats.strength}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>SPD</span>
-                      <span>{playerDef.stats.speed}</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-cyan-400"
-                        style={{ width: `${playerDef.stats.speed}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>DEF</span>
-                      <span>{playerDef.stats.defense}</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-400"
-                        style={{ width: `${playerDef.stats.defense}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>STA</span>
-                      <span>{playerDef.stats.stamina}</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-amber-400"
-                        style={{ width: `${playerDef.stats.stamina}%` }}
-                      />
-                    </div>
-                  </div>
+                  <h3 className="text-xs sm:text-sm font-black text-white uppercase truncate mt-0.5">
+                    {opponentDef.name}
+                  </h3>
+                  <p className="text-[10px] text-rose-300 font-bold truncate">
+                    {opponentDef.title}
+                  </p>
+                  <p className="text-[9px] text-amber-300 truncate mt-0.5 hidden xs:block">
+                    ⚡ {opponentDef.specialName}
+                  </p>
                 </div>
               </div>
             </div>
 
-            {/* Center VS & Launch Controls */}
-            <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/90 p-4 flex flex-col items-center justify-between gap-3 shadow-xl">
-              <div className="relative">
-                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-rose-500 via-amber-500 to-cyan-400 flex items-center justify-center font-black text-xl text-slate-950 shadow-lg shadow-amber-500/30 animate-pulse">
-                  VS
-                </div>
-              </div>
-
+            {/* Quick Controls: Difficulty & Arena */}
+            <div className="grid grid-cols-2 gap-2 pt-1 text-[10px]">
               {/* Difficulty Selector */}
-              <div className="w-full space-y-1 text-center">
-                <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                  AI DIFFICULTY
-                </div>
-                <div className="grid grid-cols-3 gap-1">
+              <div className="flex items-center justify-between bg-slate-950/80 rounded-xl px-2.5 py-1.5 border border-slate-800">
+                <span className="text-slate-400 font-black uppercase text-[9px]">AI DIFF</span>
+                <div className="flex gap-1">
                   {(['EASY', 'MEDIUM', 'HARD'] as DifficultyLevel[]).map((d) => (
                     <button
                       key={d}
@@ -644,10 +665,10 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                         gameAudio.playMenuClick();
                         setDifficulty(d);
                       }}
-                      className={`py-1 rounded text-[10px] font-black uppercase transition cursor-pointer ${
+                      className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition cursor-pointer ${
                         difficulty === d
-                          ? 'bg-cyan-400 text-slate-950 shadow-sm shadow-cyan-400/50'
-                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                          ? 'bg-cyan-400 text-slate-950 shadow-sm'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       {d}
@@ -656,253 +677,95 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                 </div>
               </div>
 
-              {/* Arena Pill Selector */}
-              <div className="w-full space-y-1 text-center">
-                <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                  ARENA: <span className="text-cyan-400">{selectedArena.name}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-1">
+              {/* Arena Quick Dropdown */}
+              <div className="flex items-center justify-between bg-slate-950/80 rounded-xl px-2.5 py-1.5 border border-slate-800">
+                <span className="text-slate-400 font-black uppercase text-[9px]">ARENA</span>
+                <select
+                  value={arenaId}
+                  onChange={(e) => {
+                    gameAudio.playMenuClick();
+                    setArenaId(e.target.value);
+                  }}
+                  className="bg-slate-900 text-cyan-300 font-bold text-[10px] rounded px-1.5 py-0.5 border border-slate-700 focus:outline-none cursor-pointer max-w-[120px] truncate"
+                >
                   {SQUADRON_ARENAS.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => {
-                        gameAudio.playMenuClick();
-                        setArenaId(a.id);
-                      }}
-                      className={`py-1 px-1 rounded text-[9px] font-bold truncate transition cursor-pointer ${
-                        arenaId === a.id
-                          ? 'bg-cyan-500/25 border border-cyan-400 text-cyan-200'
-                          : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent'
-                      }`}
-                      title={a.name}
-                    >
+                    <option key={a.id} value={a.id}>
                       {a.name}
-                    </button>
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
-
-              {/* Hidden Test Runner Compatibility Buttons */}
-              <button
-                type="button"
-                data-testid="menu-start-battle-btn"
-                onClick={() => startBattleNow(false)}
-                className="sr-only"
-                aria-hidden="true"
-                tabIndex={-1}
-              >
-                Start Battle
-              </button>
-              <button
-                type="button"
-                data-testid="menu-character-select-btn"
-                onClick={() => setScreen('CHARACTER_SELECT')}
-                className="sr-only"
-                aria-hidden="true"
-                tabIndex={-1}
-              >
-                Character Select
-              </button>
-
-              {/* Primary Fight Action */}
-              <button
-                type="button"
-                data-testid="launch-battle-btn"
-                onClick={() => startBattleNow(false)}
-                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-slate-950 font-black tracking-wider text-sm uppercase shadow-lg shadow-cyan-500/30 transition-all transform hover:scale-[1.03] active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Swords className="w-4 h-4" />
-                <span>START FIGHT!</span>
-              </button>
-
-              <button
-                type="button"
-                data-testid="menu-training-btn"
-                onClick={() => startBattleNow(true)}
-                className="w-full py-2 rounded-lg bg-slate-950/80 hover:bg-slate-800 border border-amber-500/40 text-amber-300 font-bold tracking-wider text-[11px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition"
-              >
-                <Flame className="w-3.5 h-3.5 text-amber-400" />
-                <span>TRAINING MODE</span>
-              </button>
             </div>
 
-            {/* AI Opponent Fighter Preview Card */}
-            <div
-              onClick={() => setSelectTarget('AI')}
-              className={`lg:col-span-5 rounded-2xl p-4 sm:p-5 border transition cursor-pointer flex flex-col sm:flex-row gap-4 items-center ${
-                selectTarget === 'AI'
-                  ? 'border-rose-500/80 bg-gradient-to-bl from-rose-950/40 via-slate-900/90 to-slate-950/95 shadow-xl shadow-rose-500/10'
-                  : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
-              }`}
-            >
-              <InteractiveFighterPreview
-                fighter={opponentDef}
-                mirrored={true}
-                showMoveTester={true}
-              />
-              <div className="flex-1 min-w-0 space-y-2 w-full">
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-0.5 rounded bg-rose-500 text-white text-[10px] font-black tracking-widest uppercase">
-                    🤖 CPU RIVAL
+            {/* Move & Strike Testing Lab Drawer */}
+            <div className="border-t border-slate-800/80 pt-2">
+              <details className="group">
+                <summary className="flex items-center justify-between text-[11px] text-slate-400 hover:text-cyan-300 font-bold cursor-pointer select-none py-1">
+                  <span className="flex items-center gap-1.5">
+                    <span>🔬</span>
+                    <span>TEST FIGHTER MOVES IN 60FPS LAB</span>
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={handleSwapFighters}
-                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                      title="Swap P1 & CPU"
-                    >
-                      <Shuffle className="w-3 h-3 text-cyan-400" />
-                      <span>SWAP</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleRandomRival}
-                      className="p-1 rounded bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                      title="Pick Random CPU Rival"
-                    >
-                      <Dices className="w-3 h-3 text-rose-400" />
-                      <span>RANDOM</span>
-                    </button>
+                  <span className="text-[10px] group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4 bg-slate-950/60 rounded-xl p-3 border border-slate-800/60 mt-1">
+                  <div className="text-center">
+                    <span className="text-[10px] font-black text-cyan-400 uppercase">P1 MOVE TEST</span>
+                    <InteractiveFighterPreview fighter={playerDef} mirrored={false} showMoveTester={true} />
+                  </div>
+                  <div className="text-center">
+                    <span className="text-[10px] font-black text-rose-400 uppercase">CPU MOVE TEST</span>
+                    <InteractiveFighterPreview fighter={opponentDef} mirrored={true} showMoveTester={true} />
                   </div>
                 </div>
-                <h2 className="text-xl sm:text-2xl font-black text-white uppercase truncate">
-                  {opponentDef.name}
-                </h2>
-                <div className="text-xs text-rose-300 font-bold tracking-wider uppercase truncate">
-                  {opponentDef.title}
-                </div>
-                {opponentDef.tagline && (
-                  <div className="text-xs italic font-semibold text-rose-200 bg-rose-950/60 border-l-2 border-rose-400 px-2.5 py-1.5 rounded-r">
-                    &ldquo;{opponentDef.tagline}&rdquo;
-                  </div>
-                )}
-                <p className="text-xs text-slate-400 line-clamp-2">
-                  {opponentDef.style} — {opponentDef.specialDescription}
-                </p>
-                {/* Stat Bars */}
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1 text-[10px]">
-                  <div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>STR</span>
-                      <span className="font-bold text-rose-400">{opponentDef.stats.strength}</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-rose-500"
-                        style={{ width: `${opponentDef.stats.strength}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>SPD</span>
-                      <span className="font-bold text-cyan-400">{opponentDef.stats.speed}</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-cyan-400"
-                        style={{ width: `${opponentDef.stats.speed}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>DEF</span>
-                      <span className="font-bold text-emerald-400">{opponentDef.stats.defense}</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-400"
-                        style={{ width: `${opponentDef.stats.defense}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-slate-300">
-                      <span>STA</span>
-                      <span className="font-bold text-amber-400">{opponentDef.stats.stamina}</span>
-                    </div>
-                    <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-amber-400"
-                        style={{ width: `${opponentDef.stats.stamina}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-1 flex items-center gap-1.5 text-xs text-amber-300 font-bold truncate">
-                  <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>SPECIAL: {opponentDef.specialName}</span>
-                </div>
-              </div>
+              </details>
             </div>
           </div>
 
-          {/* Refined Character Selection Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black tracking-widest text-slate-400 uppercase">
-                DIRECT PICK:
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectTarget('PLAYER')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1.5 ${
-                  selectTarget === 'PLAYER'
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                    : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
-                }`}
-              >
-                <span>🎮 P1:</span>
-                <span className="font-extrabold">{playerDef.name}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectTarget('AI')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-black tracking-wider uppercase transition cursor-pointer flex items-center gap-1.5 ${
-                  selectTarget === 'AI'
-                    ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
-                    : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
-                }`}
-              >
-                <span>🤖 CPU:</span>
-                <span className="font-extrabold">{opponentDef.name}</span>
-              </button>
-            </div>
-            <div className="text-xs text-slate-400 flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              <span>
-                Tip: Click any fighter to select as <strong className="text-cyan-300">P1</strong>, or tap <strong className="text-rose-400">Rival</strong> to set as CPU!
-              </span>
-            </div>
-          </div>
-
-          {/* Roster Grid: 9 Official Squadron Fighters */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-black tracking-[0.2em] text-cyan-400 uppercase flex items-center gap-2">
-                <span>OFFICIAL SQUADRON LEGENDS</span>
-                <span className="px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-[10px] text-cyan-300">
-                  {OFFICIAL_FIGHTERS.length} FIGHTERS
-                </span>
+          {/* 2. FIGHTER ROSTER SELECTION SECTION */}
+          <div className="space-y-2.5">
+            {/* Pick Target Switcher & Quick Random */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSelectTarget('PLAYER')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition cursor-pointer flex items-center gap-1.5 ${
+                    selectTarget === 'PLAYER'
+                      ? 'bg-cyan-500 text-slate-950 shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>🎮 Pick P1 (You)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectTarget('AI')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition cursor-pointer flex items-center gap-1.5 ${
+                    selectTarget === 'AI'
+                      ? 'bg-rose-500 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>🤖 Pick Rival</span>
+                </button>
               </div>
-              <span className="text-[11px] text-slate-500 hidden sm:inline">
-                All fighters balanced with identical standard arcade collision scaling
-              </span>
+
+              <button
+                type="button"
+                onClick={handleRandomRival}
+                className="px-2.5 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition"
+                title="Pick Random CPU Rival"
+              >
+                <Dices className="w-3.5 h-3.5 text-rose-400" />
+                <span className="hidden xs:inline">RANDOM</span>
+              </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2.5">
+            {/* Main Roster Grid: 8 Official Legends */}
+            <div className="grid grid-cols-2 xs:grid-cols-4 sm:grid-cols-4 lg:grid-cols-8 gap-2">
               {OFFICIAL_FIGHTERS.map((fighter) => {
                 const isP1 = playerFighterId === fighter.id;
                 const isAI = opponentFighterId === fighter.id;
-                const disabledForAI =
-                  selectTarget === 'AI' &&
-                  isP1 &&
-                  !settings.allowMirrorMatchInArena &&
-                  !isTrainingMode;
 
                 return (
                   <div
@@ -917,181 +780,139 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                         gameAudio.playMenuClick();
                       }
                     }}
-                    className={`group relative rounded-xl p-2.5 border flex flex-col items-center justify-between transition-all duration-200 cursor-pointer hover:scale-[1.02] ${
+                    className={`group relative rounded-xl p-2 border flex flex-col items-center justify-between transition-all duration-150 cursor-pointer active:scale-95 ${
                       isP1 && isAI
-                        ? 'border-purple-400 bg-purple-950/40 ring-2 ring-purple-500/30'
+                        ? 'border-purple-400 bg-purple-950/40 ring-2 ring-purple-500/40'
                         : isP1
-                        ? 'border-cyan-400 bg-cyan-950/40 ring-2 ring-cyan-500/30'
+                        ? 'border-cyan-400 bg-cyan-950/40 ring-2 ring-cyan-500/40 shadow-lg shadow-cyan-500/20'
                         : isAI
-                        ? 'border-rose-500 bg-rose-950/40 ring-2 ring-rose-500/30'
-                        : 'border-slate-800 bg-slate-900/80 hover:border-slate-600 hover:bg-slate-800/80'
-                    } ${disabledForAI ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        ? 'border-rose-500 bg-rose-950/40 ring-2 ring-rose-500/40 shadow-lg shadow-rose-500/20'
+                        : 'border-slate-800 bg-slate-900/80 hover:border-slate-600'
+                    }`}
                   >
-                    {/* Top status badges & Quick Rival button */}
-                    <div className="w-full flex items-center justify-between gap-1 mb-1">
-                      <div className="flex items-center gap-1">
+                    {/* Badges */}
+                    <div className="w-full flex items-center justify-between min-h-[16px]">
+                      <div className="flex gap-1">
                         {isP1 && (
-                          <span className="px-1.5 py-0.5 rounded bg-cyan-400 text-slate-950 text-[9px] font-black tracking-tight">
+                          <span className="px-1 py-0.2 rounded bg-cyan-400 text-slate-950 text-[8px] font-black">
                             P1
                           </span>
                         )}
                         {isAI && (
-                          <span className="px-1.5 py-0.5 rounded bg-rose-500 text-white text-[9px] font-black tracking-tight">
+                          <span className="px-1 py-0.2 rounded bg-rose-500 text-white text-[8px] font-black">
                             CPU
                           </span>
                         )}
                       </div>
                       <button
                         type="button"
-                        title={`Set ${fighter.name} as rival opponent`}
                         onClick={(e) => handleSetOpponent(e, fighter.id)}
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase transition cursor-pointer ${
+                        className={`text-[8px] font-bold px-1 rounded uppercase ${
                           isAI
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                            : 'bg-slate-800 text-slate-400 hover:bg-rose-600 hover:text-white border border-slate-700'
+                            ? 'text-rose-300'
+                            : 'text-slate-500 hover:text-rose-300'
                         }`}
+                        title="Quick Rival"
                       >
                         {isAI ? '✓ RIVAL' : '+ RIVAL'}
                       </button>
                     </div>
 
-                    {/* Fighter Sprite Thumbnail */}
-                    <div className="h-28 w-full flex items-center justify-center overflow-hidden my-1">
+                    {/* Avatar */}
+                    <div className="h-16 sm:h-20 w-full flex items-center justify-center my-1">
                       <img
                         src={fighter.spriteAsset}
                         alt={fighter.name}
-                        className="h-full w-auto object-contain transition-transform duration-200 group-hover:scale-110"
+                        className="h-full w-auto object-contain transition-transform group-hover:scale-105"
                       />
                     </div>
 
-                    {/* Character Label Info */}
-                    <div className="w-full text-center space-y-0.5 mt-1">
-                      <div className="text-xs font-black text-white uppercase truncate">
+                    {/* Info */}
+                    <div className="w-full text-center">
+                      <div className="text-[11px] sm:text-xs font-black text-white uppercase truncate">
                         {fighter.name}
                       </div>
-                      <div className="text-[9px] text-slate-400 font-bold uppercase truncate">
+                      <div className="text-[8px] text-slate-400 font-bold truncate">
                         {fighter.title}
-                      </div>
-                      <div className="text-[10px] text-amber-400 font-semibold truncate">
-                        ⚡ {fighter.specialName}
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
 
-          {/* Bonus Circuit Biker Fighters (Collapsible Accordion) */}
-          <div className="space-y-3 bg-slate-900/40 border border-slate-800/80 rounded-xl p-3">
-            <div className="flex items-center justify-between">
+            {/* 4 Bonus Circuit Biker Fighters (Collapsible) */}
+            <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-2.5">
               <button
                 type="button"
                 onClick={() => setShowBonusFighters(!showBonusFighters)}
-                className="flex items-center gap-2 text-xs font-black tracking-[0.2em] text-purple-400 uppercase hover:text-purple-300 transition cursor-pointer"
+                className="w-full flex items-center justify-between text-xs font-black tracking-wider text-purple-400 uppercase hover:text-purple-300 transition cursor-pointer"
               >
-                <span>CIRCUIT BIKER ROSTER (4 BONUS RIDERS)</span>
+                <span>⚡ CIRCUIT BIKER ROSTER (4 BONUS RIDERS)</span>
                 {showBonusFighters ? (
                   <ChevronUp className="w-4 h-4 text-purple-400" />
                 ) : (
                   <ChevronDown className="w-4 h-4 text-purple-400" />
                 )}
               </button>
-              <button
-                type="button"
-                onClick={() => setShowBonusFighters(!showBonusFighters)}
-                className="text-[11px] text-slate-400 hover:text-white cursor-pointer"
-              >
-                {showBonusFighters ? 'Hide Bonus Fighters' : 'Show 4 Bonus Fighters'}
-              </button>
-            </div>
 
-            {showBonusFighters && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                {BONUS_FIGHTERS.map((fighter) => {
-                  const isP1 = playerFighterId === fighter.id;
-                  const isAI = opponentFighterId === fighter.id;
-                  const disabledForAI =
-                    selectTarget === 'AI' &&
-                    isP1 &&
-                    !settings.allowMirrorMatchInArena &&
-                    !isTrainingMode;
+              {showBonusFighters && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2.5">
+                  {BONUS_FIGHTERS.map((fighter) => {
+                    const isP1 = playerFighterId === fighter.id;
+                    const isAI = opponentFighterId === fighter.id;
 
-                  return (
-                    <div
-                      key={fighter.id}
-                      data-testid={`roster-card-${fighter.id}`}
-                      onClick={() => {
-                        if (selectTarget === 'PLAYER') {
-                          setPlayerFighterId(fighter.id);
-                          gameAudio.playFighterSelect();
-                        } else {
-                          setOpponentFighterId(fighter.id);
-                          gameAudio.playMenuClick();
-                        }
-                      }}
-                      className={`group relative rounded-xl p-3 border flex items-center gap-3 transition-all cursor-pointer hover:scale-[1.02] ${
-                        isP1
-                          ? 'border-cyan-400 bg-cyan-950/40 ring-2 ring-cyan-500/30'
-                          : isAI
-                          ? 'border-rose-500 bg-rose-950/40 ring-2 ring-rose-500/30'
-                          : 'border-slate-800 bg-slate-900/80 hover:border-purple-600/60'
-                      } ${disabledForAI ? 'opacity-40 cursor-not-allowed' : ''}`}
-                    >
-                      <img
-                        src={fighter.spriteAsset}
-                        alt={fighter.name}
-                        className="w-14 h-20 object-contain shrink-0 transition-transform group-hover:scale-105"
-                      />
-                      <div className="text-left min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-black text-white uppercase truncate">
-                            {fighter.name}
-                          </span>
-                          <button
-                            type="button"
-                            title={`Set ${fighter.name} as rival`}
-                            onClick={(e) => handleSetOpponent(e, fighter.id)}
-                            className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-slate-800 text-slate-400 hover:bg-rose-600 hover:text-white"
-                          >
-                            RIVAL
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          {isP1 && (
-                            <span className="px-1.5 py-0.2 rounded bg-cyan-400 text-slate-950 text-[8px] font-black">
-                              P1
+                    return (
+                      <div
+                        key={fighter.id}
+                        data-testid={`roster-card-${fighter.id}`}
+                        onClick={() => {
+                          if (selectTarget === 'PLAYER') {
+                            setPlayerFighterId(fighter.id);
+                            gameAudio.playFighterSelect();
+                          } else {
+                            setOpponentFighterId(fighter.id);
+                            gameAudio.playMenuClick();
+                          }
+                        }}
+                        className={`rounded-xl p-2 border flex items-center gap-2 cursor-pointer transition ${
+                          isP1
+                            ? 'border-cyan-400 bg-cyan-950/40 ring-1 ring-cyan-500/40'
+                            : isAI
+                            ? 'border-rose-500 bg-rose-950/40 ring-1 ring-rose-500/40'
+                            : 'border-slate-800 bg-slate-900/80 hover:border-purple-600/60'
+                        }`}
+                      >
+                        <img
+                          src={fighter.spriteAsset}
+                          alt={fighter.name}
+                          className="w-10 h-14 object-contain shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black text-white uppercase truncate">
+                              {fighter.name}
                             </span>
-                          )}
-                          {isAI && (
-                            <span className="px-1.5 py-0.2 rounded bg-rose-500 text-white text-[8px] font-black">
-                              AI
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-slate-400 truncate">{fighter.title}</div>
-                        <div className="text-[10px] text-amber-400 font-bold mt-0.5 truncate">
-                          ⚡ {fighter.specialName}
+                            {isP1 && <span className="text-[8px] font-bold text-cyan-300">P1</span>}
+                            {isAI && <span className="text-[8px] font-bold text-rose-300">CPU</span>}
+                          </div>
+                          <div className="text-[9px] text-slate-400 truncate">{fighter.title}</div>
+                          <div className="text-[8px] text-amber-400 truncate">⚡ {fighter.specialName}</div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Arena Selection Strip */}
-          <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-black tracking-[0.2em] text-cyan-400 uppercase">
-                BATTLE ARENA: <span className="text-white">{selectedArena.name}</span> ({selectedArena.code})
-              </div>
-              <div className="text-xs text-slate-400 hidden sm:block">
-                {selectedArena.description}
-              </div>
+          {/* 3. ARENA SELECTION GRID */}
+          <div className="space-y-2">
+            <div className="text-xs font-black tracking-widest text-cyan-400 uppercase">
+              SELECT ARENA: <span className="text-white">{selectedArena.name}</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {SQUADRON_ARENAS.map((arena) => {
                 const selected = arena.id === arenaId;
                 return (
@@ -1103,29 +924,29 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                       gameAudio.playMenuClick();
                       setArenaId(arena.id);
                     }}
-                    className={`rounded-xl p-3 border text-left transition-all cursor-pointer hover:scale-[1.01] ${
+                    className={`rounded-xl p-2.5 border text-left transition-all cursor-pointer ${
                       selected
-                        ? 'border-cyan-400 bg-slate-900 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/40'
+                        ? 'border-cyan-400 bg-slate-900 shadow-md ring-1 ring-cyan-500/40'
                         : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center justify-between mb-0.5">
                       <span
-                        className="text-[10px] font-black tracking-widest uppercase"
+                        className="text-[9px] font-black tracking-widest uppercase"
                         style={{ color: arena.themeColor }}
                       >
                         {arena.code}
                       </span>
                       {selected && (
-                        <span className="px-1.5 py-0.5 rounded bg-cyan-400/20 text-cyan-300 text-[9px] font-black">
-                          SELECTED
+                        <span className="px-1 py-0.2 rounded bg-cyan-400/20 text-cyan-300 text-[8px] font-black">
+                          ✓
                         </span>
                       )}
                     </div>
-                    <div className="text-sm font-black text-white uppercase">
+                    <div className="text-xs font-black text-white uppercase truncate">
                       {arena.name}
                     </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5 truncate">
+                    <div className="text-[10px] text-slate-400 truncate">
                       {arena.subtitle}
                     </div>
                   </button>
@@ -1134,53 +955,58 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
             </div>
           </div>
 
-          {/* Pro Arcade Move Guide Bar */}
-          <div className="rounded-xl border border-slate-800/80 bg-slate-950/80 p-3 sm:p-4 text-xs">
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/60">
+          {/* 4. COMBAT CONTROLS & HOW TO PLAY (Collapsible Drawer) */}
+          <div className="rounded-xl border border-slate-800/80 bg-slate-950/80 p-3 text-xs">
+            <button
+              type="button"
+              onClick={() => setShowMoveGuide(!showMoveGuide)}
+              className="w-full flex items-center justify-between font-black text-white uppercase text-[11px] cursor-pointer"
+            >
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="font-black text-white tracking-wider uppercase text-[11px]">
-                  ARCADE COMBAT CONTROLS & PRO MOVES
-                </span>
+                <span>🎮 COMBAT CONTROLS & PRO MOVES</span>
               </div>
-              <span className="text-[10px] text-amber-400 font-mono font-bold">
-                PRO TIP: Press [T] in battle to Taunt for +15 Super Energy!
+              <span className="text-slate-400 text-[10px]">
+                {showMoveGuide ? 'Hide ▲' : 'Show Moves ▼'}
               </span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-center">
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
-                <div className="font-mono font-black text-cyan-400">A / D · ← / →</div>
-                <div className="text-[10px] text-slate-400 mt-0.5 font-semibold">Move Left / Right</div>
+            </button>
+
+            {showMoveGuide && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-center mt-3 pt-3 border-t border-slate-800">
+                <div className="p-1.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <div className="font-mono font-black text-cyan-400">A / D · ◀ / ▶</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">Move Left / Right</div>
+                </div>
+                <div className="p-1.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <div className="font-mono font-black text-cyan-400">W · ▲</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">Jump / Evade</div>
+                </div>
+                <div className="p-1.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <div className="font-mono font-black text-cyan-400">S · ▼</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">Crouch / Duck</div>
+                </div>
+                <div className="p-1.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <div className="font-mono font-black text-emerald-400">J · Space</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">Light Strike</div>
+                </div>
+                <div className="p-1.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <div className="font-mono font-black text-emerald-400">K (Hold)</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">Heavy / Charge</div>
+                </div>
+                <div className="p-1.5 rounded-lg bg-slate-900/80 border border-slate-800">
+                  <div className="font-mono font-black text-amber-400">L</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">Guard / Block</div>
+                </div>
+                <div className="p-1.5 rounded-lg bg-slate-900/80 border border-purple-500/40 bg-purple-950/20">
+                  <div className="font-mono font-black text-purple-300">U</div>
+                  <div className="text-[9px] text-purple-200 mt-0.5">EX-Special (50%)</div>
+                </div>
+                <div className="p-1.5 rounded-lg bg-slate-900/80 border border-amber-500/40 bg-amber-950/20">
+                  <div className="font-mono font-black text-amber-300">T</div>
+                  <div className="text-[9px] text-amber-200 mt-0.5">Taunt (+15 Super)</div>
+                </div>
               </div>
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
-                <div className="font-mono font-black text-cyan-400">W · ↑</div>
-                <div className="text-[10px] text-slate-400 mt-0.5 font-semibold">Jump / Evade</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
-                <div className="font-mono font-black text-cyan-400">S · ↓</div>
-                <div className="text-[10px] text-slate-400 mt-0.5 font-semibold">Crouch / Low Duck</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
-                <div className="font-mono font-black text-emerald-400">J · Space</div>
-                <div className="text-[10px] text-slate-400 mt-0.5 font-semibold">Light Strike</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
-                <div className="font-mono font-black text-emerald-400">K (Hold)</div>
-                <div className="text-[10px] text-slate-400 mt-0.5 font-semibold">Heavy Strike / Charge</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
-                <div className="font-mono font-black text-amber-400">L</div>
-                <div className="text-[10px] text-slate-400 mt-0.5 font-semibold">Guard / Shield</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-purple-500/40 bg-purple-950/20">
-                <div className="font-mono font-black text-purple-300">U</div>
-                <div className="text-[10px] text-purple-200 mt-0.5 font-semibold">EX-Special (50% NRGY)</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-amber-500/40 bg-amber-950/20">
-                <div className="font-mono font-black text-amber-300">T</div>
-                <div className="text-[10px] text-amber-200 mt-0.5 font-semibold">Taunt (+15 Super!)</div>
-              </div>
-            </div>
+            )}
           </div>
         </main>
       )}
@@ -1452,9 +1278,9 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
 
           {/* Mobile Touch Controls OR Desktop Compact Keybind Bar */}
           {isMobileViewport || settings.showTouchControlsOnDesktop ? (
-            <div className="relative z-20 w-full px-4 pb-4 pt-1 flex items-end justify-between gap-4 bg-gradient-to-t from-slate-950/95 to-transparent">
-              {/* Left Movement Pad */}
-              <div className="flex items-center gap-2">
+            <div className="relative z-20 w-full px-2 sm:px-4 pb-3 pt-1 flex items-end justify-between gap-2 bg-gradient-to-t from-slate-950/95 to-transparent select-none">
+              {/* Left Movement D-Pad */}
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onPointerDown={() =>
@@ -1466,25 +1292,42 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                   onPointerLeave={() =>
                     battleSceneRef.current?.setTouchInputState({ left: false })
                   }
-                  className="w-14 h-14 rounded-2xl bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 border border-slate-700 font-black text-lg text-white flex items-center justify-center"
+                  className="w-11 h-11 sm:w-13 sm:h-13 rounded-xl bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 border border-slate-700 font-black text-base text-white flex items-center justify-center cursor-pointer shadow-md"
                 >
                   ◀
                 </button>
-                <button
-                  type="button"
-                  onPointerDown={() =>
-                    battleSceneRef.current?.setTouchInputState({ up: true })
-                  }
-                  onPointerUp={() =>
-                    battleSceneRef.current?.setTouchInputState({ up: false })
-                  }
-                  onPointerLeave={() =>
-                    battleSceneRef.current?.setTouchInputState({ up: false })
-                  }
-                  className="w-14 h-14 rounded-2xl bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 border border-slate-700 font-black text-xs text-white flex items-center justify-center"
-                >
-                  JUMP
-                </button>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onPointerDown={() =>
+                      battleSceneRef.current?.setTouchInputState({ up: true })
+                    }
+                    onPointerUp={() =>
+                      battleSceneRef.current?.setTouchInputState({ up: false })
+                    }
+                    onPointerLeave={() =>
+                      battleSceneRef.current?.setTouchInputState({ up: false })
+                    }
+                    className="w-11 h-10 sm:w-13 sm:h-11 rounded-xl bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 border border-slate-700 font-black text-[10px] text-white flex items-center justify-center cursor-pointer shadow-md"
+                  >
+                    ▲ JUMP
+                  </button>
+                  <button
+                    type="button"
+                    onPointerDown={() =>
+                      battleSceneRef.current?.setTouchInputState({ down: true })
+                    }
+                    onPointerUp={() =>
+                      battleSceneRef.current?.setTouchInputState({ down: false })
+                    }
+                    onPointerLeave={() =>
+                      battleSceneRef.current?.setTouchInputState({ down: false })
+                    }
+                    className="w-11 h-8 sm:w-13 sm:h-9 rounded-xl bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 border border-slate-700 font-black text-[9px] text-slate-300 flex items-center justify-center cursor-pointer shadow-md"
+                  >
+                    ▼ DUCK
+                  </button>
+                </div>
                 <button
                   type="button"
                   onPointerDown={() =>
@@ -1496,66 +1339,73 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                   onPointerLeave={() =>
                     battleSceneRef.current?.setTouchInputState({ right: false })
                   }
-                  className="w-14 h-14 rounded-2xl bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 border border-slate-700 font-black text-lg text-white flex items-center justify-center"
+                  className="w-11 h-11 sm:w-13 sm:h-13 rounded-xl bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 border border-slate-700 font-black text-base text-white flex items-center justify-center cursor-pointer shadow-md"
                 >
                   ▶
                 </button>
               </div>
 
               {/* Right Combat Action Cluster */}
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  data-testid="touch-punch-btn"
-                  onClick={() => battleSceneRef.current?.triggerTouchAction('punch')}
-                  className="w-14 h-14 rounded-2xl bg-sky-500/25 active:bg-sky-400 active:text-slate-950 border border-sky-400/60 font-black text-xs text-sky-200 flex items-center justify-center"
-                >
-                  PUNCH
-                </button>
-                <button
-                  type="button"
-                  data-testid="touch-kick-btn"
-                  onClick={() => battleSceneRef.current?.triggerTouchAction('kick')}
-                  className="w-14 h-14 rounded-2xl bg-amber-500/25 active:bg-amber-400 active:text-slate-950 border border-amber-400/60 font-black text-xs text-amber-200 flex items-center justify-center"
-                >
-                  KICK
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={() =>
-                    battleSceneRef.current?.setTouchInputState({ block: true })
-                  }
-                  onPointerUp={() =>
-                    battleSceneRef.current?.setTouchInputState({ block: false })
-                  }
-                  onPointerLeave={() =>
-                    battleSceneRef.current?.setTouchInputState({ block: false })
-                  }
-                  className="w-14 h-14 rounded-2xl bg-emerald-500/25 active:bg-emerald-400 active:text-slate-950 border border-emerald-400/60 font-black text-xs text-emerald-200 flex items-center justify-center"
-                >
-                  BLOCK
-                </button>
-                <button
-                  type="button"
-                  data-testid="touch-special-btn"
-                  onClick={() =>
-                    battleSceneRef.current?.triggerTouchAction('special')
-                  }
-                  className="px-3.5 h-14 rounded-2xl bg-purple-500/30 active:bg-purple-400 active:text-slate-950 border border-purple-400 font-black text-xs text-purple-200 flex items-center justify-center cursor-pointer"
-                >
-                  SPECIAL
-                </button>
-                <button
-                  type="button"
-                  data-testid="touch-taunt-btn"
-                  onClick={() =>
-                    battleSceneRef.current?.triggerTouchAction('taunt')
-                  }
-                  className="px-3 h-14 rounded-2xl bg-pink-500/30 active:bg-pink-400 active:text-slate-950 border border-pink-400 font-black text-xs text-pink-200 flex items-center justify-center cursor-pointer"
-                  title="Taunt & Boost Super Meter (+15%)"
-                >
-                  😄 TAUNT
-                </button>
+              <div className="flex flex-col items-end gap-1">
+                {/* Top Action Row: PUNCH, KICK, BLOCK */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="touch-punch-btn"
+                    onClick={() => battleSceneRef.current?.triggerTouchAction('punch')}
+                    className="w-11 h-11 sm:w-13 sm:h-13 rounded-xl bg-sky-500/25 active:bg-sky-400 active:text-slate-950 border border-sky-400/60 font-black text-[10px] sm:text-xs text-sky-200 flex items-center justify-center cursor-pointer shadow-md"
+                  >
+                    PUNCH
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="touch-kick-btn"
+                    onClick={() => battleSceneRef.current?.triggerTouchAction('kick')}
+                    className="w-11 h-11 sm:w-13 sm:h-13 rounded-xl bg-amber-500/25 active:bg-amber-400 active:text-slate-950 border border-amber-400/60 font-black text-[10px] sm:text-xs text-amber-200 flex items-center justify-center cursor-pointer shadow-md"
+                  >
+                    KICK
+                  </button>
+                  <button
+                    type="button"
+                    onPointerDown={() =>
+                      battleSceneRef.current?.setTouchInputState({ block: true })
+                    }
+                    onPointerUp={() =>
+                      battleSceneRef.current?.setTouchInputState({ block: false })
+                    }
+                    onPointerLeave={() =>
+                      battleSceneRef.current?.setTouchInputState({ block: false })
+                    }
+                    className="w-11 h-11 sm:w-13 sm:h-13 rounded-xl bg-emerald-500/25 active:bg-emerald-400 active:text-slate-950 border border-emerald-400/60 font-black text-[10px] sm:text-xs text-emerald-200 flex items-center justify-center cursor-pointer shadow-md"
+                  >
+                    BLOCK
+                  </button>
+                </div>
+
+                {/* Bottom Action Row: SPECIAL, TAUNT */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="touch-special-btn"
+                    onClick={() =>
+                      battleSceneRef.current?.triggerTouchAction('special')
+                    }
+                    className="h-9 sm:h-10 px-3 rounded-xl bg-purple-500/30 active:bg-purple-400 active:text-slate-950 border border-purple-400 font-black text-[10px] sm:text-xs text-purple-200 flex items-center justify-center cursor-pointer shadow-md"
+                  >
+                    ⚡ SPECIAL
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="touch-taunt-btn"
+                    onClick={() =>
+                      battleSceneRef.current?.triggerTouchAction('taunt')
+                    }
+                    className="h-9 sm:h-10 px-2.5 rounded-xl bg-pink-500/30 active:bg-pink-400 active:text-slate-950 border border-pink-400 font-black text-[10px] sm:text-xs text-pink-200 flex items-center justify-center cursor-pointer shadow-md"
+                    title="Taunt & Boost Super Meter (+15%)"
+                  >
+                    😄 TAUNT
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

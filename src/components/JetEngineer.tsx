@@ -27,7 +27,15 @@ import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { JetEngineerSubmission } from '../types';
 import { BackButton } from './BackButton';
-import { isAdminOrOwnerAccount } from '../utils/rules';
+import {
+  isAdminOrOwnerAccount,
+  prepareNativePhotoPickerTarget,
+  getActivePhotoTarget,
+  claimNativePhotoDeliveryBatch,
+  hasRecentNativePhotoDelivery,
+  pollAndroidPhotoBridgeForTarget,
+  processUploadedDevicePhoto
+} from '../utils/rules';
 import {
   CACHE_KEYS,
   saveToCache,
@@ -185,7 +193,30 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
   const { playTacticalClick, playChime, playAlert, reducedMotion } = useAudio();
   const isAdminOrOwner = isAdminOrOwnerAccount(currentUser);
 
-  const [activeTab, setActiveTab] = useState<'ask' | 'train'>(initialTab);
+  const [activeTab, setActiveTabState] = useState<'ask' | 'train'>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved =
+          sessionStorage.getItem('ghost_jet_engineer_tab_v1') ||
+          localStorage.getItem('ghost_jet_engineer_tab_v1');
+        if (saved === 'train' || saved === 'ask') return saved;
+      }
+    } catch {}
+    return initialTab;
+  });
+  const setActiveTab = (next: 'ask' | 'train') => {
+    setActiveTabState(next);
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('ghost_jet_engineer_tab_v1', next);
+        if (next === 'train') {
+          localStorage.setItem('ghost_jet_engineer_tab_v1', 'train');
+        } else {
+          localStorage.removeItem('ghost_jet_engineer_tab_v1');
+        }
+      }
+    } catch {}
+  };
   const [showPresetManager, setShowPresetManager] = useState(false);
   const [presetFilterQuery, setPresetFilterQuery] = useState('');
 
@@ -201,7 +232,9 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
   const [loadingAnswer, setLoadingAnswer] = useState(false);
 
   useEffect(() => {
-    setActiveTab(initialTab);
+    if (initialTab === 'train') {
+      setActiveTab('train');
+    }
   }, [initialTab]);
 
   useEffect(() => {
@@ -240,32 +273,111 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
   const [trainForm, setTrainForm] = useState(initialDraft);
   const [submittingTrain, setSubmittingTrain] = useState(false);
   const [trainSuccessNotice, setTrainSuccessNotice] = useState<string | null>(null);
+  const [photoBridgeNotice, setPhotoBridgeNotice] = useState<string | null>(null);
+  const stepGalleryInputRef = useRef<HTMLInputElement>(null);
+  const stepCameraInputRef = useRef<HTMLInputElement>(null);
 
-  const handleStepPhotosUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const appendStepPhotos = (incoming: string[]) => {
+    const clean = incoming.filter(p => typeof p === 'string' && p.trim().length > 0);
+    if (clean.length === 0) return;
+    setTrainForm(prev => {
+      const existing = new Set(prev.stepPhotos || []);
+      const unique = clean.filter(p => !existing.has(p));
+      return {
+        ...prev,
+        stepPhotos: unique.length > 0 ? [...(prev.stepPhotos || []), ...unique] : prev.stepPhotos || []
+      };
+    });
+    setActiveTab('train');
+    playChime();
+    setPhotoBridgeNotice(`✓ ${clean.length} step photo(s) attached from your device!`);
+    setTimeout(() => setPhotoBridgeNotice(null), 5000);
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const pollJetBridge = async () => {
+      const incoming = await pollAndroidPhotoBridgeForTarget('jet_engineer');
+      if (incoming.length > 0) {
+        appendStepPhotos(incoming);
+      }
+    };
+
+    (window as any).__ghostReceiveNativePhotos = (incoming: string[] | string) => {
+      if (getActivePhotoTarget() !== 'jet_engineer') return;
+      const claimed = claimNativePhotoDeliveryBatch('jet_engineer', incoming);
+      if (claimed.length > 0) {
+        appendStepPhotos(claimed);
+      }
+    };
+
+    const handleNativePhotoEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      const activeTarget = getActivePhotoTarget();
+      if (Array.isArray(detail) && activeTarget === 'jet_engineer') {
+        const claimed = claimNativePhotoDeliveryBatch('jet_engineer', detail);
+        if (claimed.length > 0) appendStepPhotos(claimed);
+      } else if (
+        detail &&
+        Array.isArray(detail.images) &&
+        (detail.target === 'jet_engineer' || (!detail.target && activeTarget === 'jet_engineer'))
+      ) {
+        const claimed = claimNativePhotoDeliveryBatch('jet_engineer', detail.images);
+        if (claimed.length > 0) appendStepPhotos(claimed);
+      }
+    };
+
+    const handleFocusOrVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      pollJetBridge();
+    };
+
+    window.addEventListener('ghost-native-photos', handleNativePhotoEvent);
+    window.addEventListener('focus', handleFocusOrVisibility);
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+
+    pollJetBridge();
+    const timer = setInterval(pollJetBridge, 600);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('ghost-native-photos', handleNativePhotoEvent);
+      window.removeEventListener('focus', handleFocusOrVisibility);
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+      if ((window as any).__ghostReceiveNativePhotos) {
+        delete (window as any).__ghostReceiveNativePhotos;
+      }
+    };
+  }, [activeTab]);
+
+  const prepareStepPhotoPicker = (mode: 'gallery' | 'camera') => {
+    setActiveTab('train');
+    prepareNativePhotoPickerTarget('jet_engineer', mode);
+  };
+
+  const handleStepPhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const fileList = files ? Array.from(files) : [];
+    e.target.value = '';
+    if (fileList.length === 0 || hasRecentNativePhotoDelivery()) return;
 
     const newPhotos: string[] = [];
-    let readCount = 0;
-    const fileList = Array.from(files);
 
-    fileList.forEach(file => {
-      if (!file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result && typeof event.target.result === 'string') {
-          newPhotos.push(event.target.result);
-        }
-        readCount++;
-        if (readCount === fileList.length) {
-          setTrainForm(prev => ({
-            ...prev,
-            stepPhotos: [...(prev.stepPhotos || []), ...newPhotos]
-          }));
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    for (const file of fileList) {
+      const processed = await processUploadedDevicePhoto(file);
+      if (processed) {
+        newPhotos.push(processed);
+      }
+    }
+
+    if (hasRecentNativePhotoDelivery()) return;
+    if (newPhotos.length > 0) {
+      const claimed = claimNativePhotoDeliveryBatch('jet_engineer', newPhotos);
+      if (claimed.length > 0) {
+        appendStepPhotos(claimed);
+      }
+    }
   };
 
   const handleRemoveStepPhoto = (index: number) => {
@@ -1248,19 +1360,54 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                   </div>
                 )}
 
-                <label className="flex items-center justify-center gap-2 p-3 rounded bg-[#08090B] border border-dashed border-[#282D34] hover:border-[#42B883]/60 cursor-pointer transition-colors text-center block">
-                  <Upload className="w-4 h-4 text-[#42B883]" />
-                  <span className="text-xs text-[#D4D8DE] font-semibold">
-                    + {trainForm.stepPhotos && trainForm.stepPhotos.length > 0 ? 'ADD MORE STEP PHOTOS' : 'UPLOAD STEP-BY-STEP PHOTOS'}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleStepPhotosUpload}
-                    className="hidden"
-                  />
-                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <label
+                    data-testid="jet-select-photos-button"
+                    onClick={() => prepareStepPhotoPicker('gallery')}
+                    className="relative overflow-hidden flex items-center justify-center gap-2 p-3 rounded bg-[#08090B] border border-dashed border-[#282D34] hover:border-[#42B883]/60 active:scale-[0.98] cursor-pointer transition-all text-center select-none"
+                  >
+                    <Upload className="w-4 h-4 text-[#42B883] shrink-0" />
+                    <span className="text-xs text-[#D4D8DE] font-semibold">
+                      {trainForm.stepPhotos && trainForm.stepPhotos.length > 0
+                        ? '+ Add Step Photos (Gallery)'
+                        : 'Select Step Photos (Gallery)'}
+                    </span>
+                    <input
+                      ref={stepGalleryInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleStepPhotosUpload}
+                      className="sr-only"
+                    />
+                  </label>
+
+                  <label
+                    data-testid="jet-camera-photos-button"
+                    onClick={() => prepareStepPhotoPicker('camera')}
+                    className="relative overflow-hidden flex items-center justify-center gap-2 p-3 rounded bg-[#08090B] border border-dashed border-[#282D34] hover:border-[#38BDF8]/60 active:scale-[0.98] cursor-pointer transition-all text-center select-none"
+                  >
+                    <Camera className="w-4 h-4 text-[#38BDF8] shrink-0" />
+                    <span className="text-xs text-[#D4D8DE] font-semibold">
+                      Take Step Photo (Camera)
+                    </span>
+                    <input
+                      ref={stepCameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleStepPhotosUpload}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
+
+                {photoBridgeNotice && (
+                  <div className="px-3 py-2 rounded bg-[#42B883]/15 border border-[#42B883]/40 text-[#42B883] text-xs font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>{photoBridgeNotice}</span>
+                  </div>
+                )}
               </div>
 
               {isAdminOrOwner && (

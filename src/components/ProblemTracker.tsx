@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Activity,
   Plus,
@@ -25,7 +25,19 @@ import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { ProblemReport } from '../types';
 import { BackButton } from './BackButton';
-import { sortProblemsBySeverity, getSeverityRank, X47_PRIORITY_ISSUES_SEED, F77_PRIORITY_ISSUES_SEED, ALL_PRIORITY_ISSUES_SEED } from '../utils/rules';
+import {
+  sortProblemsBySeverity,
+  getSeverityRank,
+  X47_PRIORITY_ISSUES_SEED,
+  F77_PRIORITY_ISSUES_SEED,
+  ALL_PRIORITY_ISSUES_SEED,
+  prepareNativePhotoPickerTarget,
+  getActivePhotoTarget,
+  claimNativePhotoDeliveryBatch,
+  hasRecentNativePhotoDelivery,
+  pollAndroidPhotoBridgeForTarget,
+  processUploadedDevicePhoto
+} from '../utils/rules';
 import {
   CACHE_KEYS,
   saveToCache,
@@ -42,6 +54,8 @@ import {
 } from '../utils/telemetryCache';
 
 const DRAFT_KEY = 'priority_issue_form';
+const PROBLEM_CREATE_MODAL_OPEN_KEY = 'ghost_problem_modal_open_v1';
+const PROBLEM_DETAIL_MODAL_OPEN_KEY = 'ghost_problem_detail_open_v1';
 
 function mergeWithX47PrioritySeed(list: ProblemReport[]): ProblemReport[] {
   const deletedSet = new Set(getDeletedIds());
@@ -88,8 +102,56 @@ export const ProblemTracker: React.FC = () => {
     const cached = mergeWithX47PrioritySeed(loadFromCache<ProblemReport[]>(CACHE_KEYS.PROBLEMS, []));
     return cached[0] || null;
   });
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showCreateModal, setShowCreateModalState] = useState<boolean>(() => {
+    try {
+      return (
+        typeof window !== 'undefined' &&
+        (sessionStorage.getItem(PROBLEM_CREATE_MODAL_OPEN_KEY) === '1' ||
+          localStorage.getItem(PROBLEM_CREATE_MODAL_OPEN_KEY) === '1')
+      );
+    } catch {
+      return false;
+    }
+  });
+  const setShowCreateModal = (open: boolean) => {
+    setShowCreateModalState(open);
+    try {
+      if (typeof window !== 'undefined') {
+        if (open) {
+          sessionStorage.setItem(PROBLEM_CREATE_MODAL_OPEN_KEY, '1');
+          localStorage.setItem(PROBLEM_CREATE_MODAL_OPEN_KEY, '1');
+        } else {
+          sessionStorage.removeItem(PROBLEM_CREATE_MODAL_OPEN_KEY);
+          localStorage.removeItem(PROBLEM_CREATE_MODAL_OPEN_KEY);
+        }
+      }
+    } catch {}
+  };
+  const [showDetailModal, setShowDetailModalState] = useState<boolean>(() => {
+    try {
+      return (
+        typeof window !== 'undefined' &&
+        (sessionStorage.getItem(PROBLEM_DETAIL_MODAL_OPEN_KEY) === '1' ||
+          localStorage.getItem(PROBLEM_DETAIL_MODAL_OPEN_KEY) === '1')
+      );
+    } catch {
+      return false;
+    }
+  });
+  const setShowDetailModal = (open: boolean) => {
+    setShowDetailModalState(open);
+    try {
+      if (typeof window !== 'undefined') {
+        if (open) {
+          sessionStorage.setItem(PROBLEM_DETAIL_MODAL_OPEN_KEY, '1');
+          localStorage.setItem(PROBLEM_DETAIL_MODAL_OPEN_KEY, '1');
+        } else {
+          sessionStorage.removeItem(PROBLEM_DETAIL_MODAL_OPEN_KEY);
+          localStorage.removeItem(PROBLEM_DETAIL_MODAL_OPEN_KEY);
+        }
+      }
+    } catch {}
+  };
   const [editingProblemId, setEditingProblemId] = useState<string | null>(null);
   const [statusNotice, setStatusNotice] = useState<{ type: 'saved' | 'offline' | 'error'; text: string } | null>(null);
 
@@ -160,36 +222,148 @@ export const ProblemTracker: React.FC = () => {
   const [updateNote, setUpdateNote] = useState('');
   const [newStatusUpdate, setNewStatusUpdate] = useState<ProblemReport['status']>('Under Investigation');
   const [updateMediaUrls, setUpdateMediaUrls] = useState<string[]>([]);
+  const [photoBridgeNotice, setPhotoBridgeNotice] = useState<string | null>(null);
 
-  const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>, isUpdateForm = false) => {
+  const createGalleryInputRef = useRef<HTMLInputElement>(null);
+  const createCameraInputRef = useRef<HTMLInputElement>(null);
+  const updateGalleryInputRef = useRef<HTMLInputElement>(null);
+  const updateCameraInputRef = useRef<HTMLInputElement>(null);
+
+  const appendProblemMedia = (incoming: string[], isUpdateForm: boolean) => {
+    const clean = incoming.filter(m => typeof m === 'string' && m.trim().length > 0);
+    if (clean.length === 0) return;
+    if (isUpdateForm) {
+      setUpdateMediaUrls(prev => {
+        const existing = new Set(prev);
+        const unique = clean.filter(m => !existing.has(m));
+        return unique.length > 0 ? [...prev, ...unique] : prev;
+      });
+      setShowDetailModal(true);
+    } else {
+      setFormMediaUrls(prev => {
+        const existing = new Set(prev);
+        const unique = clean.filter(m => !existing.has(m));
+        return unique.length > 0 ? [...prev, ...unique] : prev;
+      });
+      setShowCreateModal(true);
+    }
+    playChime();
+    setPhotoBridgeNotice(`✓ ${clean.length} media file(s) attached from your device!`);
+    setTimeout(() => setPhotoBridgeNotice(null), 5000);
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const pollProblemBridges = async () => {
+      const createIncoming = await pollAndroidPhotoBridgeForTarget('problems');
+      if (createIncoming.length > 0) {
+        appendProblemMedia(createIncoming, false);
+      }
+      const updateIncoming = await pollAndroidPhotoBridgeForTarget('problems_update');
+      if (updateIncoming.length > 0) {
+        appendProblemMedia(updateIncoming, true);
+      }
+    };
+
+    (window as any).__ghostReceiveNativePhotos = (incoming: string[] | string) => {
+      const activeTarget = getActivePhotoTarget();
+      if (activeTarget === 'problems_update') {
+        const claimed = claimNativePhotoDeliveryBatch('problems_update', incoming);
+        if (claimed.length > 0) appendProblemMedia(claimed, true);
+      } else if (activeTarget === 'problems') {
+        const claimed = claimNativePhotoDeliveryBatch('problems', incoming);
+        if (claimed.length > 0) appendProblemMedia(claimed, false);
+      }
+    };
+
+    const handleNativePhotoEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      const activeTarget = getActivePhotoTarget();
+      if (Array.isArray(detail)) {
+        if (activeTarget === 'problems_update') {
+          const claimed = claimNativePhotoDeliveryBatch('problems_update', detail);
+          if (claimed.length > 0) appendProblemMedia(claimed, true);
+        } else if (activeTarget === 'problems') {
+          const claimed = claimNativePhotoDeliveryBatch('problems', detail);
+          if (claimed.length > 0) appendProblemMedia(claimed, false);
+        }
+      } else if (detail && Array.isArray(detail.images)) {
+        const effectiveTarget = detail.target || activeTarget;
+        if (effectiveTarget === 'problems_update') {
+          const claimed = claimNativePhotoDeliveryBatch('problems_update', detail.images);
+          if (claimed.length > 0) appendProblemMedia(claimed, true);
+        } else if (effectiveTarget === 'problems') {
+          const claimed = claimNativePhotoDeliveryBatch('problems', detail.images);
+          if (claimed.length > 0) appendProblemMedia(claimed, false);
+        }
+      }
+    };
+
+    const handleFocusOrVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      pollProblemBridges();
+    };
+
+    window.addEventListener('ghost-native-photos', handleNativePhotoEvent);
+    window.addEventListener('focus', handleFocusOrVisibility);
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+
+    pollProblemBridges();
+    const timer = setInterval(pollProblemBridges, 600);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('ghost-native-photos', handleNativePhotoEvent);
+      window.removeEventListener('focus', handleFocusOrVisibility);
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+      if ((window as any).__ghostReceiveNativePhotos) {
+        delete (window as any).__ghostReceiveNativePhotos;
+      }
+    };
+  }, [showCreateModal, showDetailModal]);
+
+  const prepareProblemMediaPicker = (mode: 'gallery' | 'camera', isUpdateForm = false) => {
+    if (isUpdateForm) {
+      setShowDetailModal(true);
+      prepareNativePhotoPickerTarget('problems_update', mode);
+    } else {
+      setShowCreateModal(true);
+      prepareNativePhotoPickerTarget('problems', mode);
+    }
+  };
+
+  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>, isUpdateForm = false) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const fileList = files ? Array.from(files) : [];
+    e.target.value = '';
+    if (fileList.length === 0 || hasRecentNativePhotoDelivery()) return;
 
+    const target = isUpdateForm ? 'problems_update' : 'problems';
     const newMedia: string[] = [];
-    let readCount = 0;
-    const fileList = Array.from(files);
 
-    fileList.forEach(file => {
-      const isImg = file.type.startsWith('image/');
-      const isVid = file.type.startsWith('video/');
-      if (!isImg && !isVid) return;
+    for (const file of fileList) {
+      if (file.type && file.type.startsWith('video/')) {
+        const videoDataUrl = await new Promise<string>(resolve => {
+          const reader = new FileReader();
+          reader.onload = ev => resolve(typeof ev.target?.result === 'string' ? ev.target.result : '');
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(file);
+        });
+        if (videoDataUrl) newMedia.push(videoDataUrl);
+      } else {
+        const processed = await processUploadedDevicePhoto(file);
+        if (processed) newMedia.push(processed);
+      }
+    }
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result && typeof event.target.result === 'string') {
-          newMedia.push(event.target.result);
-        }
-        readCount++;
-        if (readCount === fileList.length) {
-          if (isUpdateForm) {
-            setUpdateMediaUrls(prev => [...prev, ...newMedia]);
-          } else {
-            setFormMediaUrls(prev => [...prev, ...newMedia]);
-          }
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    if (hasRecentNativePhotoDelivery()) return;
+    if (newMedia.length > 0) {
+      const claimed = claimNativePhotoDeliveryBatch(target, newMedia);
+      if (claimed.length > 0) {
+        appendProblemMedia(claimed, isUpdateForm);
+      }
+    }
   };
 
   const handleRemoveMedia = (index: number, isUpdateForm = false) => {
@@ -838,16 +1012,38 @@ export const ProblemTracker: React.FC = () => {
               </div>
             )}
 
-            <div className="flex items-center justify-between gap-2">
-              <label className="text-[10px] text-[#A0A7B0] hover:text-[#42B883] cursor-pointer flex items-center gap-1 font-mono">
-                <Upload className="w-3 h-3 text-[#42B883]" />
-                <span>+ Attach Photo / Video</span>
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <label
+                data-testid="problem-update-select-photos-btn"
+                onClick={() => prepareProblemMediaPicker('gallery', true)}
+                className="text-[11px] px-2.5 py-1.5 rounded bg-[#13161A] hover:bg-[#191D22] border border-[#282D34] hover:border-[#42B883]/60 text-[#D4D8DE] hover:text-[#42B883] cursor-pointer flex items-center gap-1.5 font-mono transition-colors select-none"
+              >
+                <Upload className="w-3.5 h-3.5 text-[#42B883] shrink-0" />
+                <span>+ Attach Photo / Video (Gallery)</span>
                 <input
+                  ref={updateGalleryInputRef}
                   type="file"
                   accept="image/*,video/*"
                   multiple
                   onChange={e => handleMediaUpload(e, true)}
-                  className="hidden"
+                  className="sr-only"
+                />
+              </label>
+
+              <label
+                data-testid="problem-update-camera-btn"
+                onClick={() => prepareProblemMediaPicker('camera', true)}
+                className="text-[11px] px-2.5 py-1.5 rounded bg-[#13161A] hover:bg-[#191D22] border border-[#282D34] hover:border-[#38BDF8]/60 text-[#D4D8DE] hover:text-[#38BDF8] cursor-pointer flex items-center gap-1.5 font-mono transition-colors select-none"
+              >
+                <Camera className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
+                <span>+ Take Photo (Camera)</span>
+                <input
+                  ref={updateCameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={e => handleMediaUpload(e, true)}
+                  className="sr-only"
                 />
               </label>
             </div>
@@ -1376,19 +1572,52 @@ export const ProblemTracker: React.FC = () => {
                   </div>
                 )}
 
-                <label className="flex items-center justify-center gap-2 p-2.5 rounded bg-[#13161A] border border-dashed border-[#282D34] hover:border-[#E8AA45]/60 cursor-pointer transition-colors text-center block">
-                  <Upload className="w-3.5 h-3.5 text-[#E8AA45]" />
-                  <span className="text-xs text-[#D4D8DE] font-semibold">
-                    + {formMediaUrls.length > 0 ? 'ADD MORE PHOTOS / VIDEOS' : 'UPLOAD PHOTOS OR VIDEOS'}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*,video/*"
-                    multiple
-                    onChange={e => handleMediaUpload(e, false)}
-                    className="hidden"
-                  />
-                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <label
+                    data-testid="problem-select-photos-button"
+                    onClick={() => prepareProblemMediaPicker('gallery', false)}
+                    className="relative overflow-hidden flex items-center justify-center gap-2 p-2.5 rounded bg-[#13161A] border border-dashed border-[#282D34] hover:border-[#E8AA45]/60 active:scale-[0.98] cursor-pointer transition-all text-center select-none"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-[#E8AA45] shrink-0" />
+                    <span className="text-xs text-[#D4D8DE] font-semibold">
+                      {formMediaUrls.length > 0 ? '+ Add More (Gallery)' : 'Select Photos / Videos (Gallery)'}
+                    </span>
+                    <input
+                      ref={createGalleryInputRef}
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      onChange={e => handleMediaUpload(e, false)}
+                      className="sr-only"
+                    />
+                  </label>
+
+                  <label
+                    data-testid="problem-camera-photos-button"
+                    onClick={() => prepareProblemMediaPicker('camera', false)}
+                    className="relative overflow-hidden flex items-center justify-center gap-2 p-2.5 rounded bg-[#13161A] border border-dashed border-[#282D34] hover:border-[#38BDF8]/60 active:scale-[0.98] cursor-pointer transition-all text-center select-none"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
+                    <span className="text-xs text-[#D4D8DE] font-semibold">
+                      Take Photo (Camera)
+                    </span>
+                    <input
+                      ref={createCameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={e => handleMediaUpload(e, false)}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
+
+                {photoBridgeNotice && (
+                  <div className="px-3 py-2 rounded bg-[#42B883]/15 border border-[#42B883]/40 text-[#42B883] text-xs font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>{photoBridgeNotice}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#282D34]">

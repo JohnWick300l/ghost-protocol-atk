@@ -164,8 +164,8 @@ export const InteractiveFighterPreview: React.FC<
   };
 
   return (
-    <div className="flex flex-col items-center gap-1.5 shrink-0">
-      <div className="relative w-32 h-44 sm:w-36 sm:h-48 rounded-xl bg-slate-950/95 border border-slate-800 flex items-center justify-center overflow-hidden">
+    <div className="flex flex-col items-center gap-1.5 shrink-0 max-w-full">
+      <div className="relative w-24 h-32 sm:w-36 sm:h-48 rounded-xl bg-slate-950/95 border border-slate-800 flex items-center justify-center overflow-hidden">
         <canvas
           ref={canvasRef}
           width={420}
@@ -173,14 +173,14 @@ export const InteractiveFighterPreview: React.FC<
           className="w-full h-full object-contain"
         />
         {activeAction !== 'IDLE' && (
-          <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-cyan-500/25 border border-cyan-400/50 text-[9px] font-black text-cyan-200 uppercase">
+          <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 px-1 sm:px-1.5 py-0.5 rounded bg-cyan-500/25 border border-cyan-400/50 text-[8px] sm:text-[9px] font-black text-cyan-200 uppercase">
             {activeAction}
           </span>
         )}
       </div>
 
       {showMoveTester && (
-        <div className="grid grid-cols-5 gap-1 w-full">
+        <div className="grid grid-cols-5 gap-0.5 sm:gap-1 w-full max-w-[130px] sm:max-w-none">
           <button
             type="button"
             data-testid={`preview-punch-${fighter.id}`}

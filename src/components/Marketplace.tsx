@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ShoppingBag,
   Plus,
@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Upload,
+  Camera,
   Trash2,
   Edit2,
   CloudOff,
@@ -37,7 +38,13 @@ import {
   getAuctionBidSummary,
   validateAndPlaceAuctionBid,
   selectAuctionWinner,
-  createMarketplacePresetIllustration
+  createMarketplacePresetIllustration,
+  prepareNativePhotoPickerTarget,
+  getActivePhotoTarget,
+  claimNativePhotoDeliveryBatch,
+  hasRecentNativePhotoDelivery,
+  pollAndroidPhotoBridgeForTarget,
+  processUploadedDevicePhoto
 } from '../utils/rules';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -68,6 +75,7 @@ const SAMPLE_PHOTO_PRESETS = [
 ];
 
 const DRAFT_KEY = 'marketplace_listing_form_v2';
+const MARKETPLACE_MODAL_OPEN_KEY = 'ghost_marketplace_modal_open_v1';
 
 type SectionTab = 'buy' | 'rent' | 'auction' | 'all';
 
@@ -83,7 +91,31 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedModel, setSelectedModel] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateModal, setShowCreateModalState] = useState<boolean>(() => {
+    try {
+      return (
+        typeof window !== 'undefined' &&
+        (sessionStorage.getItem(MARKETPLACE_MODAL_OPEN_KEY) === '1' ||
+          localStorage.getItem(MARKETPLACE_MODAL_OPEN_KEY) === '1')
+      );
+    } catch {
+      return false;
+    }
+  });
+  const setShowCreateModal = (open: boolean) => {
+    setShowCreateModalState(open);
+    try {
+      if (typeof window !== 'undefined') {
+        if (open) {
+          sessionStorage.setItem(MARKETPLACE_MODAL_OPEN_KEY, '1');
+          localStorage.setItem(MARKETPLACE_MODAL_OPEN_KEY, '1');
+        } else {
+          sessionStorage.removeItem(MARKETPLACE_MODAL_OPEN_KEY);
+          localStorage.removeItem(MARKETPLACE_MODAL_OPEN_KEY);
+        }
+      }
+    } catch {}
+  };
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<MarketplaceItem | null>(null);
   const [activeGalleryIndex, setActiveGalleryIndex] = useState(0);
@@ -165,8 +197,11 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
 
   const [photoList, setPhotoList] = useState<string[]>(initialDraft.photoList || []);
   const [photoUrlInput, setPhotoUrlInput] = useState('');
+  const [photoBridgeNotice, setPhotoBridgeNotice] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Interactive Rental Booking State (inside detail modal)
   const [rentStartDate, setRentStartDate] = useState(
@@ -318,22 +353,104 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    Array.from(files).forEach(file => {
-      if (!file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = event => {
-        if (event.target?.result && typeof event.target.result === 'string') {
-          setPhotoList(prev => [...prev, event.target!.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
+  const appendIncomingMarketplacePhotos = (incoming: string[]) => {
+    const clean = incoming.filter(img => typeof img === 'string' && img.trim().length > 0);
+    if (clean.length === 0) return;
+    setPhotoList(prev => {
+      const existing = new Set(prev);
+      const unique = clean.filter(img => !existing.has(img));
+      return unique.length > 0 ? [...prev, ...unique] : prev;
     });
+    setShowCreateModal(true);
+    setPhotoBridgeNotice(
+      `✓ ${clean.length} ${clean.length === 1 ? 'photo' : 'photos'} loaded from your device!`
+    );
+    setTimeout(() => setPhotoBridgeNotice(null), 5000);
+  };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const pollMarketplaceBridge = async () => {
+      const incoming = await pollAndroidPhotoBridgeForTarget('marketplace');
+      if (incoming.length > 0) {
+        appendIncomingMarketplacePhotos(incoming);
+      }
+    };
+
+    (window as any).__ghostReceiveNativePhotos = (incoming: string[] | string) => {
+      if (getActivePhotoTarget() !== 'marketplace') return;
+      const claimed = claimNativePhotoDeliveryBatch('marketplace', incoming);
+      if (claimed.length > 0) {
+        appendIncomingMarketplacePhotos(claimed);
+      }
+    };
+
+    const handleNativePhotoEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      const activeTarget = getActivePhotoTarget();
+      if (Array.isArray(detail) && activeTarget === 'marketplace') {
+        const claimed = claimNativePhotoDeliveryBatch('marketplace', detail);
+        if (claimed.length > 0) appendIncomingMarketplacePhotos(claimed);
+      } else if (
+        detail &&
+        Array.isArray(detail.images) &&
+        (detail.target === 'marketplace' || (!detail.target && activeTarget === 'marketplace'))
+      ) {
+        const claimed = claimNativePhotoDeliveryBatch('marketplace', detail.images);
+        if (claimed.length > 0) appendIncomingMarketplacePhotos(claimed);
+      }
+    };
+
+    const handleFocusOrVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      pollMarketplaceBridge();
+    };
+
+    window.addEventListener('ghost-native-photos', handleNativePhotoEvent);
+    window.addEventListener('focus', handleFocusOrVisibility);
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+
+    pollMarketplaceBridge();
+    const timer = setInterval(pollMarketplaceBridge, 600);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('ghost-native-photos', handleNativePhotoEvent);
+      window.removeEventListener('focus', handleFocusOrVisibility);
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+      if ((window as any).__ghostReceiveNativePhotos) {
+        delete (window as any).__ghostReceiveNativePhotos;
+      }
+    };
+  }, [showCreateModal]);
+
+  const prepareMarketplacePhotoPicker = (mode: 'gallery' | 'camera') => {
+    setError('');
+    setShowCreateModal(true);
+    prepareNativePhotoPickerTarget('marketplace', mode);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    const fileList = files ? Array.from(files) : [];
     e.target.value = '';
+    if (fileList.length === 0 || hasRecentNativePhotoDelivery()) return;
+
+    const processedList: string[] = [];
+    for (const file of fileList) {
+      const processed = await processUploadedDevicePhoto(file);
+      if (processed && processed.length > 0) {
+        processedList.push(processed);
+      }
+    }
+    if (hasRecentNativePhotoDelivery()) return;
+    if (processedList.length > 0) {
+      const claimed = claimNativePhotoDeliveryBatch('marketplace', processedList);
+      if (claimed.length > 0) {
+        appendIncomingMarketplacePhotos(claimed);
+      }
+    }
   };
 
   const handleAddPhotoUrl = () => {
@@ -2507,34 +2624,67 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="flex items-center justify-center gap-2 p-3 bg-zinc-900 border border-dashed border-zinc-700 hover:border-amber-500/60 text-zinc-300 hover:text-amber-400 rounded-lg cursor-pointer transition-colors text-xs font-semibold">
-                    <Upload className="w-4 h-4" />
-                    Upload Photo Files
+                  {/* Select Photos (Gallery) */}
+                  <label
+                    data-testid="marketplace-select-photos-button"
+                    onClick={() => prepareMarketplacePhotoPicker('gallery')}
+                    className="relative overflow-hidden flex items-center justify-center gap-2 p-3 bg-zinc-900 border border-dashed border-zinc-700 hover:border-amber-500/60 active:scale-[0.98] text-zinc-300 hover:text-amber-400 rounded-lg cursor-pointer transition-all text-xs font-semibold select-none"
+                  >
+                    <Upload className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Select Photos (Gallery)</span>
                     <input
+                      ref={galleryInputRef}
                       type="file"
                       accept="image/*"
                       multiple
                       onChange={handleFileUpload}
-                      className="hidden"
+                      className="sr-only"
+                      aria-label="Select Photos From Device"
                     />
                   </label>
 
-                  <div className="flex gap-2">
+                  {/* Take Photo (Camera) */}
+                  <label
+                    data-testid="marketplace-camera-photos-button"
+                    onClick={() => prepareMarketplacePhotoPicker('camera')}
+                    className="relative overflow-hidden flex items-center justify-center gap-2 p-3 bg-zinc-900 border border-dashed border-zinc-700 hover:border-sky-500/60 active:scale-[0.98] text-zinc-300 hover:text-sky-400 rounded-lg cursor-pointer transition-all text-xs font-semibold select-none"
+                  >
+                    <Camera className="w-4 h-4 text-sky-400 shrink-0" />
+                    <span>Take Photo (Camera)</span>
                     <input
-                      type="url"
-                      placeholder="Or paste image URL..."
-                      value={photoUrlInput}
-                      onChange={e => setPhotoUrlInput(e.target.value)}
-                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white"
+                      ref={cameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleFileUpload}
+                      className="sr-only"
+                      aria-label="Take Photo with Camera"
                     />
-                    <button
-                      type="button"
-                      onClick={handleAddPhotoUrl}
-                      className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                    >
-                      Add
-                    </button>
+                  </label>
+                </div>
+
+                {photoBridgeNotice && (
+                  <div className="px-3 py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{photoBridgeNotice}</span>
                   </div>
+                )}
+
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="Or paste image URL..."
+                    value={photoUrlInput}
+                    onChange={e => setPhotoUrlInput(e.target.value)}
+                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddPhotoUrl}
+                    className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                  >
+                    Add URL
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-2 overflow-x-auto py-1">

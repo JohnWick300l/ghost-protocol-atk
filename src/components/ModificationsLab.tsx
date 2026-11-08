@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Wrench,
   Plus,
@@ -18,12 +18,22 @@ import {
   Search,
   MapPin,
   Phone,
-  Store
+  Store,
+  Link2,
+  Loader2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
 import { ModificationItem } from '../types';
-import { sanitizeGoogleMapsUrl } from '../utils/rules';
+import {
+  sanitizeGoogleMapsUrl,
+  prepareNativePhotoPickerTarget,
+  getActivePhotoTarget,
+  claimNativePhotoDeliveryBatch,
+  hasRecentNativePhotoDelivery,
+  pollAndroidPhotoBridgeForTarget,
+  processUploadedDevicePhoto
+} from '../utils/rules';
 import { BackButton } from './BackButton';
 import {
   CACHE_KEYS,
@@ -36,10 +46,14 @@ import {
   canUserModifyRecord,
   reconcileCollectionWithCache,
   recordDeletedId,
+  gpApiFetch,
+  getSessionAuthHeaders,
   OFFLINE_SYNC_EVENT
 } from '../utils/telemetryCache';
 
 const DRAFT_KEY = 'modifications_lab_form';
+const MODAL_OPEN_SESSION_KEY = 'ghost_mod_lab_add_modal_open';
+const PHOTO_BRIDGE_SESSION_STORAGE_KEY = 'ghost_photo_bridge_session_id';
 
 export const ALLOWED_MOD_COMPONENTS: ModificationItem['component'][] = [
   'Aesthetics & Bodywork',
@@ -83,7 +97,33 @@ export const ModificationsLab: React.FC = () => {
   );
   const [loading, setLoading] = useState(true);
   const [selectedMod, setSelectedMod] = useState<ModificationItem | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddModal, setShowAddModalState] = useState<boolean>(() => {
+    try {
+      return (
+        typeof window !== 'undefined' &&
+        (sessionStorage.getItem(MODAL_OPEN_SESSION_KEY) === '1' ||
+          localStorage.getItem(MODAL_OPEN_SESSION_KEY) === '1')
+      );
+    } catch {
+      return false;
+    }
+  });
+  const setShowAddModal = (open: boolean) => {
+    setShowAddModalState(open);
+    try {
+      if (typeof window !== 'undefined') {
+        if (open) {
+          sessionStorage.setItem(MODAL_OPEN_SESSION_KEY, '1');
+          localStorage.setItem(MODAL_OPEN_SESSION_KEY, '1');
+        } else {
+          sessionStorage.removeItem(MODAL_OPEN_SESSION_KEY);
+          localStorage.removeItem(MODAL_OPEN_SESSION_KEY);
+        }
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  };
   const [editingModId, setEditingModId] = useState<string | null>(null);
   const [componentFilter, setComponentFilter] = useState<string>('ALL');
   const [selectedModelFilter, setSelectedModelFilter] = useState<string>('ALL');
@@ -130,7 +170,19 @@ export const ModificationsLab: React.FC = () => {
   const [installationGuide, setInstallationGuide] = useState(initialDraft.installationGuide);
   const [safetyConsiderations, setSafetyConsiderations] = useState(initialDraft.safetyConsiderations);
   const [warrantyConsiderations, setWarrantyConsiderations] = useState(initialDraft.warrantyConsiderations);
-  const [uploadedImages, setUploadedImages] = useState<string[]>(initialDraft.uploadedImages || []);
+  const [uploadedImages, setUploadedImages] = useState<string[]>(() => {
+    if (initialDraft.uploadedImages && initialDraft.uploadedImages.length > 0) {
+      return initialDraft.uploadedImages;
+    }
+    try {
+      const stored = localStorage.getItem('ghost_current_mod_photos');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [shopName, setShopName] = useState<string>(initialDraft.shopName || '');
   const [shopMapLink, setShopMapLink] = useState<string>(initialDraft.shopMapLink || '');
   const [shopNumber, setShopNumber] = useState<string>(initialDraft.shopNumber || '');
@@ -141,6 +193,125 @@ export const ModificationsLab: React.FC = () => {
   );
   const [linkErrors, setLinkErrors] = useState<Record<number, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Photo Selection & Camera Capture Refs and State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
+  const [photoUrlInput, setPhotoUrlInput] = useState('');
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [photoBridgeNotice, setPhotoBridgeNotice] = useState<string | null>(null);
+  const [showLegacyApkBridgeBanner, setShowLegacyApkBridgeBanner] = useState(false);
+  const nativePickerLaunchRef = useRef<{ launchedAt: number; countBefore: number; mode: 'gallery' | 'camera' }>({
+    launchedAt: 0,
+    countBefore: 0,
+    mode: 'gallery'
+  });
+  const photoBridgeSessionIdRef = useRef<string>('');
+  if (!photoBridgeSessionIdRef.current && typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(PHOTO_BRIDGE_SESSION_STORAGE_KEY);
+      if (saved && saved.trim()) {
+        photoBridgeSessionIdRef.current = saved.trim();
+      } else {
+        const fresh = `pb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        localStorage.setItem(PHOTO_BRIDGE_SESSION_STORAGE_KEY, fresh);
+        photoBridgeSessionIdRef.current = fresh;
+      }
+    } catch {
+      photoBridgeSessionIdRef.current = `pb_${Date.now()}`;
+    }
+  }
+
+  const appendIncomingPhotos = (incoming: string[] | string) => {
+    const list = Array.isArray(incoming)
+      ? incoming.filter(img => typeof img === 'string' && img.trim().length > 0)
+      : typeof incoming === 'string' && incoming.trim().length > 0
+      ? [incoming.trim()]
+      : [];
+    if (list.length === 0) return false;
+
+    let addedCount = 0;
+    setUploadedImages(prev => {
+      const existingSet = new Set(prev);
+      const uniqueNew = list.filter(img => !existingSet.has(img));
+      addedCount = uniqueNew.length;
+      const merged = uniqueNew.length > 0 ? [...prev, ...uniqueNew] : prev;
+      try {
+        localStorage.setItem('ghost_current_mod_photos', JSON.stringify(merged));
+      } catch {}
+      return merged;
+    });
+    setShowLegacyApkBridgeBanner(false);
+    nativePickerLaunchRef.current.launchedAt = 0;
+    setShowAddModal(true);
+    playChime();
+    setPhotoBridgeNotice(
+      `✓ ${addedCount || list.length} ${(addedCount || list.length) === 1 ? 'photo' : 'photos'} loaded from your device!`
+    );
+    setTimeout(() => setPhotoBridgeNotice(null), 5000);
+    return true;
+  };
+
+  // Register global native photo receiver callback, DOM event listener, localStorage poller, and server bridge poller
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const pollServerPhotoBridge = async () => {
+      const sid = photoBridgeSessionIdRef.current;
+      const incoming = await pollAndroidPhotoBridgeForTarget('modifications', sid);
+      if (incoming.length > 0) {
+        appendIncomingPhotos(incoming);
+      }
+    };
+
+    (window as any).__ghostReceiveNativePhotos = (incoming: string[] | string) => {
+      if (getActivePhotoTarget() !== 'modifications') return;
+      const claimed = claimNativePhotoDeliveryBatch('modifications', incoming);
+      if (claimed.length > 0) {
+        appendIncomingPhotos(claimed);
+      }
+    };
+
+    const handleNativePhotoEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      const activeTarget = getActivePhotoTarget();
+      if (Array.isArray(detail) && activeTarget === 'modifications') {
+        const claimed = claimNativePhotoDeliveryBatch('modifications', detail);
+        if (claimed.length > 0) appendIncomingPhotos(claimed);
+      } else if (
+        detail &&
+        Array.isArray(detail.images) &&
+        (detail.target === 'modifications' || (!detail.target && activeTarget === 'modifications'))
+      ) {
+        const claimed = claimNativePhotoDeliveryBatch('modifications', detail.images);
+        if (claimed.length > 0) appendIncomingPhotos(claimed);
+      }
+    };
+
+    const handleFocusOrVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      pollServerPhotoBridge();
+    };
+
+    window.addEventListener('ghost-native-photos', handleNativePhotoEvent);
+    window.addEventListener('focus', handleFocusOrVisibility);
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+
+    pollServerPhotoBridge();
+
+    const pollTimer = setInterval(pollServerPhotoBridge, 600);
+
+    return () => {
+      clearInterval(pollTimer);
+      window.removeEventListener('ghost-native-photos', handleNativePhotoEvent);
+      window.removeEventListener('focus', handleFocusOrVisibility);
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+      if ((window as any).__ghostReceiveNativePhotos) {
+        delete (window as any).__ghostReceiveNativePhotos;
+      }
+    };
+  }, [showAddModal]);
 
   useEffect(() => {
     setActiveImageIndex(0);
@@ -273,9 +444,9 @@ export const ModificationsLab: React.FC = () => {
     playTacticalClick();
     recordDeletedId(m.id);
     try {
-      const res = await fetch(`/api/modifications/${m.id}?userId=${encodeURIComponent(currentUser.id)}`, {
+      const res = await gpApiFetch(`/api/modifications/${m.id}?userId=${encodeURIComponent(currentUser.id)}`, {
         method: 'DELETE',
-        headers: { 'x-user-id': currentUser.id }
+        headers: getSessionAuthHeaders({ 'x-user-id': currentUser.id })
       });
       if (res.ok || (m as any).pendingSync) {
         const next = mods.filter(item => item.id !== m.id);
@@ -351,19 +522,116 @@ export const ModificationsLab: React.FC = () => {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const files = Array.from(e.target.files);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setUploadedImages(prev => [...prev, reader.result as string]);
+  // Resizes and optimizes photos on the client so large phone camera photos never exhaust storage or memory
+  const compressImageFile = async (file: File): Promise<string> => {
+    return processUploadedDevicePhoto(file);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputEl = e.currentTarget || e.target;
+    const fileList = inputEl?.files ? Array.from(inputEl.files) : [];
+    try {
+      if (inputEl) inputEl.value = '';
+    } catch (_) {}
+
+    if (fileList.length === 0 || hasRecentNativePhotoDelivery()) return;
+
+    setIsProcessingPhotos(true);
+    setSubmitError(null);
+    playTacticalClick();
+
+    try {
+      const results: string[] = [];
+      for (const file of fileList) {
+        const compressed = await compressImageFile(file);
+        if (compressed && compressed.startsWith('data:image/')) {
+          results.push(compressed);
         }
-      };
-      reader.readAsDataURL(file);
-    });
-    e.target.value = '';
+      }
+      if (hasRecentNativePhotoDelivery()) {
+        return;
+      }
+      if (results.length > 0) {
+        const claimed = claimNativePhotoDeliveryBatch('modifications', results);
+        if (claimed.length > 0) {
+          appendIncomingPhotos(claimed);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to process image files:', err);
+    } finally {
+      setIsProcessingPhotos(false);
+    }
+  };
+
+  const prepareModPhotoPicker = (mode: 'gallery' | 'camera') => {
+    setSubmitError(null);
+    setShowAddModal(true);
+    prepareNativePhotoPickerTarget('modifications', mode);
+  };
+
+  const handleClipboardPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    const files = e.clipboardData?.files;
+    const fileList: File[] = [];
+
+    if (files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        if (files[i].type.startsWith('image/') || !files[i].type) {
+          fileList.push(files[i]);
+        }
+      }
+    } else if (items && items.length > 0) {
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const f = items[i].getAsFile();
+          if (f) fileList.push(f);
+        }
+      }
+    }
+
+    if (fileList.length > 0) {
+      e.preventDefault();
+      setIsProcessingPhotos(true);
+      try {
+        const compressed: string[] = [];
+        for (const f of fileList) {
+          const dataUrl = await compressImageFile(f);
+          if (dataUrl && dataUrl.startsWith('data:image/')) {
+            compressed.push(dataUrl);
+          }
+        }
+        if (compressed.length > 0) {
+          appendIncomingPhotos(compressed);
+        }
+      } finally {
+        setIsProcessingPhotos(false);
+      }
+      return;
+    }
+
+    const pastedText = e.clipboardData?.getData('text/plain')?.trim() || '';
+    if (pastedText.startsWith('data:image/') || /^https?:\/\/.+/i.test(pastedText)) {
+      e.preventDefault();
+      appendIncomingPhotos([pastedText]);
+    }
+  };
+
+  const handleAddPhotoUrl = () => {
+    const trimmed = photoUrlInput.trim();
+    if (!trimmed) return;
+    if (
+      !trimmed.startsWith('http://') &&
+      !trimmed.startsWith('https://') &&
+      !trimmed.startsWith('data:image/')
+    ) {
+      setSubmitError('Photo link must begin with http://, https://, or data:image/');
+      return;
+    }
+    setUploadedImages(prev => [...prev, trimmed]);
+    setPhotoUrlInput('');
+    setShowUrlInput(false);
+    playTacticalClick();
   };
 
   const handleRemoveUploadedImage = (idxToRemove: number) => {
@@ -447,13 +715,13 @@ export const ModificationsLab: React.FC = () => {
       const url = editingModId ? `/api/modifications/${editingModId}` : '/api/modifications';
       const method = editingModId ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const res = await gpApiFetch(url, {
         method,
-        headers: {
+        headers: getSessionAuthHeaders({
           'Content-Type': 'application/json',
           'x-user-id': currentUser?.id || '',
           'x-client-request-id': clientRequestId
-        },
+        }),
         body: JSON.stringify(payload)
       });
 
@@ -461,6 +729,9 @@ export const ModificationsLab: React.FC = () => {
         const data = await res.json();
         playChime();
         clearFormDraft(DRAFT_KEY);
+        try {
+          localStorage.removeItem('ghost_current_mod_photos');
+        } catch {}
         setShowAddModal(false);
         setEditingModId(null);
         setTitle('');
@@ -754,11 +1025,12 @@ export const ModificationsLab: React.FC = () => {
 
       {/* Marketplace-Style Detail Gallery & Specification Modal */}
       {selectedMod && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-3xl w-full my-8 overflow-hidden shadow-2xl relative">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 overflow-y-auto p-2 sm:p-4 md:p-6 flex flex-col items-center justify-start pt-[max(1rem,env(safe-area-inset-top))] pb-16">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-3xl w-full mt-2 sm:mt-4 mb-8 overflow-hidden shadow-2xl relative">
             <button
               onClick={() => setSelectedMod(null)}
-              className="absolute top-4 right-4 z-10 p-2 bg-black/60 hover:bg-black text-zinc-400 hover:text-white rounded-full transition-colors cursor-pointer"
+              aria-label="Close modal"
+              className="absolute top-3 right-3 z-30 p-2.5 bg-black/80 hover:bg-black text-white hover:text-amber-400 rounded-full border border-white/20 shadow-xl transition-all cursor-pointer active:scale-95"
             >
               <X className="w-5 h-5" />
             </button>
@@ -769,7 +1041,7 @@ export const ModificationsLab: React.FC = () => {
 
               return (
                 <div className="bg-zinc-950 border-b border-zinc-800">
-                  <div className="relative aspect-video max-h-[420px] bg-black flex items-center justify-center overflow-hidden">
+                  <div className="relative aspect-video max-h-[300px] sm:max-h-[420px] bg-black flex items-center justify-center overflow-hidden">
                     {activePhotoUrl ? (
                       <img
                         src={activePhotoUrl}
@@ -933,25 +1205,53 @@ export const ModificationsLab: React.FC = () => {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                  <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5 mb-1.5">
-                    <AlertCircle className="w-4 h-4" /> SAFETY CONSIDERATIONS
-                  </div>
-                  <div className="text-xs text-zinc-400 leading-relaxed">
-                    {selectedMod.safetyConsiderations || 'Check all torques to factory specs before riding.'}
-                  </div>
-                </div>
+              {(() => {
+                const customSafety =
+                  selectedMod.safetyConsiderations &&
+                  selectedMod.safetyConsiderations.trim().length > 0 &&
+                  selectedMod.safetyConsiderations.trim() !== 'Check all torques to factory specs before riding.'
+                    ? selectedMod.safetyConsiderations.trim()
+                    : null;
 
-                <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                  <div className="text-xs font-bold text-sky-400 flex items-center gap-1.5 mb-1.5">
-                    <ShieldCheck className="w-4 h-4" /> WARRANTY IMPLICATIONS
+                const customWarranty =
+                  selectedMod.warrantyConsiderations &&
+                  selectedMod.warrantyConsiderations.trim().length > 0 &&
+                  selectedMod.warrantyConsiderations.trim() !== 'Bolt-on modification. Reversible without electrical harness cut.'
+                    ? selectedMod.warrantyConsiderations.trim()
+                    : null;
+
+                if (!customSafety && !customWarranty) return null;
+
+                return (
+                  <div
+                    className={`grid gap-4 ${
+                      customSafety && customWarranty ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'
+                    }`}
+                  >
+                    {customSafety && (
+                      <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
+                        <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5 mb-1.5">
+                          <AlertCircle className="w-4 h-4" /> SAFETY CONSIDERATIONS
+                        </div>
+                        <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                          {customSafety}
+                        </div>
+                      </div>
+                    )}
+
+                    {customWarranty && (
+                      <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
+                        <div className="text-xs font-bold text-sky-400 flex items-center gap-1.5 mb-1.5">
+                          <ShieldCheck className="w-4 h-4" /> WARRANTY IMPLICATIONS
+                        </div>
+                        <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                          {customWarranty}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="text-xs text-zinc-400 leading-relaxed">
-                    {selectedMod.warrantyConsiderations || 'Bolt-on modification. Reversible without electrical harness cut.'}
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {selectedMod.productLinks && selectedMod.productLinks.length > 0 && (
                 <div className="space-y-2 pt-2 border-t border-zinc-800">
@@ -1034,8 +1334,8 @@ export const ModificationsLab: React.FC = () => {
 
       {/* Modal: Add / Edit Mod */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-4 text-xs max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md overflow-y-auto p-2 sm:p-4 flex flex-col items-center justify-start pt-[max(1rem,env(safe-area-inset-top))] pb-16">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-4 sm:p-6 space-y-4 text-xs shadow-2xl mt-2 mb-8">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
               <div className="text-base font-bold text-white">
                 {editingModId ? 'Edit Modification or Accessory' : 'Submit Modification or Accessory'}
@@ -1071,54 +1371,183 @@ export const ModificationsLab: React.FC = () => {
                     <Camera className="w-3.5 h-3.5 text-amber-500" />
                     <span>Photographs (Upload one or multiple)</span>
                   </span>
-                  <span className="text-[10px] text-zinc-500 font-normal">Supports multi-file select</span>
+                  <span className="text-[10px] text-zinc-500 font-normal">Supports camera & gallery</span>
                 </label>
 
-                <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2.5">
-                  <label className="flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 cursor-pointer transition-colors text-white font-semibold text-xs">
-                    <Upload className="w-4 h-4 text-amber-500" />
-                    <span>Select Photos From Device</span>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      className="hidden"
-                    />
-                  </label>
+                <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {/* Device Gallery / Photos Button */}
+                    <label
+                      data-testid="mod-select-photos-button"
+                      onClick={() => prepareModPhotoPicker('gallery')}
+                      className={`relative overflow-hidden flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] border border-amber-500/50 hover:border-amber-500 text-white font-semibold text-xs transition-all shadow-sm cursor-pointer select-none ${
+                        isProcessingPhotos ? 'opacity-70 pointer-events-none' : ''
+                      }`}
+                    >
+                      {isProcessingPhotos ? (
+                        <Loader2 className="w-4 h-4 text-amber-500 animate-spin shrink-0" />
+                      ) : (
+                        <Upload className="w-4 h-4 text-amber-500 shrink-0" />
+                      )}
+                      <span className="truncate">
+                        {isProcessingPhotos ? 'Reading Photos...' : 'Select Photos (Gallery)'}
+                      </span>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        disabled={isProcessingPhotos}
+                        className="sr-only"
+                        aria-label="Select Photos From Device"
+                      />
+                    </label>
 
-                  {uploadedImages.length > 0 && (
-                    <div className="space-y-1.5 pt-2 border-t border-zinc-800">
-                      <div className="text-[10px] text-zinc-400 flex items-center justify-between">
-                        <span>
-                          {uploadedImages.length} {uploadedImages.length === 1 ? 'photo selected' : 'photos selected'}
+                    {/* Camera Button */}
+                    <label
+                      data-testid="mod-camera-photos-button"
+                      onClick={() => prepareModPhotoPicker('camera')}
+                      className={`relative overflow-hidden flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white font-medium text-xs transition-all cursor-pointer select-none ${
+                        isProcessingPhotos ? 'opacity-70 pointer-events-none' : ''
+                      }`}
+                    >
+                      <Camera className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span className="truncate">Take Photo (Camera)</span>
+                      <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handleImageUpload}
+                        disabled={isProcessingPhotos}
+                        className="sr-only"
+                        aria-label="Take Photo with Camera"
+                      />
+                    </label>
+
+                    {/* Paste Image URL Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowUrlInput(prev => !prev)}
+                      className="flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white font-medium text-xs transition-all cursor-pointer"
+                    >
+                      <Link2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span className="truncate">Paste Image URL</span>
+                    </button>
+                  </div>
+
+                  {/* Quick Clipboard Paste Target (works inside any Android WebView via keyboard clipboard) */}
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning
+                    onPaste={handleClipboardPaste}
+                    onInput={e => {
+                      e.currentTarget.textContent = '';
+                    }}
+                    data-testid="mod-clipboard-paste-box"
+                    className="px-3 py-1.5 rounded-lg bg-zinc-900/70 border border-zinc-800 focus:border-amber-500/60 text-zinc-400 text-[11px] text-center cursor-text focus:outline-none"
+                  >
+                    Tip: You can also tap here &amp; paste any copied photo from your phone keyboard clipboard
+                  </div>
+
+                  {photoBridgeNotice && (
+                    <div
+                      data-testid="mod-photo-bridge-notice"
+                      className="px-3 py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>{photoBridgeNotice}</span>
+                    </div>
+                  )}
+
+                  {/* Optional Image URL Drawer */}
+                  {showUrlInput && (
+                    <div className="flex gap-2 p-2 bg-zinc-900/90 border border-zinc-800 rounded-lg">
+                      <input
+                        type="url"
+                        placeholder="https://example.com/mod-photo.jpg"
+                        value={photoUrlInput}
+                        onChange={e => setPhotoUrlInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddPhotoUrl();
+                          }
+                        }}
+                        className="flex-1 bg-zinc-950 border border-zinc-700 rounded px-2.5 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddPhotoUrl}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded transition-colors cursor-pointer"
+                      >
+                        Add URL
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Uploaded Images Preview Tray */}
+                  {uploadedImages.length > 0 ? (
+                    <div
+                      data-testid="mod-uploaded-images-preview"
+                      className="space-y-2 pt-2.5 border-t border-zinc-800"
+                    >
+                      <div className="text-xs flex items-center justify-between">
+                        <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span>
+                            {uploadedImages.length} {uploadedImages.length === 1 ? 'photo attached' : 'photos attached'}
+                          </span>
+                          <span className="text-zinc-400 text-[10px] font-normal">(First photo is cover)</span>
                         </span>
                         <button
                           type="button"
-                          onClick={() => setUploadedImages([])}
-                          className="text-[10px] text-red-400 hover:underline"
+                          onClick={() => {
+                            playTacticalClick();
+                            setUploadedImages([]);
+                          }}
+                          className="text-[11px] text-red-400 hover:text-red-300 hover:underline cursor-pointer font-medium"
                         >
                           Clear All
                         </button>
                       </div>
-                      <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto p-1">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1">
                         {uploadedImages.map((img, idx) => (
                           <div
                             key={idx}
-                            className="relative group rounded-lg overflow-hidden border border-zinc-700 bg-zinc-900 aspect-video"
+                            data-testid={`mod-uploaded-image-item-${idx}`}
+                            className="relative group rounded-lg overflow-hidden border-2 border-amber-500/50 bg-zinc-900 aspect-video shadow-md"
                           >
-                            <img src={img} alt={`Preview ${idx + 1}`} className="w-full h-full object-cover" />
+                            <img
+                              src={img}
+                              alt={`Selected photo ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            {idx === 0 && (
+                              <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500 text-black uppercase tracking-wider shadow">
+                                Cover Photo
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleRemoveUploadedImage(idx)}
-                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/85 hover:bg-red-500 text-white flex items-center justify-center transition-colors"
+                              className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/85 hover:bg-red-500 text-white flex items-center justify-center transition-colors shadow cursor-pointer"
                               title="Remove photo"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         ))}
                       </div>
+                    </div>
+                  ) : (
+                    <div
+                      data-testid="mod-no-images-selected-yet"
+                      className="py-2.5 px-3 rounded-lg bg-zinc-900/50 border border-dashed border-zinc-800 flex items-center justify-center gap-2 text-zinc-500 text-[11px]"
+                    >
+                      <ImageIcon className="w-4 h-4 text-zinc-600 shrink-0" />
+                      <span>Selected photos will preview here before you submit</span>
                     </div>
                   )}
                 </div>
