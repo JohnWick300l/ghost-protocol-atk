@@ -7083,7 +7083,12 @@ app.post('/api/photo-bridge/:sessionId', (req: Request, res: Response) => {
   const validImages = rawImages
     .filter((img: unknown): img is string => typeof img === 'string' && img.trim().length > 0)
     .map((img: string) => img.trim())
-    .filter((img: string) => img.startsWith('data:image/') || /^https?:\/\//i.test(img));
+    .filter(
+      (img: string) =>
+        img.startsWith('data:image/') ||
+        img.startsWith('data:video/') ||
+        /^https?:\/\//i.test(img)
+    );
 
   if (validImages.length === 0) {
     return res.status(400).json({ error: 'No valid image data provided' });
@@ -7093,7 +7098,8 @@ app.post('/api/photo-bridge/:sessionId', (req: Request, res: Response) => {
   const mode = typeof req.body?.mode === 'string' && req.body.mode.trim() ? req.body.mode.trim() : 'gallery';
 
   const existing = photoBridgeStore.get(sessionId);
-  const combined = existing ? [...existing.images, ...validImages].slice(0, 16) : validImages.slice(0, 16);
+  const sameTargetExisting = existing && existing.target === target ? existing.images : [];
+  const combined = [...sameTargetExisting, ...validImages].slice(0, 16);
   const entry: PhotoBridgeEntry = {
     sessionId,
     target,
@@ -7116,8 +7122,16 @@ app.post('/api/photo-bridge/:sessionId', (req: Request, res: Response) => {
 app.get('/api/photo-bridge/:sessionId', (req: Request, res: Response) => {
   prunePhotoBridgeStore();
   const sessionId = String(req.params.sessionId || '').trim();
+  const requestedTarget =
+    typeof req.query.target === 'string' && req.query.target.trim()
+      ? req.query.target.trim()
+      : '';
   const entry = photoBridgeStore.get(sessionId);
-  if (!entry || entry.images.length === 0) {
+  if (
+    !entry ||
+    entry.images.length === 0 ||
+    (requestedTarget && entry.target && entry.target !== requestedTarget)
+  ) {
     return res.json({ ok: true, sessionId, images: [], count: 0, updatedAt: entry?.updatedAt || 0 });
   }
 
@@ -7149,6 +7163,7 @@ app.get('/api/photo-bridge-latest', (req: Request, res: Response) => {
   const target = typeof req.query.target === 'string' && req.query.target.trim() ? req.query.target.trim() : 'modifications';
   let latest: PhotoBridgeEntry | null = null;
   for (const entry of photoBridgeStore.values()) {
+    if (entry.sessionId === 'native_direct') continue;
     if (entry.target === target && entry.images.length > 0) {
       if (!latest || entry.updatedAt > latest.updatedAt) {
         latest = entry;
@@ -7178,6 +7193,9 @@ app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => 
   const sessionId = String(req.params.sessionId || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
   const target = typeof req.query.target === 'string' ? req.query.target.replace(/[^a-zA-Z0-9_-]/g, '') : 'modifications';
   const mode = req.query.mode === 'camera' ? 'camera' : 'gallery';
+  const allowVideo = target === 'problems' || target === 'problems_update';
+  const galleryAccept = allowVideo ? 'image/*,video/*' : 'image/*';
+  const singleFileOnly = target === 'admin_qr';
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -7186,37 +7204,57 @@ app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => 
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Android Media Picker</title>
+<title>Ghost Protocol Media Picker</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
-    margin: 0; background: #000000; color: #f4f4f5;
+    margin: 0; background: #050608; color: #f4f4f5;
     font-family: -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
     min-height: 100dvh; display: flex; flex-direction: column; justify-content: flex-end;
     padding: 16px;
   }
   .sheet {
-    background: #18181b; border: 1px solid #27272a; border-radius: 24px;
-    padding: 20px; width: 100%; max-width: 420px; margin: 0 auto 12px auto;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.9);
+    background: #121418; border: 1px solid #27272a; border-radius: 24px;
+    padding: 22px 20px; width: 100%; max-width: 440px; margin: 0 auto 12px auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.95);
   }
-  .handle { width: 40px; height: 4px; background: #3f3f46; border-radius: 99px; margin: 0 auto 16px auto; }
-  .title { font-size: 16px; font-weight: 700; color: #ffffff; margin: 0 0 6px 0; text-align: center; }
-  .sub { font-size: 12px; color: #a1a1aa; margin: 0 0 18px 0; text-align: center; }
+  .handle { width: 42px; height: 4px; background: #3f3f46; border-radius: 99px; margin: 0 auto 16px auto; }
+  .badge {
+    display: inline-block; padding: 4px 10px; border-radius: 99px;
+    background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.4);
+    color: #fbbf24; font-size: 10px; font-weight: 800; letter-spacing: 0.12em;
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .header-wrap { text-align: center; margin-bottom: 18px; }
+  .title { font-size: 18px; font-weight: 800; color: #ffffff; margin: 0 0 6px 0; }
+  .sub { font-size: 12px; color: #a1a1aa; margin: 0; line-height: 1.45; }
   .btn {
     position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center;
-    gap: 10px; width: 100%; padding: 16px; border-radius: 14px; font-size: 14px; font-weight: 700;
-    cursor: pointer; margin-bottom: 10px; border: none; text-align: center;
+    gap: 10px; width: 100%; padding: 17px 16px; border-radius: 14px; font-size: 14px; font-weight: 800;
+    cursor: pointer; margin-bottom: 12px; border: none; text-align: center; text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
-  .btn-primary { background: #f59e0b; color: #09090b; }
-  .btn-secondary { background: #27272a; color: #f4f4f5; border: 1px solid #3f3f46; }
+  .btn-primary { background: #f59e0b; color: #09090b; box-shadow: 0 8px 24px rgba(245, 158, 11, 0.25); }
+  .btn-camera-primary { background: #38bdf8; color: #09090b; box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25); }
+  .btn-secondary { background: #1f2229; color: #f4f4f5; border: 1px solid #3f3f46; }
   .btn input[type="file"] {
-    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 10;
+  }
+  .preview-grid {
+    display: none; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; margin-bottom: 12px;
+  }
+  .preview-grid img {
+    width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: 8px; border: 1px solid #10b981;
   }
   .status {
     display: none; margin-top: 12px; padding: 12px; border-radius: 12px;
     background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4);
-    color: #34d399; font-size: 13px; font-weight: 600; text-align: center;
+    color: #34d399; font-size: 13px; font-weight: 700; text-align: center;
+  }
+  .btn-done {
+    display: none; width: 100%; padding: 15px; border-radius: 14px; margin-top: 10px;
+    background: #10b981; color: #050608; font-size: 13px; font-weight: 800;
+    border: none; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em;
   }
   .err {
     display: none; margin-top: 12px; padding: 12px; border-radius: 12px;
@@ -7232,23 +7270,42 @@ app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => 
 <body>
   <div class="sheet">
     <div class="handle"></div>
-    <div class="title">Select Photo from Device</div>
-    <div class="sub">Choose a photo from your phone Gallery, Files, or Camera. It will automatically appear in the app.</div>
+    <div class="header-wrap">
+      <div class="badge">Ghost Protocol • Device Media</div>
+      <div class="title">${mode === 'camera' ? 'Take Photo with Camera' : 'Select Photo from Device'}</div>
+      <div class="sub">Choose from your phone Gallery, Files, or Camera. Selected media previews &amp; attaches directly inside the app.</div>
+    </div>
 
-    <label class="btn btn-primary" id="galleryBtn">
-      <span id="galleryLabel">Open Phone Gallery / Files</span>
-      <input id="galleryInput" type="file" accept="image/*" multiple />
-    </label>
-
-    <label class="btn btn-secondary" id="cameraBtn">
-      <span>Take Photo (Camera)</span>
+    ${
+      mode === 'camera'
+        ? `
+    <label class="btn btn-camera-primary" id="cameraBtn">
+      <span id="cameraLabel">📷 Tap to Open Camera &amp; Take Photo</span>
       <input id="cameraInput" type="file" accept="image/*" capture="environment" />
     </label>
+    <label class="btn btn-secondary" id="galleryBtn">
+      <span id="galleryLabel">🖼️ Or Select from Phone Gallery / Files</span>
+      <input id="galleryInput" type="file" accept="${galleryAccept}" ${singleFileOnly ? '' : 'multiple'} />
+    </label>
+    `
+        : `
+    <label class="btn btn-primary" id="galleryBtn">
+      <span id="galleryLabel">🖼️ Tap to Open Phone Gallery / Files</span>
+      <input id="galleryInput" type="file" accept="${galleryAccept}" ${singleFileOnly ? '' : 'multiple'} />
+    </label>
+    <label class="btn btn-secondary" id="cameraBtn">
+      <span id="cameraLabel">📷 Or Take Photo with Camera</span>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" />
+    </label>
+    `
+    }
 
+    <div id="previewGrid" class="preview-grid"></div>
     <div id="statusBox" class="status">Attaching photo to app...</div>
+    <button type="button" id="doneReturnBtn" class="btn-done">✓ Photo Attached — Return to App</button>
     <div id="errBox" class="err"></div>
 
-    <button type="button" class="cancel" id="cancelBtn">Return to App</button>
+    <button type="button" class="cancel" id="cancelBtn">← Cancel &amp; Return to App</button>
   </div>
 
 <script>
@@ -7256,7 +7313,17 @@ app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => 
   var sessionId = ${JSON.stringify(sessionId)};
   var target = ${JSON.stringify(target)};
   var mode = ${JSON.stringify(mode)};
-  var returnIntent = "intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.ghostprotocol.atk;launchFlags=0x10200000;end";
+  var routeMap = {
+    modifications: 'modifications',
+    marketplace: 'marketplace',
+    problems: 'problems',
+    problems_update: 'problems',
+    jet_engineer: 'jet_engineer',
+    admin_qr: 'admin'
+  };
+  var returnRoute = routeMap[target] || 'modifications';
+  var fallbackAppUrl = window.location.origin + '/?route=' + encodeURIComponent(returnRoute) + '&photoBridgeSynced=' + encodeURIComponent(sessionId);
+  var returnIntent = "intent://#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.ghostprotocol.atk;launchFlags=0x10200000;S.browser_fallback_url=" + encodeURIComponent(fallbackAppUrl) + ";end";
 
   function returnToApp() {
     try {
@@ -7269,31 +7336,68 @@ app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => 
   }
 
   document.getElementById('cancelBtn').addEventListener('click', returnToApp);
+  document.getElementById('doneReturnBtn').addEventListener('click', returnToApp);
 
-  function compressFile(file) {
+  function drawSourceToJpeg(source, sw, sh) {
+    try {
+      var maxDim = 1200;
+      var w = sw || 800;
+      var h = sh || 600;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.max(1, Math.round(h * maxDim / w)); w = maxDim; }
+        else { w = Math.max(1, Math.round(w * maxDim / h)); h = maxDim; }
+      }
+      var c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      var ctx = c.getContext('2d');
+      ctx.drawImage(source, 0, 0, w, h);
+      return c.toDataURL('image/jpeg', 0.82);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  async function compressFile(file) {
+    if (!file) return '';
+    if (file.type && file.type.indexOf('video/') === 0) {
+      return new Promise(function(resolve) {
+        var vr = new FileReader();
+        vr.onload = function(e) { resolve(e.target && e.target.result ? String(e.target.result) : ''); };
+        vr.onerror = function() { resolve(''); };
+        vr.readAsDataURL(file);
+      });
+    }
+    if (typeof window.createImageBitmap === 'function') {
+      try {
+        var bmp = await window.createImageBitmap(file);
+        var bmpUrl = drawSourceToJpeg(bmp, bmp.width, bmp.height);
+        if (typeof bmp.close === 'function') bmp.close();
+        if (bmpUrl && bmpUrl.indexOf('data:image/') === 0) {
+          return bmpUrl;
+        }
+      } catch (e) {}
+    }
     return new Promise(function(resolve) {
       var reader = new FileReader();
       reader.onload = function(e) {
         var raw = e.target && e.target.result ? String(e.target.result) : '';
         if (!raw) { resolve(''); return; }
+        if (raw.indexOf('data:application/octet-stream;base64,') === 0) {
+          raw = raw.replace('data:application/octet-stream;base64,', 'data:image/jpeg;base64,');
+        } else if (raw.indexOf('data:;base64,') === 0) {
+          raw = raw.replace('data:;base64,', 'data:image/jpeg;base64,');
+        } else if (raw.indexOf('data:image/') !== 0 && raw.indexOf('data:video/') !== 0) {
+          var commaIdx = raw.indexOf(',');
+          if (commaIdx !== -1) {
+            raw = 'data:image/jpeg;base64' + raw.slice(commaIdx);
+          } else {
+            raw = 'data:image/jpeg;base64,' + raw;
+          }
+        }
         var img = new Image();
         img.onload = function() {
-          try {
-            var maxDim = 1280;
-            var w = img.naturalWidth || img.width || 800;
-            var h = img.naturalHeight || img.height || 600;
-            if (w > maxDim || h > maxDim) {
-              if (w > h) { h = Math.max(1, Math.round(h * maxDim / w)); w = maxDim; }
-              else { w = Math.max(1, Math.round(w * maxDim / h)); h = maxDim; }
-            }
-            var c = document.createElement('canvas');
-            c.width = w; c.height = h;
-            var ctx = c.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            resolve(c.toDataURL('image/jpeg', 0.82));
-          } catch (err) {
-            resolve(raw);
-          }
+          var compressed = drawSourceToJpeg(img, img.naturalWidth || img.width, img.naturalHeight || img.height);
+          resolve(compressed || raw);
         };
         img.onerror = function() { resolve(raw); };
         img.src = raw;
@@ -7307,24 +7411,41 @@ app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => 
     if (!fileList || fileList.length === 0) return;
     var statusBox = document.getElementById('statusBox');
     var errBox = document.getElementById('errBox');
+    var doneBtn = document.getElementById('doneReturnBtn');
+    var previewGrid = document.getElementById('previewGrid');
     var galleryLabel = document.getElementById('galleryLabel');
+    var cameraLabel = document.getElementById('cameraLabel');
     errBox.style.display = 'none';
     statusBox.style.display = 'block';
-    statusBox.textContent = 'Reading ' + fileList.length + ' photo(s) from device...';
-    galleryLabel.textContent = 'Processing...';
+    statusBox.textContent = 'Reading ' + fileList.length + ' file(s) from device...';
+    if (galleryLabel) galleryLabel.textContent = 'Processing...';
+    if (cameraLabel) cameraLabel.textContent = 'Processing...';
 
     try {
       var images = [];
       for (var i = 0; i < fileList.length; i++) {
         var dataUrl = await compressFile(fileList[i]);
-        if (dataUrl && dataUrl.indexOf('data:image/') === 0) {
+        if (dataUrl && (dataUrl.indexOf('data:image/') === 0 || dataUrl.indexOf('data:video/') === 0)) {
           images.push(dataUrl);
         }
       }
       if (images.length === 0) {
         throw new Error('Could not decode selected image.');
       }
-      statusBox.textContent = 'Syncing photo to app...';
+
+      if (previewGrid) {
+        previewGrid.innerHTML = '';
+        images.slice(0, 6).forEach(function(src) {
+          if (src.indexOf('data:image/') === 0) {
+            var im = document.createElement('img');
+            im.src = src;
+            previewGrid.appendChild(im);
+          }
+        });
+        previewGrid.style.display = 'grid';
+      }
+
+      statusBox.textContent = 'Syncing photo to Ghost Protocol app...';
       var res = await fetch('/api/photo-bridge/' + encodeURIComponent(sessionId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -7332,12 +7453,14 @@ app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => 
       });
       if (!res.ok) throw new Error('Upload failed');
       statusBox.textContent = '✓ Photo attached! Returning to app...';
-      setTimeout(returnToApp, 150);
+      if (doneBtn) doneBtn.style.display = 'block';
+      setTimeout(returnToApp, 180);
     } catch (err) {
       statusBox.style.display = 'none';
       errBox.style.display = 'block';
       errBox.textContent = 'Failed to attach photo. Please tap again.';
-      galleryLabel.textContent = 'Open Phone Gallery / Files';
+      if (galleryLabel) galleryLabel.textContent = '🖼️ Tap to Open Phone Gallery / Files';
+      if (cameraLabel) cameraLabel.textContent = '📷 Tap to Open Camera & Take Photo';
     }
   }
 

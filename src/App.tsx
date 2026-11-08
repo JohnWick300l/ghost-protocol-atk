@@ -77,7 +77,7 @@ const AppContent: React.FC = () => {
   }, []);
   const lastBackPressRef = useRef<number>(0);
 
-  const [currentTab, setCurrentTabState] = useState<string>(() => {
+  const resolveInitialTab = (): string => {
     if (typeof window !== 'undefined') {
       if (window.location.pathname === '/squadron-showdown') {
         return 'squadron-showdown';
@@ -85,21 +85,36 @@ const AppContent: React.FC = () => {
       const params = new URLSearchParams(window.location.search);
       const urlRoute = params.get('route');
       if (urlRoute) return urlRoute;
-      const savedRoute = sessionStorage.getItem('ghost_protocol_active_tab');
-      if (savedRoute) return savedRoute;
+      try {
+        const savedRoute = sessionStorage.getItem('ghost_protocol_active_tab');
+        if (savedRoute) return savedRoute;
+        const photoTs = Number(localStorage.getItem('ghost_active_photo_timestamp') || 0);
+        const photoTarget = localStorage.getItem('ghost_active_photo_target') || '';
+        if (photoTarget && photoTs > 0 && Date.now() - photoTs < 5 * 60 * 1000) {
+          const targetRouteMap: Record<string, string> = {
+            modifications: 'modifications',
+            marketplace: 'marketplace',
+            problems: 'problems',
+            problems_update: 'problems',
+            jet_engineer: 'jet_engineer',
+            admin_qr: 'admin'
+          };
+          if (targetRouteMap[photoTarget]) {
+            return targetRouteMap[photoTarget];
+          }
+        }
+      } catch {}
     }
     return 'dashboard';
-  });
+  };
+
+  const [currentTab, setCurrentTabState] = useState<string>(resolveInitialTab);
 
   // Initialize initial history entry with a Root Guard so Android Back button can never close the app unexpectedly
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const params = new URLSearchParams(window.location.search);
-      const initialTab =
-        window.location.pathname === '/squadron-showdown'
-          ? 'squadron-showdown'
-          : params.get('route') || sessionStorage.getItem('ghost_protocol_active_tab') || 'dashboard';
+      const initialTab = resolveInitialTab();
 
       // Always establish a root_guard entry at the base of the history stack
       window.history.replaceState(

@@ -86,12 +86,14 @@ public class MainActivity extends AppCompatActivity {
                             final String script =
                                     "(function(){" +
                                     "var imgs=" + jsArray + ";" +
+                                    "var tgt='modifications';" +
+                                    "try{tgt=localStorage.getItem('ghost_active_photo_target')||'modifications';}catch(e){}" +
                                     "try{localStorage.setItem('ghost_native_pending_photos',JSON.stringify(imgs));}catch(e){}" +
                                     "try{localStorage.setItem('ghost_current_mod_photos',JSON.stringify(imgs));}catch(e){}" +
                                     "try{window.__ghostPendingNativePhotos=imgs;}catch(e){}" +
                                     "if(window.__ghostReceiveNativePhotos){window.__ghostReceiveNativePhotos(imgs);}" +
-                                    "try{window.dispatchEvent(new CustomEvent('ghost-native-photos',{detail:imgs}));}catch(e){}" +
-                                    "try{fetch('/api/photo-bridge/native_direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({images:imgs,target:'modifications'})});}catch(e){}" +
+                                    "try{window.dispatchEvent(new CustomEvent('ghost-native-photos',{detail:{images:imgs,target:tgt}}));}catch(e){}" +
+                                    "try{fetch('/api/photo-bridge/native_direct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({images:imgs,target:tgt})});}catch(e){}" +
                                     "})();";
                             webView.post(() -> webView.evaluateJavascript(script, null));
 
@@ -293,13 +295,21 @@ public class MainActivity extends AppCompatActivity {
                 String action = parsedIntent.getAction();
                 String mimeType = parsedIntent.getType();
 
-                // Direct phone Media / Photos / Files / Camera picker intent (never opens any website)
+                // Direct phone Media / Photos / Files / Camera picker intent (clean Intent without intent:// data URI)
+                if (MediaStore.ACTION_IMAGE_CAPTURE.equals(action)) {
+                    Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                    launchNativeMediaChooser(cameraIntent);
+                    return true;
+                }
                 if (Intent.ACTION_GET_CONTENT.equals(action) ||
                         Intent.ACTION_PICK.equals(action) ||
                         Intent.ACTION_OPEN_DOCUMENT.equals(action) ||
-                        MediaStore.ACTION_IMAGE_CAPTURE.equals(action) ||
                         (mimeType != null && mimeType.startsWith("image/"))) {
-                    launchNativeMediaChooser(parsedIntent);
+                    Intent pickIntent = new Intent(Intent.ACTION_GET_CONTENT);
+                    pickIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                    pickIntent.setType("image/*");
+                    pickIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    launchNativeMediaChooser(pickIntent);
                     return true;
                 }
 

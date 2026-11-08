@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield,
   ShieldCheck,
@@ -26,6 +26,7 @@ import {
   Smartphone,
   CreditCard,
   Upload,
+  Camera,
   Save,
   Trash2,
   AlertCircle,
@@ -52,6 +53,12 @@ import {
   sanitizeContributionConfig,
   redactContributionForPublicWall,
   VALID_ADMIN_PERMISSIONS,
+  prepareNativePhotoPickerTarget,
+  getActivePhotoTarget,
+  claimNativePhotoDeliveryBatch,
+  hasRecentNativePhotoDelivery,
+  pollAndroidPhotoBridgeForTarget,
+  processUploadedDevicePhoto,
   type ContributionConfig,
   type ContributionRecord
 } from '../utils/rules';
@@ -93,9 +100,42 @@ export const AdminCentre: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<JetEngineerSubmission[]>([]);
   const [adminEmergencies, setAdminEmergencies] = useState<EmergencyRequest[]>([]);
-  const [activeSection, setActiveSection] = useState<
+  const [activeSection, setActiveSectionState] = useState<
     'registrations' | 'jet_submissions' | 'telemetry_config' | 'contribution_config' | 'audit'
-  >('registrations');
+  >(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved =
+          sessionStorage.getItem('ghost_admin_active_section_v1') ||
+          localStorage.getItem('ghost_admin_active_section_v1');
+        if (
+          saved === 'registrations' ||
+          saved === 'jet_submissions' ||
+          saved === 'telemetry_config' ||
+          saved === 'contribution_config' ||
+          saved === 'audit'
+        ) {
+          return saved;
+        }
+      }
+    } catch {}
+    return 'registrations';
+  });
+  const setActiveSection = (
+    next: 'registrations' | 'jet_submissions' | 'telemetry_config' | 'contribution_config' | 'audit'
+  ) => {
+    setActiveSectionState(next);
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('ghost_admin_active_section_v1', next);
+        if (next === 'contribution_config') {
+          localStorage.setItem('ghost_admin_active_section_v1', next);
+        } else {
+          localStorage.removeItem('ghost_admin_active_section_v1');
+        }
+      }
+    } catch {}
+  };
 
   // Owner Pilot Nickname modal state
   const [editingNicknameUser, setEditingNicknameUser] = useState<User | null>(null);
@@ -201,16 +241,100 @@ export const AdminCentre: React.FC = () => {
     }
   };
 
-  const handleQrFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setDraftCustomQrUrl(reader.result);
+  const qrGalleryInputRef = useRef<HTMLInputElement>(null);
+  const qrCameraInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isWebsiteOwner) return;
+
+    const applyIncomingQr = (incoming: string[]) => {
+      const first = incoming.find(img => typeof img === 'string' && img.trim().length > 0);
+      if (!first) return;
+      setDraftCustomQrUrl(first.trim());
+      setActiveSection('contribution_config');
+      playChime();
+      setContribConfigFeedback({
+        type: 'success',
+        text: '✓ QR Scan Code image loaded from your device! Click SAVE PAYMENT MODES to publish.'
+      });
+    };
+
+    const pollQrBridge = async () => {
+      const incoming = await pollAndroidPhotoBridgeForTarget('admin_qr');
+      if (incoming.length > 0) {
+        applyIncomingQr(incoming);
       }
     };
-    reader.readAsDataURL(file);
+
+    (window as any).__ghostReceiveNativePhotos = (incoming: string[] | string) => {
+      if (getActivePhotoTarget() !== 'admin_qr') return;
+      const claimed = claimNativePhotoDeliveryBatch('admin_qr', incoming);
+      if (claimed.length > 0) {
+        applyIncomingQr(claimed);
+      }
+    };
+
+    const handleNativePhotoEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      const activeTarget = getActivePhotoTarget();
+      if (Array.isArray(detail) && activeTarget === 'admin_qr') {
+        const claimed = claimNativePhotoDeliveryBatch('admin_qr', detail);
+        if (claimed.length > 0) applyIncomingQr(claimed);
+      } else if (
+        detail &&
+        Array.isArray(detail.images) &&
+        (detail.target === 'admin_qr' || (!detail.target && activeTarget === 'admin_qr'))
+      ) {
+        const claimed = claimNativePhotoDeliveryBatch('admin_qr', detail.images);
+        if (claimed.length > 0) applyIncomingQr(claimed);
+      }
+    };
+
+    const handleFocusOrVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      pollQrBridge();
+    };
+
+    window.addEventListener('ghost-native-photos', handleNativePhotoEvent);
+    window.addEventListener('focus', handleFocusOrVisibility);
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+
+    pollQrBridge();
+    const timer = setInterval(pollQrBridge, 600);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('ghost-native-photos', handleNativePhotoEvent);
+      window.removeEventListener('focus', handleFocusOrVisibility);
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+      if ((window as any).__ghostReceiveNativePhotos) {
+        delete (window as any).__ghostReceiveNativePhotos;
+      }
+    };
+  }, [isWebsiteOwner, activeSection]);
+
+  const prepareQrPhotoPicker = (mode: 'gallery' | 'camera') => {
+    setActiveSection('contribution_config');
+    prepareNativePhotoPickerTarget('admin_qr', mode);
+  };
+
+  const handleQrFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || hasRecentNativePhotoDelivery()) return;
+    const processed = await processUploadedDevicePhoto(file);
+    if (hasRecentNativePhotoDelivery()) return;
+    if (processed) {
+      const claimed = claimNativePhotoDeliveryBatch('admin_qr', [processed]);
+      if (claimed.length > 0) {
+        setDraftCustomQrUrl(claimed[0]);
+        playChime();
+        setContribConfigFeedback({
+          type: 'success',
+          text: '✓ QR Scan Code image loaded from your device! Click SAVE PAYMENT MODES to publish.'
+        });
+      }
+    }
   };
 
   const handleSaveContributionConfig = async (e: React.FormEvent) => {
@@ -1838,15 +1962,37 @@ export const AdminCentre: React.FC = () => {
                     className="flex-1 min-w-[200px] bg-[#08090B] border border-[#282D34] focus:border-[#38BDF8] rounded-lg px-3 py-2 text-xs text-[#F1F3F5] font-mono focus:outline-none"
                     placeholder="Leave blank to auto-generate QR from UPI ID, or upload your own QR scan code"
                   />
-                  <label className="px-3.5 py-2 rounded-lg bg-[#13161A] hover:bg-[#191D22] border border-[#38BDF8]/60 text-xs font-mono font-bold text-[#38BDF8] cursor-pointer flex items-center gap-1.5 shrink-0">
+                  <label
+                    data-testid="upload-qr-gallery-btn"
+                    onClick={() => prepareQrPhotoPicker('gallery')}
+                    className="px-3.5 py-2 rounded-lg bg-[#13161A] hover:bg-[#191D22] active:scale-[0.98] border border-[#38BDF8]/60 text-xs font-mono font-bold text-[#38BDF8] cursor-pointer flex items-center gap-1.5 shrink-0 select-none"
+                  >
                     <Upload className="w-3.5 h-3.5" />
                     <span>Upload QR Scan Code</span>
                     <input
+                      ref={qrGalleryInputRef}
                       data-testid="upload-qr-file-input"
                       type="file"
                       accept="image/*"
                       onChange={handleQrFileUpload}
-                      className="hidden"
+                      className="sr-only"
+                    />
+                  </label>
+
+                  <label
+                    data-testid="upload-qr-camera-btn"
+                    onClick={() => prepareQrPhotoPicker('camera')}
+                    className="px-3.5 py-2 rounded-lg bg-[#13161A] hover:bg-[#191D22] active:scale-[0.98] border border-[#F59E0B]/60 text-xs font-mono font-bold text-[#FDE68A] cursor-pointer flex items-center gap-1.5 shrink-0 select-none"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Take QR Photo (Camera)</span>
+                    <input
+                      ref={qrCameraInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleQrFileUpload}
+                      className="sr-only"
                     />
                   </label>
                   {draftCustomQrUrl && (

@@ -141,7 +141,8 @@
 }
 
 .radar-sweep {
-  animation: radar-sweep 4s linear infinite;
+  transform-origin: center;
+  animation: radar-sweep 3.5s linear infinite;
 }
 
 @keyframes radar-sweep {
@@ -153,9 +154,26 @@
   }
 }
 
+@keyframes radar-blip-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0.35;
+  }
+}
+
+.animate-radar-blip {
+  transform-origin: center;
+  animation: radar-blip-pulse 1.8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .radar-sweep {
-    animation: none;
+  .radar-sweep,
+  .animate-radar-blip {
+    animation: none !important;
   }
 }
 
@@ -349,5 +367,186 @@ img.leaflet-tile {
   border: none !important;
   box-shadow: none !important;
   outline: none !important;
+}
+
+/* ============================================================================
+   TACTICAL COCKPIT HUD INITIALIZATION & LOCK-IN ENTRANCE KEYFRAMES
+   ============================================================================ */
+
+@keyframes hud-scanline-laser {
+  0% {
+    top: -5%;
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: 105%;
+    opacity: 0.3;
+  }
+}
+
+@keyframes hud-bracket-slide-tl {
+  0% {
+    transform: translate3d(-35px, -35px, 0) scale(1.15);
+    opacity: 0;
+  }
+  70% {
+    transform: translate3d(2px, 2px, 0) scale(1.02);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes hud-bracket-slide-tr {
+  0% {
+    transform: translate3d(35px, -35px, 0) scale(1.15);
+    opacity: 0;
+  }
+  70% {
+    transform: translate3d(-2px, 2px, 0) scale(1.02);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes hud-bracket-slide-bl {
+  0% {
+    transform: translate3d(-35px, 35px, 0) scale(1.15);
+    opacity: 0;
+  }
+  70% {
+    transform: translate3d(2px, -2px, 0) scale(1.02);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes hud-bracket-slide-br {
+  0% {
+    transform: translate3d(35px, 35px, 0) scale(1.15);
+    opacity: 0;
+  }
+  70% {
+    transform: translate3d(-2px, -2px, 0) scale(1.02);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes hud-reticle-calibrate {
+  0% {
+    transform: scale(1.4) rotate(-90deg);
+    opacity: 0.2;
+    filter: blur(4px);
+  }
+  50% {
+    transform: scale(1.1) rotate(15deg);
+    opacity: 0.85;
+    filter: blur(1px);
+  }
+  85% {
+    transform: scale(0.97) rotate(-3deg);
+    opacity: 1;
+    filter: blur(0px);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+@keyframes hud-lock-burst {
+  0% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
+  }
+  50% {
+    box-shadow: 0 0 35px 8px rgba(56, 189, 248, 0.75), inset 0 0 20px 4px rgba(56, 189, 248, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 12px 2px rgba(56, 189, 248, 0.35);
+  }
+}
+
+@keyframes hud-glitch-text {
+  0%, 100% {
+    transform: translate(0);
+    opacity: 1;
+  }
+  20% {
+    transform: translate(-1.5px, 1px);
+    opacity: 0.9;
+  }
+  40% {
+    transform: translate(1.5px, -1px);
+    opacity: 0.95;
+  }
+  60% {
+    transform: translate(-1px, -1px);
+    opacity: 0.85;
+  }
+  80% {
+    transform: translate(1px, 1px);
+    opacity: 1;
+  }
+}
+
+.animate-hud-scanline {
+  animation: hud-scanline-laser 2.2s ease-in-out infinite;
+}
+
+.animate-hud-bracket-tl {
+  animation: hud-bracket-slide-tl 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-hud-bracket-tr {
+  animation: hud-bracket-slide-tr 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-hud-bracket-bl {
+  animation: hud-bracket-slide-bl 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-hud-bracket-br {
+  animation: hud-bracket-slide-br 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-hud-reticle {
+  animation: hud-reticle-calibrate 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-hud-lock-burst {
+  animation: hud-lock-burst 0.7s ease-out forwards;
+}
+
+.animate-hud-glitch-text {
+  animation: hud-glitch-text 0.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hud-scanline,
+  .animate-hud-bracket-tl,
+  .animate-hud-bracket-tr,
+  .animate-hud-bracket-bl,
+  .animate-hud-bracket-br,
+  .animate-hud-reticle,
+  .animate-hud-lock-burst,
+  .animate-hud-glitch-text {
+    animation: none !important;
+  }
 }
 

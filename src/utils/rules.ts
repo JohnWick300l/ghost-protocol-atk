@@ -8836,3 +8836,242 @@ export async function processUploadedDevicePhoto(file: File): Promise<string> {
   });
 }
 
+export const PHOTO_BRIDGE_SESSION_KEY = 'ghost_photo_bridge_session_id';
+
+/**
+ * Returns a persistent session ID used to bridge photos from Android system browser / native picker
+ * back into the running Android WebView app instance.
+ */
+export function getOrCreatePhotoBridgeSessionId(): string {
+  if (typeof window === 'undefined') return 'pb_server';
+  try {
+    const saved = localStorage.getItem(PHOTO_BRIDGE_SESSION_KEY);
+    if (saved && saved.trim()) {
+      return saved.trim();
+    }
+    const fresh = `pb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    localStorage.setItem(PHOTO_BRIDGE_SESSION_KEY, fresh);
+    return fresh;
+  } catch {
+    return `pb_${Date.now()}`;
+  }
+}
+
+/**
+ * Prepares the active target before triggering the device's native media picker or camera
+ * directly inside the app (via WebChromeClient.onShowFileChooser on <input type="file">),
+ * WITHOUT opening Chrome or any external web browser.
+ */
+export function prepareNativePhotoPickerTarget(
+  target: string,
+  mode: 'gallery' | 'camera' = 'gallery'
+): void {
+  if (typeof window === 'undefined') return;
+  const resolvedTarget = target || 'modifications';
+  try {
+    localStorage.setItem('ghost_active_photo_target', resolvedTarget);
+    localStorage.setItem('ghost_active_photo_mode', mode);
+    localStorage.setItem('ghost_active_photo_timestamp', String(Date.now()));
+    localStorage.removeItem('ghost_native_pending_photos');
+
+    if (resolvedTarget !== 'modifications') {
+      const existingModPhotos = localStorage.getItem('ghost_current_mod_photos');
+      if (existingModPhotos !== null) {
+        localStorage.setItem('ghost_saved_mod_photos_backup', existingModPhotos);
+      } else {
+        localStorage.removeItem('ghost_saved_mod_photos_backup');
+      }
+    }
+  } catch {}
+
+  try {
+    (window as any).__ghostActivePhotoTarget = resolvedTarget;
+    (window as any).__ghostLastPhotoDeliveredAt = 0;
+    delete (window as any).__ghostPendingNativePhotos;
+  } catch {}
+}
+
+/**
+ * Returns the currently active photo upload target page.
+ */
+export function getActivePhotoTarget(): string {
+  if (typeof window === 'undefined') return 'modifications';
+  try {
+    const winTarget = (window as any).__ghostActivePhotoTarget;
+    if (typeof winTarget === 'string' && winTarget.trim()) {
+      return winTarget.trim();
+    }
+    const stored = localStorage.getItem('ghost_active_photo_target');
+    if (stored && stored.trim()) {
+      return stored.trim();
+    }
+  } catch {}
+  return 'modifications';
+}
+
+/**
+ * Returns true if a photo batch for the current picker tap was already delivered
+ * within the last 2.2 seconds (preventing duplicate additions when both
+ * MainActivity's evaluateJavascript and <input type="file"> onChange fire).
+ */
+export function hasRecentNativePhotoDelivery(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const last = Number((window as any).__ghostLastPhotoDeliveredAt || 0);
+    return last > 0 && Date.now() - last < 2200;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Claims and normalizes an incoming batch of photos for the specified target,
+ * cleaning up temporary native WebView buffers and preventing duplicate delivery.
+ */
+export function claimNativePhotoDeliveryBatch(
+  target: string,
+  incoming: string[] | string
+): string[] {
+  const list = Array.isArray(incoming)
+    ? incoming
+    : typeof incoming === 'string'
+    ? [incoming]
+    : [];
+  const clean = list
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map(item => item.trim())
+    .filter(
+      item =>
+        item.startsWith('data:image/') ||
+        item.startsWith('data:video/') ||
+        /^https?:\/\//i.test(item)
+    );
+
+  if (clean.length === 0) return [];
+
+  if (typeof window !== 'undefined') {
+    try {
+      delete (window as any).__ghostPendingNativePhotos;
+    } catch {}
+    try {
+      localStorage.removeItem('ghost_native_pending_photos');
+      if (target !== 'modifications') {
+        const backup = localStorage.getItem('ghost_saved_mod_photos_backup');
+        if (backup !== null) {
+          localStorage.setItem('ghost_current_mod_photos', backup);
+        } else {
+          localStorage.removeItem('ghost_current_mod_photos');
+        }
+      }
+    } catch {}
+
+    if (hasRecentNativePhotoDelivery()) {
+      return [];
+    }
+    try {
+      (window as any).__ghostLastPhotoDeliveredAt = Date.now();
+    } catch {}
+  }
+
+  return clean;
+}
+
+/**
+ * Kept for compatibility; prepares the native photo picker target without opening an external browser.
+ */
+export function openAndroidMediaBridgeSheet(params: {
+  target: string;
+  mode?: 'gallery' | 'camera';
+  sessionId?: string;
+}): string {
+  const sid = params.sessionId || getOrCreatePhotoBridgeSessionId();
+  const mode = params.mode === 'camera' ? 'camera' : 'gallery';
+  const target = params.target || 'modifications';
+  prepareNativePhotoPickerTarget(target, mode);
+  return `/api/android-media-sheet/${encodeURIComponent(sid)}?target=${encodeURIComponent(target)}&mode=${mode}`;
+}
+
+/**
+ * Polls both local native WebView injection buffers and server `/api/photo-bridge` endpoints
+ * for a specific target page ('modifications', 'marketplace', 'problems', 'problems_update',
+ * 'jet_engineer', 'admin_qr').
+ */
+export async function pollAndroidPhotoBridgeForTarget(
+  target: string,
+  sessionId?: string
+): Promise<string[]> {
+  if (typeof window === 'undefined') return [];
+
+  const sid = sessionId || getOrCreatePhotoBridgeSessionId();
+  const activeTarget = getActivePhotoTarget();
+
+  // 1. Check direct JS-injected buffers if activeTarget matches this page
+  if (activeTarget === target) {
+    try {
+      const winPending = (window as any).__ghostPendingNativePhotos;
+      if (Array.isArray(winPending) && winPending.length > 0) {
+        const claimed = claimNativePhotoDeliveryBatch(target, winPending);
+        if (claimed.length > 0) return claimed;
+      }
+    } catch {}
+
+    try {
+      const rawPending = localStorage.getItem('ghost_native_pending_photos');
+      if (rawPending) {
+        localStorage.removeItem('ghost_native_pending_photos');
+        const parsed = JSON.parse(rawPending);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const claimed = claimNativePhotoDeliveryBatch(target, parsed);
+          if (claimed.length > 0) return claimed;
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Check session-specific server photo bridge
+  if (sid && sid !== 'native_direct') {
+    try {
+      const res = await fetch(
+        `/api/photo-bridge/${encodeURIComponent(sid)}?consume=1&target=${encodeURIComponent(target)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.images) && data.images.length > 0) {
+          const claimed = claimNativePhotoDeliveryBatch(target, data.images);
+          if (claimed.length > 0) return claimed;
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Check latest photo bridge entry for this target
+  try {
+    const latestRes = await fetch(
+      `/api/photo-bridge-latest?target=${encodeURIComponent(target)}&consume=1`
+    );
+    if (latestRes.ok) {
+      const latestData = await latestRes.json();
+      if (Array.isArray(latestData.images) && latestData.images.length > 0) {
+        const claimed = claimNativePhotoDeliveryBatch(target, latestData.images);
+        if (claimed.length > 0) return claimed;
+      }
+    }
+  } catch {}
+
+  // 4. Check native_direct endpoint if activeTarget matches
+  if (activeTarget === target) {
+    try {
+      const directRes = await fetch('/api/photo-bridge/native_direct?consume=1');
+      if (directRes.ok) {
+        const directData = await directRes.json();
+        if (Array.isArray(directData.images) && directData.images.length > 0) {
+          const claimed = claimNativePhotoDeliveryBatch(target, directData.images);
+          if (claimed.length > 0) return claimed;
+        }
+      }
+    } catch {}
+  }
+
+  return [];
+}
+

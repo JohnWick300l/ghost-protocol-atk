@@ -27,8 +27,11 @@ import { useAudio } from '../context/AudioContext';
 import { ModificationItem } from '../types';
 import {
   sanitizeGoogleMapsUrl,
-  isAndroidDevice,
-  openInAndroidPhotoPicker,
+  prepareNativePhotoPickerTarget,
+  getActivePhotoTarget,
+  claimNativePhotoDeliveryBatch,
+  hasRecentNativePhotoDelivery,
+  pollAndroidPhotoBridgeForTarget,
   processUploadedDevicePhoto
 } from '../utils/rules';
 import { BackButton } from './BackButton';
@@ -96,7 +99,11 @@ export const ModificationsLab: React.FC = () => {
   const [selectedMod, setSelectedMod] = useState<ModificationItem | null>(null);
   const [showAddModal, setShowAddModalState] = useState<boolean>(() => {
     try {
-      return typeof window !== 'undefined' && sessionStorage.getItem(MODAL_OPEN_SESSION_KEY) === '1';
+      return (
+        typeof window !== 'undefined' &&
+        (sessionStorage.getItem(MODAL_OPEN_SESSION_KEY) === '1' ||
+          localStorage.getItem(MODAL_OPEN_SESSION_KEY) === '1')
+      );
     } catch {
       return false;
     }
@@ -107,8 +114,10 @@ export const ModificationsLab: React.FC = () => {
       if (typeof window !== 'undefined') {
         if (open) {
           sessionStorage.setItem(MODAL_OPEN_SESSION_KEY, '1');
+          localStorage.setItem(MODAL_OPEN_SESSION_KEY, '1');
         } else {
           sessionStorage.removeItem(MODAL_OPEN_SESSION_KEY);
+          localStorage.removeItem(MODAL_OPEN_SESSION_KEY);
         }
       }
     } catch {
@@ -248,117 +257,53 @@ export const ModificationsLab: React.FC = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const drainPendingNativePhotos = () => {
-      try {
-        const winPending = (window as any).__ghostPendingNativePhotos;
-        if (Array.isArray(winPending) && winPending.length > 0) {
-          delete (window as any).__ghostPendingNativePhotos;
-          appendIncomingPhotos(winPending);
-        }
-      } catch {}
-
-      try {
-        const rawPending = localStorage.getItem('ghost_native_pending_photos');
-        if (rawPending) {
-          localStorage.removeItem('ghost_native_pending_photos');
-          const parsed = JSON.parse(rawPending);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            appendIncomingPhotos(parsed);
-          }
-        }
-      } catch {}
-    };
-
     const pollServerPhotoBridge = async () => {
-      drainPendingNativePhotos();
-
-      // 1. Direct native Android bridge endpoint
-      try {
-        const directRes = await fetch('/api/photo-bridge/native_direct?consume=1');
-        if (directRes.ok) {
-          const directData = await directRes.json();
-          if (Array.isArray(directData.images) && directData.images.length > 0) {
-            appendIncomingPhotos(directData.images);
-            return;
-          }
-        }
-      } catch {}
-
-      // 2. Unique session endpoint
       const sid = photoBridgeSessionIdRef.current;
-      if (sid && sid !== 'native_direct') {
-        try {
-          const res = await fetch(`/api/photo-bridge/${encodeURIComponent(sid)}?consume=1`);
-          if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data.images) && data.images.length > 0) {
-              appendIncomingPhotos(data.images);
-              return;
-            }
-          }
-        } catch {}
+      const incoming = await pollAndroidPhotoBridgeForTarget('modifications', sid);
+      if (incoming.length > 0) {
+        appendIncomingPhotos(incoming);
       }
-
-      // 3. Fallback to latest target modifications
-      try {
-        const latestRes = await fetch('/api/photo-bridge-latest?target=modifications&consume=1');
-        if (latestRes.ok) {
-          const latestData = await latestRes.json();
-          if (Array.isArray(latestData.images) && latestData.images.length > 0) {
-            appendIncomingPhotos(latestData.images);
-          }
-        }
-      } catch {}
     };
 
     (window as any).__ghostReceiveNativePhotos = (incoming: string[] | string) => {
-      appendIncomingPhotos(incoming);
+      if (getActivePhotoTarget() !== 'modifications') return;
+      const claimed = claimNativePhotoDeliveryBatch('modifications', incoming);
+      if (claimed.length > 0) {
+        appendIncomingPhotos(claimed);
+      }
     };
 
     const handleNativePhotoEvent = (e: Event) => {
       const detail = (e as CustomEvent)?.detail;
-      if (detail) {
-        appendIncomingPhotos(detail);
+      const activeTarget = getActivePhotoTarget();
+      if (Array.isArray(detail) && activeTarget === 'modifications') {
+        const claimed = claimNativePhotoDeliveryBatch('modifications', detail);
+        if (claimed.length > 0) appendIncomingPhotos(claimed);
+      } else if (
+        detail &&
+        Array.isArray(detail.images) &&
+        (detail.target === 'modifications' || (!detail.target && activeTarget === 'modifications'))
+      ) {
+        const claimed = claimNativePhotoDeliveryBatch('modifications', detail.images);
+        if (claimed.length > 0) appendIncomingPhotos(claimed);
       }
     };
 
     const handleFocusOrVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       pollServerPhotoBridge();
-
-      // If we just returned from Android's native GET_CONTENT picker and MainActivity didn't deliver a result
-      // (because the phone has an older APK build using one-way startActivity), reveal the 1-tap Direct Media Sheet bridge
-      if (nativePickerLaunchRef.current.launchedAt > 0 && Date.now() - nativePickerLaunchRef.current.launchedAt > 400) {
-        setTimeout(() => {
-          drainPendingNativePhotos();
-          pollServerPhotoBridge();
-          setUploadedImages(currentImgs => {
-            if (
-              nativePickerLaunchRef.current.launchedAt > 0 &&
-              currentImgs.length <= nativePickerLaunchRef.current.countBefore
-            ) {
-              setShowLegacyApkBridgeBanner(true);
-            }
-            return currentImgs;
-          });
-        }, 750);
-      }
     };
 
     window.addEventListener('ghost-native-photos', handleNativePhotoEvent);
     window.addEventListener('focus', handleFocusOrVisibility);
     document.addEventListener('visibilitychange', handleFocusOrVisibility);
 
-    drainPendingNativePhotos();
     pollServerPhotoBridge();
 
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
-    if (showAddModal) {
-      pollTimer = setInterval(pollServerPhotoBridge, 800);
-    }
+    const pollTimer = setInterval(pollServerPhotoBridge, 600);
 
     return () => {
-      if (pollTimer) clearInterval(pollTimer);
+      clearInterval(pollTimer);
       window.removeEventListener('ghost-native-photos', handleNativePhotoEvent);
       window.removeEventListener('focus', handleFocusOrVisibility);
       document.removeEventListener('visibilitychange', handleFocusOrVisibility);
@@ -584,9 +529,12 @@ export const ModificationsLab: React.FC = () => {
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputEl = e.currentTarget || e.target;
-    // Snapshot FileList synchronously before any state update or re-render
     const fileList = inputEl?.files ? Array.from(inputEl.files) : [];
-    if (fileList.length === 0) return;
+    try {
+      if (inputEl) inputEl.value = '';
+    } catch (_) {}
+
+    if (fileList.length === 0 || hasRecentNativePhotoDelivery()) return;
 
     setIsProcessingPhotos(true);
     setSubmitError(null);
@@ -600,59 +548,26 @@ export const ModificationsLab: React.FC = () => {
           results.push(compressed);
         }
       }
+      if (hasRecentNativePhotoDelivery()) {
+        return;
+      }
       if (results.length > 0) {
-        appendIncomingPhotos(results);
-      } else {
-        setSubmitError('Could not read the selected image. Please choose a JPG, PNG, or WEBP photo.');
+        const claimed = claimNativePhotoDeliveryBatch('modifications', results);
+        if (claimed.length > 0) {
+          appendIncomingPhotos(claimed);
+        }
       }
     } catch (err) {
       console.warn('Failed to process image files:', err);
-      setSubmitError('Failed to read selected photos from device.');
     } finally {
       setIsProcessingPhotos(false);
-      try {
-        if (inputEl) inputEl.value = '';
-      } catch (_) {}
     }
   };
 
-  const triggerDevicePhotoPicker = (mode: 'gallery' | 'camera') => {
-    playTacticalClick();
+  const prepareModPhotoPicker = (mode: 'gallery' | 'camera') => {
     setSubmitError(null);
     setShowAddModal(true);
-
-    const sessionId = photoBridgeSessionIdRef.current || `pb_${Date.now()}`;
-    photoBridgeSessionIdRef.current = sessionId;
-    nativePickerLaunchRef.current = {
-      launchedAt: Date.now(),
-      countBefore: uploadedImages.length,
-      mode
-    };
-
-    if (mode === 'camera') {
-      cameraInputRef.current?.click();
-    } else {
-      fileInputRef.current?.click();
-    }
-  };
-
-  const openLegacyAndroidMediaSheet = (mode: 'gallery' | 'camera' = 'gallery') => {
-    playTacticalClick();
-    setSubmitError(null);
-    setShowAddModal(true);
-    const sid = photoBridgeSessionIdRef.current || `pb_${Date.now()}`;
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const sheetUrl = `${origin}/api/android-media-sheet/${encodeURIComponent(sid)}?target=modifications&mode=${mode}`;
-    if (isAndroidDevice() && origin.startsWith('http')) {
-      const withoutProtocol = sheetUrl.replace(/^https?:\/\//i, '');
-      const scheme = sheetUrl.startsWith('https://') ? 'https' : 'http';
-      const intentUri = `intent://${withoutProtocol}#Intent;scheme=${scheme};action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;S.browser_fallback_url=${encodeURIComponent(
-        sheetUrl
-      )};end`;
-      window.location.assign(intentUri);
-      return;
-    }
-    window.open(sheetUrl, '_blank');
+    prepareNativePhotoPickerTarget('modifications', mode);
   };
 
   const handleClipboardPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -1461,10 +1376,11 @@ export const ModificationsLab: React.FC = () => {
 
                 <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    {/* Device Gallery / Photos Button - direct native tap overlay */}
-                    <div
+                    {/* Device Gallery / Photos Button */}
+                    <label
                       data-testid="mod-select-photos-button"
-                      className={`relative overflow-hidden flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-amber-500/50 hover:border-amber-500 text-white font-semibold text-xs transition-all shadow-sm cursor-pointer select-none ${
+                      onClick={() => prepareModPhotoPicker('gallery')}
+                      className={`relative overflow-hidden flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] border border-amber-500/50 hover:border-amber-500 text-white font-semibold text-xs transition-all shadow-sm cursor-pointer select-none ${
                         isProcessingPhotos ? 'opacity-70 pointer-events-none' : ''
                       }`}
                     >
@@ -1482,15 +1398,17 @@ export const ModificationsLab: React.FC = () => {
                         multiple
                         accept="image/*"
                         onChange={handleImageUpload}
-                        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-20"
+                        disabled={isProcessingPhotos}
+                        className="sr-only"
                         aria-label="Select Photos From Device"
                       />
-                    </div>
+                    </label>
 
-                    {/* Camera Button - direct native tap overlay */}
-                    <div
+                    {/* Camera Button */}
+                    <label
                       data-testid="mod-camera-photos-button"
-                      className={`relative overflow-hidden flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white font-medium text-xs transition-all cursor-pointer select-none ${
+                      onClick={() => prepareModPhotoPicker('camera')}
+                      className={`relative overflow-hidden flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white font-medium text-xs transition-all cursor-pointer select-none ${
                         isProcessingPhotos ? 'opacity-70 pointer-events-none' : ''
                       }`}
                     >
@@ -1502,10 +1420,11 @@ export const ModificationsLab: React.FC = () => {
                         accept="image/*"
                         capture="environment"
                         onChange={handleImageUpload}
-                        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-20"
+                        disabled={isProcessingPhotos}
+                        className="sr-only"
                         aria-label="Take Photo with Camera"
                       />
-                    </div>
+                    </label>
 
                     {/* Paste Image URL Button */}
                     <button
@@ -1517,34 +1436,6 @@ export const ModificationsLab: React.FC = () => {
                       <span className="truncate">Paste Image URL</span>
                     </button>
                   </div>
-
-                  {/* Automatic fallback helper if phone has older APK build where one-way startActivity dropped GET_CONTENT result */}
-                  {showLegacyApkBridgeBanner && (
-                    <div
-                      data-testid="mod-legacy-apk-bridge-banner"
-                      className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/50 space-y-2"
-                    >
-                      <div className="text-amber-300 text-xs font-semibold flex items-center justify-between">
-                        <span>Photo didn&apos;t attach from picker? Tap below to sync directly:</span>
-                        <button
-                          type="button"
-                          onClick={() => setShowLegacyApkBridgeBanner(false)}
-                          className="text-zinc-400 hover:text-white"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        data-testid="mod-direct-media-sheet-button"
-                        onClick={() => openLegacyAndroidMediaSheet('gallery')}
-                        className="w-full py-2.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center justify-center gap-2 shadow cursor-pointer active:scale-[0.98]"
-                      >
-                        <Upload className="w-4 h-4 shrink-0" />
-                        <span>Attach Photo via Direct Media Sheet (Auto-Syncs to App)</span>
-                      </button>
-                    </div>
-                  )}
 
                   {/* Quick Clipboard Paste Target (works inside any Android WebView via keyboard clipboard) */}
                   <div

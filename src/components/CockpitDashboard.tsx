@@ -414,12 +414,100 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
           }`}
         />
 
-        {/* 2. Precision SVG Overlay for Offline Status Indicator (if toggled offline) */}
+        {/* 2. Precision SVG Overlay for Interactive HUD & Center Console Radar */}
         <svg
           viewBox="0 0 941 1672"
           data-testid="cockpit-interactive-hud-svg"
           className="absolute inset-0 w-full h-full pointer-events-none select-none z-10"
         >
+          <defs>
+            <radialGradient id="cockpit-radar-sweep-grad" cx="0%" cy="0%" r="100%">
+              <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.55" />
+              <stop offset="50%" stopColor="#38BDF8" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#38BDF8" stopOpacity="0.06" />
+            </radialGradient>
+            {/* Exact polygon clip-path matching the full inner boundaries of the Charging Network hexagon button */}
+            <clipPath id="charging-network-hex-clip">
+              <polygon points="342,762 608,762 666,942 602,1034 348,1034 283,942" />
+            </clipPath>
+          </defs>
+
+          {/* Center Console (Charging Network) Full-Boundary 360° Radar Sweep Overlay */}
+          <g
+            data-testid="cockpit-center-console-radar"
+            clipPath="url(#charging-network-hex-clip)"
+            className="pointer-events-none select-none"
+          >
+            {/* Subtle Radar Distance Rings extending across the full Charging Network button */}
+            <circle
+              cx="474.5"
+              cy="898"
+              r="185"
+              fill="none"
+              stroke="#38BDF8"
+              strokeWidth="1.2"
+              strokeDasharray="6 4"
+              opacity="0.35"
+            />
+            <circle
+              cx="474.5"
+              cy="898"
+              r="125"
+              fill="none"
+              stroke="#38BDF8"
+              strokeWidth="1.2"
+              opacity="0.3"
+            />
+            <circle
+              cx="474.5"
+              cy="898"
+              r="65"
+              fill="none"
+              stroke="#38BDF8"
+              strokeWidth="1"
+              opacity="0.25"
+            />
+
+            {/* Full-Span Radar Crosshairs reaching button boundaries */}
+            <line
+              x1="474.5"
+              y1="740"
+              x2="474.5"
+              y2="1055"
+              stroke="#38BDF8"
+              strokeWidth="1"
+              opacity="0.25"
+            />
+            <line
+              x1="270"
+              y1="898"
+              x2="680"
+              y2="898"
+              stroke="#38BDF8"
+              strokeWidth="1"
+              opacity="0.25"
+            />
+
+            {/* 360-degree Rotating Radar Sweep Cone reaching all corners of the Charging Network button */}
+            <g transform="translate(474.5, 898)">
+              <g className="radar-sweep" style={{ transformOrigin: '0 0' }}>
+                <path
+                  d="M 0 0 L 0 -240 A 240 240 0 0 1 240 0 Z"
+                  fill="url(#cockpit-radar-sweep-grad)"
+                />
+                <line
+                  x1="0"
+                  y1="0"
+                  x2="240"
+                  y2="0"
+                  stroke="#38BDF8"
+                  strokeWidth="2.5"
+                  opacity="0.9"
+                />
+              </g>
+            </g>
+          </g>
+
           {effectiveOffline && (
             <g data-testid="cockpit-capsule-offline-visual">
               <rect
@@ -653,35 +741,53 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
         {isBooting && (
           <div
             data-testid="cockpit-initial-boot-animation-overlay"
-            className="absolute inset-0 z-50 bg-[#01040A]/90 backdrop-blur-xl flex flex-col items-center justify-center p-6 transition-all duration-700 pointer-events-none select-none"
+            className="absolute inset-0 z-50 bg-[#01040A]/92 backdrop-blur-xl flex flex-col items-center justify-center p-6 transition-all duration-700 pointer-events-none select-none overflow-hidden"
           >
-            {/* Expanding Laser HUD Calibration Ring */}
-            <div className="relative w-32 h-32 sm:w-40 sm:h-40 mb-6 flex items-center justify-center">
+            {/* Tactical HUD Laser Scanline */}
+            <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-[#38BDF8] to-transparent shadow-[0_0_20px_#38BDF8] animate-hud-scanline pointer-events-none z-20" />
+
+            {/* Corner HUD Framing Brackets */}
+            <div className="absolute top-4 left-4 w-10 h-10 border-t-2 border-l-2 border-[#38BDF8] animate-hud-bracket-tl shadow-[0_0_12px_#38BDF8]" />
+            <div className="absolute top-4 right-4 w-10 h-10 border-t-2 border-r-2 border-[#38BDF8] animate-hud-bracket-tr shadow-[0_0_12px_#38BDF8]" />
+            <div className="absolute bottom-4 left-4 w-10 h-10 border-b-2 border-l-2 border-[#38BDF8] animate-hud-bracket-bl shadow-[0_0_12px_#38BDF8]" />
+            <div className="absolute bottom-4 right-4 w-10 h-10 border-b-2 border-r-2 border-[#38BDF8] animate-hud-bracket-br shadow-[0_0_12px_#38BDF8]" />
+
+            {/* Central Calibrating Tactical Optical Reticle */}
+            <div className="relative w-36 h-36 sm:w-44 sm:h-44 mb-6 flex items-center justify-center animate-hud-reticle">
+              {/* Outer compass ring */}
               <div
-                className="absolute inset-0 rounded-full border-2 border-dashed border-[#38BDF8] animate-spin"
-                style={{ animationDuration: '4s' }}
+                className="absolute inset-0 rounded-full border-2 border-dashed border-[#38BDF8]/80 animate-spin"
+                style={{ animationDuration: '6s' }}
               />
+              {/* Inner red ring */}
               <div
-                className="absolute inset-3 rounded-full border-2 border-[#EF4444] animate-ping"
-                style={{ animationDuration: '1.2s' }}
+                className="absolute inset-3 rounded-full border-2 border-[#EF4444] animate-ping opacity-60"
+                style={{ animationDuration: '1.4s' }}
               />
-              <div className="w-16 h-16 rounded-full bg-[#030A1C] border-2 border-[#38BDF8] shadow-[0_0_30px_#38BDF8] flex items-center justify-center">
-                <Cpu className="w-8 h-8 text-[#38BDF8] animate-pulse" />
+              {/* Central core emblem */}
+              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-[#030A1C] border-2 border-[#38BDF8] shadow-[0_0_35px_#38BDF8] flex items-center justify-center animate-hud-lock-burst">
+                <Cpu className="w-8 h-8 sm:w-10 sm:h-10 text-[#38BDF8] animate-pulse" />
               </div>
             </div>
 
-            <div className="text-center font-mono space-y-2">
-              <div className="text-xs sm:text-sm font-black text-[#38BDF8] tracking-[0.2em] uppercase font-['Orbitron',sans-serif] animate-pulse">
+            {/* HUD Status Telemetry Readout */}
+            <div className="text-center font-mono space-y-2 z-10">
+              <div className="text-xs sm:text-sm font-black text-[#38BDF8] tracking-[0.22em] uppercase font-['Orbitron',sans-serif] animate-hud-glitch-text">
                 {bootPhase === 1
                   ? 'FORMING COCKPIT AVIONICS INTERFACE...'
                   : bootPhase === 2
                   ? 'LOCKING INSTRUMENT PANELS & HUD...'
-                  : 'COCKPIT ONLINE'}
+                  : 'HUD SYSTEM ONLINE • LOCKED'}
               </div>
-              <div className="text-[10px] text-[#E8AA45] tracking-widest uppercase">
-                {bootPhase === 1
-                  ? '▶ POWER CORE: 100%'
-                  : '▶ HUD AVIONICS LINK: ACTIVE'}
+              <div className="text-[10px] text-[#E8AA45] tracking-widest uppercase flex items-center justify-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8] animate-ping" />
+                <span>
+                  {bootPhase === 1
+                    ? '▶ POWER CORE: 100% • TELEMETRY SYNC'
+                    : bootPhase === 2
+                    ? '▶ HUD AVIONICS LINK: ACTIVE'
+                    : '▶ TARGET ACQUIRED :: SECTOR LOCKED'}
+                </span>
               </div>
             </div>
           </div>
