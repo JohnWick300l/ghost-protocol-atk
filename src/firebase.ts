@@ -14,7 +14,7 @@ import {
   type UserCredential,
   type User as FirebaseUser
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -118,7 +118,7 @@ async function testConnection() {
       }
     }
 
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    await getDoc(doc(db, 'test', 'connection'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
       // Check if the offline state was caused by an invalid/broken auth token (e.g. disabled securetoken.googleapis.com)
@@ -132,7 +132,7 @@ async function testConnection() {
             try {
               await signOut(auth);
               // Retry connection check as unauthenticated client
-              await getDocFromServer(doc(db, 'test', 'connection'));
+              await getDoc(doc(db, 'test', 'connection'));
               return;
             } catch (retryErr) {
               if (retryErr instanceof Error && !retryErr.message.includes('the client is offline')) {

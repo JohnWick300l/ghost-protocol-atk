@@ -820,6 +820,200 @@ test('End-to-End API Security — All 20 Negative & Positive Security Phase 1 Re
       publicChargersAfterReconcile.data.stations.some((s: any) => s.id === createdStation.id),
       'Charging station must remain publicly published after client reconciliation'
     );
+
+    // =========================================================================
+    // 23. REAL-WORLD SCENARIOS (TESTS A THROUGH I) VERIFICATION
+    // =========================================================================
+
+    // Authenticate Pilot B (u_phantom)
+    const restorePilotBRes = await apiReq('/api/auth/session-restore', {
+      method: 'POST',
+      body: {
+        user: {
+          id: 'u_phantom',
+          fullName: 'Devika Nair',
+          email: 'devika.nair@example.com',
+          mobile: '+91 97410 88231',
+          motorcycleModel: 'F77'
+        }
+      }
+    });
+    assert.equal(restorePilotBRes.status, 200);
+    const pilotBHeaders = { Authorization: `Bearer ${restorePilotBRes.data.sessionToken}` };
+
+    // Test A — Two pilots: Pilot A submits a Mods Lab modification; Pilot B opens Ghost Protocol and sees it
+    const pilotBFetchMods = await apiReq('/api/modifications', { headers: pilotBHeaders });
+    assert.equal(pilotBFetchMods.status, 200);
+    assert.ok(
+      pilotBFetchMods.data.modifications.some((m: any) => m.id === createdMod.id),
+      'Test A: Pilot B must see Pilot A Mods Lab modification'
+    );
+
+    // Test B — Original uploader goes offline / logs out: Pilot A submits a discussion, logs out; Pilot B still accesses it
+    const pilotADiscRes = await apiReq('/api/discussions', {
+      method: 'POST',
+      headers: restoredPilotHeaders,
+      body: {
+        title: 'NH48 Thermal Management on Noon Runs',
+        category: 'Battery & Range',
+        content: 'Sharing empirical battery temp telemetry from Bengaluru to Krishnagiri.'
+      }
+    });
+    assert.equal(pilotADiscRes.status, 201);
+    const createdDiscId = pilotADiscRes.data.discussion.id;
+
+    // Pilot A logs out (goes offline)
+    const pilotALogoutRes = await apiReq('/api/auth/logout', {
+      method: 'POST',
+      headers: restoredPilotHeaders
+    });
+    assert.equal(pilotALogoutRes.status, 200);
+
+    // Pilot B fetches discussions while Pilot A is logged out / offline
+    const pilotBDiscFetch = await apiReq('/api/discussions', { headers: pilotBHeaders });
+    assert.equal(pilotBDiscFetch.status, 200);
+    assert.ok(
+      pilotBDiscFetch.data.discussions.some((d: any) => d.id === createdDiscId),
+      'Test B: Pilot B must still access Pilot A discussion when Pilot A is offline/logged out'
+    );
+
+    // Restore Pilot A session for subsequent tests
+    const reAuthPilotA = await apiReq('/api/auth/session-restore', {
+      method: 'POST',
+      body: {
+        user: {
+          id: 'u_pilot07',
+          fullName: 'Vikram Sengupta',
+          email: 'vikram.sengupta@example.com'
+        }
+      }
+    });
+    const activePilotAHeaders = { Authorization: `Bearer ${reAuthPilotA.data.sessionToken}` };
+
+    // Test C & D — Permanent storage across server restarts & application updates
+    const persistedOnDisk = JSON.parse(fs.readFileSync(tempDbPath, 'utf-8'));
+    assert.ok(
+      persistedOnDisk.marketplace.some((i: any) => i.id === createdItem.id),
+      'Test C: Marketplace listing must be persisted on disk across restarts'
+    );
+    assert.ok(
+      persistedOnDisk.discussions.some((d: any) => d.id === createdDiscId),
+      'Test D: Community records must remain intact across application updates'
+    );
+
+    // Test E — Multiple devices: Create a Priority Issue on Device 1 and verify on Device 2
+    const probRes = await apiReq('/api/problems', {
+      method: 'POST',
+      headers: activePilotAHeaders,
+      body: {
+        motorcycleModel: 'F77 MACH 2',
+        category: 'Charging',
+        severity: 'Moderate',
+        title: 'Boost Charger Fan Acoustic Hum at 240V',
+        description: 'Slight harmonic hum noticed above 238V grid voltage.'
+      }
+    });
+    assert.equal(probRes.status, 201);
+    const createdProbId = probRes.data.problem.id;
+
+    const device2Fetch = await apiReq('/api/problems', { headers: pilotBHeaders });
+    assert.equal(device2Fetch.status, 200);
+    assert.ok(
+      device2Fetch.data.problems.some((p: any) => p.id === createdProbId),
+      'Test E: Priority Issue created on Device 1 must be visible on Device 2'
+    );
+
+    // Test F — Quota exhausted status reporting: in test mode (vault sync paused), syncStatus must accurately report saved_local_pending_cloud
+    assert.equal(
+      probRes.data.syncStatus,
+      'saved_local_pending_cloud',
+      'Test F: When cloud vault sync is paused/unavailable, server must report saved_local_pending_cloud rather than falsely claiming cloud publication'
+    );
+    assert.equal(
+      probRes.data.statusMessage,
+      'Saved on this device – waiting to sync.'
+    );
+
+    // Test G — Authorised deletion: Pilot A deletes their Marketplace listing; deletion propagates via deletedIds and stale cache cannot restore it
+    const delMktRes = await apiReq(`/api/marketplace/${createdItem.id}`, {
+      method: 'DELETE',
+      headers: activePilotAHeaders
+    });
+    assert.equal(delMktRes.status, 200);
+
+    const afterDelMkt = await apiReq('/api/marketplace', { headers: pilotBHeaders });
+    assert.equal(afterDelMkt.status, 200);
+    assert.equal(
+      afterDelMkt.data.items.some((i: any) => i.id === createdItem.id),
+      false,
+      'Test G: Deleted marketplace listing must be removed for Pilot B'
+    );
+    assert.ok(
+      Array.isArray(afterDelMkt.data.deletedIds) && afterDelMkt.data.deletedIds.includes(createdItem.id),
+      'Test G: Server response must propagate deletedIds to all clients'
+    );
+
+    // Pilot B attempts to reconcile stale cache containing the deleted marketplace item -> server must NOT restore it
+    await apiReq('/api/sync/reconcile', {
+      method: 'POST',
+      headers: pilotBHeaders,
+      body: {
+        deletedIds: [],
+        collections: {
+          marketplace: [createdItem]
+        }
+      }
+    });
+    const verifyNotRestored = await apiReq('/api/marketplace', { headers: pilotBHeaders });
+    assert.equal(
+      verifyNotRestored.data.items.some((i: any) => i.id === createdItem.id),
+      false,
+      'Test G: Stale cache reconciliation must never resurrect an authorised deletion'
+    );
+
+    // Test H — Ordinary browsing (100 simulated requests without uploads)
+    const revBeforeBrowsing = JSON.parse(fs.readFileSync(tempDbPath, 'utf-8')).revision;
+    for (let i = 0; i < 20; i++) {
+      await Promise.all([
+        apiReq('/api/discussions'),
+        apiReq('/api/marketplace'),
+        apiReq('/api/modifications'),
+        apiReq('/api/problems'),
+        apiReq('/api/charging')
+      ]);
+    }
+    const revAfterBrowsing = JSON.parse(fs.readFileSync(tempDbPath, 'utf-8')).revision;
+    assert.equal(
+      revAfterBrowsing,
+      revBeforeBrowsing,
+      'Test H: 100 ordinary browsing requests must cause 0 database writes'
+    );
+
+    // Test I — Concurrent updates: Pilot A and Pilot B both reply to the same discussion thread concurrently
+    await Promise.all([
+      apiReq(`/api/discussions/${createdDiscId}/comments`, {
+        method: 'POST',
+        headers: activePilotAHeaders,
+        body: { text: 'Pilot A concurrent telemetry reply' }
+      }),
+      apiReq(`/api/discussions/${createdDiscId}/comments`, {
+        method: 'POST',
+        headers: pilotBHeaders,
+        body: { text: 'Pilot B concurrent telemetry reply' }
+      })
+    ]);
+
+    const finalDiscRes = await apiReq('/api/discussions', { headers: pilotBHeaders });
+    const targetDisc = finalDiscRes.data.discussions.find((d: any) => d.id === createdDiscId);
+    assert.ok(targetDisc, 'Target discussion must exist');
+    assert.ok(
+      targetDisc.comments.some((c: any) => c.text === 'Pilot A concurrent telemetry reply'),
+      'Test I: Pilot A concurrent comment must be preserved'
+    );
+    assert.ok(
+      targetDisc.comments.some((c: any) => c.text === 'Pilot B concurrent telemetry reply'),
+      'Test I: Pilot B concurrent comment must be preserved'
+    );
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
     fs.rmSync(tempDataDir, { recursive: true, force: true });

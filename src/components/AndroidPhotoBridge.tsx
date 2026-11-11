@@ -57,7 +57,7 @@ export const AndroidPhotoBridge: React.FC<AndroidPhotoBridgeProps> = ({
           return;
         }
 
-        if (file.size > 0 && file.size < 250 * 1024) {
+        if (file.size > 0 && file.size < 55 * 1024 && result.length < 95000) {
           resolve(result);
           return;
         }
@@ -65,9 +65,9 @@ export const AndroidPhotoBridge: React.FC<AndroidPhotoBridgeProps> = ({
         const img = new Image();
         img.onload = () => {
           try {
-            const MAX_DIM = 1400;
-            let width = img.width;
-            let height = img.height;
+            const MAX_DIM = 960;
+            let width = img.naturalWidth || img.width || 800;
+            let height = img.naturalHeight || img.height || 600;
             if (width > MAX_DIM || height > MAX_DIM) {
               if (width > height) {
                 height = Math.round((height * MAX_DIM) / width);
@@ -86,7 +86,10 @@ export const AndroidPhotoBridge: React.FC<AndroidPhotoBridgeProps> = ({
               return;
             }
             ctx.drawImage(img, 0, 0, width, height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.84);
+            let dataUrl = canvas.toDataURL('image/jpeg', 0.76);
+            if (dataUrl.length > 95000) {
+              dataUrl = canvas.toDataURL('image/jpeg', 0.62);
+            }
             resolve(dataUrl || result);
           } catch {
             resolve(result);

@@ -18,7 +18,13 @@ import {
   JET_ENGINEER_WELCOME_MESSAGE,
   reconcileCollectionWithCache,
   recordDeletedId,
-  getDeletedIds
+  getDeletedIds,
+  JET_ENGINEER_COST_KB_VERSION,
+  JET_ENGINEER_COST_KB_LAST_UPDATED,
+  JET_ENGINEER_UNKNOWN_FALLBACK_MESSAGE,
+  getJetEngineerCostKnowledgeIndex,
+  queryJetEngineerCostKnowledgeBase,
+  formatInrAmount
 } from './telemetryCache.ts';
 
 test('normalizeMarketplaceResponse handles both { items: [...] } and raw arrays so listings never vanish', () => {
@@ -225,4 +231,117 @@ test('Phase 1: reconcileCollectionWithCache preserves MissionMode participants a
   assert.equal(reconciled[0].participants.length, 2);
   assert.equal(reconciled[0].announcements.length, 1);
 });
+
+test('Jet Engineer Cost Knowledge Base: clean responses without metadata clutter and exact learning fallback', () => {
+  // Idempotent singleton indexing & dataset version metadata
+  const idx1 = getJetEngineerCostKnowledgeIndex();
+  const idx2 = getJetEngineerCostKnowledgeIndex();
+  assert.strictEqual(idx1, idx2);
+  assert.equal(idx1.schemaVersion, JET_ENGINEER_COST_KB_VERSION);
+  assert.equal(idx1.lastUpdated, JET_ENGINEER_COST_KB_LAST_UPDATED);
+  assert.equal(idx1.records.length, 4);
+  assert.equal(idx1.unitemisedRecords.length, 1);
+
+  // Criterion 1, 2 & 3: F77 chain slider part price ₹105.00, labour ₹29.50, combined ₹134.50, no STATUS/Part number/Source clutter
+  const qChainPart = generateOfflineJetEngineerResponse('How much does an F77 chain slider cost?', 'F77');
+  assert.ok(qChainPart.answer.includes('₹105.00'), 'Must include ₹105.00 part price');
+  assert.ok(qChainPart.answer.includes('₹29.50'), 'Must include ₹29.50 labour');
+  assert.ok(qChainPart.answer.includes('₹134.50'), 'Must include ₹134.50 combined amount');
+  assert.equal(qChainPart.answer.includes('STATUS:'), false, 'Must not include STATUS line');
+  assert.equal(qChainPart.answer.includes('Part number:'), false, 'Must not include Part number line');
+  assert.equal(qChainPart.answer.includes('Source:'), false, 'Must not include Source line');
+
+  const qChainLabour = generateOfflineJetEngineerResponse(
+    'What is the labour charge for replacing the chain slider?',
+    'F77'
+  );
+  assert.ok(qChainLabour.answer.includes('₹29.50'), 'Must include ₹29.50 labour charge');
+  assert.ok(qChainLabour.answer.includes('Chain Slider Removal and Replacement'));
+  assert.equal(qChainLabour.answer.includes('STATUS:'), false);
+  assert.equal(qChainLabour.answer.includes('Source:'), false);
+
+  // Criterion 4: F77 3rd paid service returns 20,000 km / 720 days and service labour ₹4,823.25
+  const qService = generateOfflineJetEngineerResponse('What is the 20K service cost?', 'F77');
+  assert.ok(qService.answer.includes('20,000 km / 720 days'), 'Must include 20,000 km / 720 days');
+  assert.ok(qService.answer.includes('₹4,823.25'), 'Must include ₹4,823.25 service labour');
+  assert.equal(qService.answer.includes('STATUS:'), false);
+  assert.equal(qService.answer.includes('Source:'), false);
+
+  // Criterion 5: X47 handlebar tube part price returns ₹3,984.00 and matching labour ₹590.00
+  const qHandlebar = generateOfflineJetEngineerResponse('What is the price of an X47 handlebar?', 'F77');
+  assert.ok(qHandlebar.answer.includes('Ultraviolette X47'));
+  assert.ok(qHandlebar.answer.includes('₹3,984.00'), 'Must include ₹3,984.00 part price');
+  assert.ok(qHandlebar.answer.includes('₹590.00'), 'Must include ₹590.00 labour');
+  assert.ok(qHandlebar.answer.includes('₹4,574.00'), 'Must include ₹4,574.00 combined');
+  assert.equal(qHandlebar.answer.includes('STATUS:'), false);
+  assert.equal(qHandlebar.answer.includes('Part number:'), false);
+  assert.equal(qHandlebar.answer.includes('Source:'), false);
+
+  // Criterion 6: X47 LH ADAS mirror returns part price ₹1,559.00 and matching labour ₹44.25
+  const qAdasMirror = generateOfflineJetEngineerResponse(
+    'How much is the left ADAS mirror including labour?',
+    'F77'
+  );
+  assert.ok(qAdasMirror.answer.includes('Ultraviolette X47'));
+  assert.ok(qAdasMirror.answer.includes('₹1,559.00'), 'Must include ₹1,559.00 part price');
+  assert.ok(qAdasMirror.answer.includes('₹44.25'), 'Must include ₹44.25 labour');
+  assert.ok(qAdasMirror.answer.includes('₹1,603.25'), 'Must include ₹1,603.25 combined');
+
+  // Criterion 7: X47 Recon high-range fixed battery returns ₹1,62,929.42 without STATUS/Part number/Source clutter
+  const qBattery = generateOfflineJetEngineerResponse(
+    'What is the high-range X47 Recon battery price?',
+    'X47'
+  );
+  assert.ok(qBattery.answer.includes('₹1,62,929.42'), 'Must include ₹1,62,929.42');
+  assert.equal(qBattery.answer.includes('ESTIMATE — NOT CONFIRMED PAID'), false);
+  assert.equal(qBattery.answer.includes('Part number:'), false);
+  assert.equal(qBattery.answer.includes('Source:'), false);
+  assert.ok(
+    qBattery.answer.includes(
+      'A separate labour charge for this exact part was not listed in the supplied records.'
+    )
+  );
+
+  // Criterion 8: X47 Recon fork leg assembly LH returns part price ₹14,813.32 and labour ₹977.71
+  const qForkLeg = generateOfflineJetEngineerResponse(
+    'What is the labour charge for replacing the fork leg?',
+    'F77'
+  );
+  assert.ok(qForkLeg.answer.includes('₹14,813.32'), 'Must include ₹14,813.32 part price');
+  assert.ok(qForkLeg.answer.includes('₹977.71'), 'Must include ₹977.71 labour');
+  assert.equal(qForkLeg.answer.includes('ESTIMATE — NOT CONFIRMED PAID'), false);
+
+  // Criterion 9: Unlisted part or unknown question returns the exact learning fallback message
+  const qUnlisted = generateOfflineJetEngineerResponse(
+    'How much does a rear brake caliper piston cost?',
+    'F77'
+  );
+  assert.equal(qUnlisted.answer, JET_ENGINEER_UNKNOWN_FALLBACK_MESSAGE);
+  assert.equal(/₹\d/.test(qUnlisted.answer), false, 'Must never fabricate a price');
+
+  const qWrongModel = generateOfflineJetEngineerResponse(
+    'How much does an X47 chain slider cost?',
+    'X47'
+  );
+  assert.equal(qWrongModel.answer, JET_ENGINEER_UNKNOWN_FALLBACK_MESSAGE);
+  assert.equal(qWrongModel.answer.includes('₹105.00'), false);
+
+  const qUnknownGeneral = generateOfflineJetEngineerResponse(
+    'What is the tyre pressure for flying on Mars?',
+    'F77'
+  );
+  assert.equal(qUnknownGeneral.answer, JET_ENGINEER_UNKNOWN_FALLBACK_MESSAGE);
+
+  // Criterion 10: The ₹87,535 unitemised record must never be used to answer an individual part-price query
+  assert.equal(
+    idx1.partsIndex.some(p => p.record.record_id === 'UNITEMISED-ESTIMATE-87535'),
+    false
+  );
+  assert.equal(
+    idx1.labourIndex.some(l => l.record.record_id === 'UNITEMISED-ESTIMATE-87535'),
+    false
+  );
+  assert.equal(qUnlisted.answer.includes('87,535'), false);
+});
+
 

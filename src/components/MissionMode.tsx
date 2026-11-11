@@ -1147,6 +1147,71 @@ export const MissionMode: React.FC = () => {
     setActiveDropdownField(null);
   };
 
+  const resetCreateRideForm = () => {
+    clearFormDraft(CREATE_RIDE_DRAFT_KEY);
+    setCreateForm({
+      name: '',
+      description: '',
+      rideDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+      startTime: '06:00',
+      meetingPoint: '',
+      meetingPointLat: undefined,
+      meetingPointLng: undefined,
+      meetingPointGmapsUrl: '',
+      destination: '',
+      destinationLat: undefined,
+      destinationLng: undefined,
+      destinationGmapsUrl: '',
+      teaFoodBreak: '',
+      teaFoodBreakLat: undefined,
+      teaFoodBreakLng: undefined,
+      teaFoodBreakGmapsUrl: '',
+      teaFoodBreakNotes: 'Tea / Food Break & Refreshments',
+      plannedRoute: '',
+      maxDistanceKm: '120',
+      estimatedReturnTime: '12:30',
+      maxRiders: 15,
+      specialInstructions: '',
+      pace: 'Moderate' as RideSortie['pace'],
+      stops: [],
+      chargingStops: [],
+      routeGmapsUrl: '',
+      organizerName: currentUser?.fullName || ''
+    });
+    setCreateError('');
+  };
+
+  const handleOpenCreateRideModal = () => {
+    resetCreateRideForm();
+    setShowCreateModal(true);
+  };
+
+  const resetDestForm = () => {
+    clearFormDraft(UPLOAD_DEST_DRAFT_KEY);
+    setDestForm({
+      title: '',
+      startingPoint: 'Bengaluru',
+      totalDistanceKm: '',
+      chargingOptionsOnWay: '',
+      chargerTypesUsed: ['UV Supernova', '15A 3-Pin Socket'],
+      locationMapUrl: '',
+      routeSummary: '',
+      riderTips: '',
+      bestTimeToVisit: 'Early Morning (05:30 AM – 10:00 AM)',
+      authorName: currentUser?.fullName || '',
+      authorModel: (currentUser?.motorcycleModel as any) || 'F77 MACH 2',
+      presetTheme: 'mountain_ghat',
+      customPhotoUrl: '',
+      uploadedPhotos: []
+    });
+    setUploadDestError('');
+  };
+
+  const handleOpenUploadDestModal = () => {
+    resetDestForm();
+    setShowUploadDestModal(true);
+  };
+
   // Organize New Group Ride with Map & GMaps Links
   const handleCreateRide = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1578,7 +1643,7 @@ export const MissionMode: React.FC = () => {
             {activeSubPage === 'sorties' ? (
               <button
                 data-testid="btn-open-create-ride"
-                onClick={() => setShowCreateModal(true)}
+                onClick={handleOpenCreateRideModal}
                 className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-bold text-xs tracking-wider transition-all shadow-lg shadow-cyan-500/20 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
@@ -1587,10 +1652,7 @@ export const MissionMode: React.FC = () => {
             ) : (
               <button
                 data-testid="btn-open-upload-destination"
-                onClick={() => {
-                  setUploadDestError('');
-                  setShowUploadDestModal(true);
-                }}
+                onClick={handleOpenUploadDestModal}
                 className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-xs tracking-wider transition-all shadow-lg shadow-emerald-500/20 cursor-pointer"
               >
                 <Upload className="w-4 h-4" />
@@ -1751,7 +1813,7 @@ export const MissionMode: React.FC = () => {
                     No rides match your search query. Be the first to organize a group ride!
                   </p>
                   <button
-                    onClick={() => setShowCreateModal(true)}
+                    onClick={handleOpenCreateRideModal}
                     className="px-4 py-2 rounded-lg bg-cyan-500 text-slate-950 font-display font-bold text-xs uppercase"
                   >
                     + ORGANIZE GROUP RIDE
@@ -1991,7 +2053,16 @@ export const MissionMode: React.FC = () => {
                       <button
                         type="button"
                         data-testid="btn-join-sortie"
-                        onClick={() => setShowJoinModal(true)}
+                        onClick={() => {
+                          if (currentUser) {
+                            setJoinForm(prev => ({
+                              ...prev,
+                              displayName: resolveUserDisplayIdentity(currentUser).primaryName,
+                              motorcycleModel: currentUser.motorcycleModel === 'X47' ? 'X47' : 'F77'
+                            }));
+                          }
+                          setShowJoinModal(true);
+                        }}
                         className="flex items-center justify-center space-x-2 px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-xs tracking-wider uppercase transition-all shadow-lg shadow-emerald-500/25 shrink-0 cursor-pointer"
                       >
                         <UserPlus className="w-4 h-4" />
@@ -2584,10 +2655,7 @@ export const MissionMode: React.FC = () => {
             <button
               type="button"
               data-testid="btn-upload-destination-secondary"
-              onClick={() => {
-                setUploadDestError('');
-                setShowUploadDestModal(true);
-              }}
+              onClick={handleOpenUploadDestModal}
               className="flex items-center justify-center space-x-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-xs tracking-wider uppercase shadow-lg shadow-emerald-500/20 shrink-0 cursor-pointer"
             >
               <Upload className="w-3.5 h-3.5" />

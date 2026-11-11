@@ -85,7 +85,7 @@ export const Discussions: React.FC = () => {
     return cached[0] || null;
   });
 
-  const [activeSectionView, setActiveSectionView] = useState<'all' | 'threads' | 'polls' | 'petitions'>('all');
+  const [activeSectionView, setActiveSectionView] = useState<'all' | 'polls' | 'petitions'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCreatePollModal, setShowCreatePollModal] = useState(false);
   const [showCreatePetitionModal, setShowCreatePetitionModal] = useState(false);
@@ -531,6 +531,45 @@ export const Discussions: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (currentUser?.fullName) {
+      setPollAuthorName(currentUser.fullName);
+      setPetitionAuthorName(currentUser.fullName);
+    }
+  }, [currentUser]);
+
+  const openCreatePollModal = () => {
+    playTacticalClick();
+    setPollQuestion('');
+    setPollCategory('General Discussion');
+    setPollAuthorName(currentUser?.fullName || '');
+    setPollOptions(['', '']);
+    setPollError(null);
+    setShowCreatePollModal(true);
+  };
+
+  const openCreatePetitionModal = () => {
+    playTacticalClick();
+    setPetitionTitle('');
+    setPetitionDescription('');
+    setPetitionCategory('General Discussion');
+    setPetitionTargetGoal(25);
+    setPetitionAuthorName(currentUser?.fullName || '');
+    setPetitionError(null);
+    setShowCreatePetitionModal(true);
+  };
+
+  const openCreateDiscussionModal = () => {
+    playTacticalClick();
+    clearFormDraft(DRAFT_KEY);
+    setEditingPostId(null);
+    setTitle('');
+    setCategory('General Discussion');
+    setContent('');
+    setTagsInput('');
+    setShowCreateModal(true);
+  };
+
   const openEditPost = (post: DiscussionPost) => {
     playTacticalClick();
     setEditingPostId(post.id);
@@ -840,47 +879,25 @@ export const Discussions: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 gap-2.5 w-full md:w-auto">
           <button
             type="button"
             data-testid="open-create-poll-btn"
-            onClick={() => {
-              playTacticalClick();
-              setPollError(null);
-              setShowCreatePollModal(true);
-            }}
-            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-lg bg-[#19232C] hover:bg-[#223240] text-xs font-mono font-bold text-[#38BDF8] border border-[#38BDF8]/40 transition-colors cursor-pointer"
+            onClick={openCreatePollModal}
+            className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2.5 rounded-lg bg-[#19232C] hover:bg-[#223240] text-[11px] sm:text-xs font-mono font-bold text-[#38BDF8] border border-[#38BDF8]/40 transition-colors cursor-pointer w-full text-center whitespace-nowrap"
           >
-            <BarChart3 className="w-4 h-4 text-[#38BDF8]" />
-            <span>CONDUCT POLL</span>
+            <BarChart3 className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
+            <span className="whitespace-nowrap">CONDUCT POLL</span>
           </button>
 
           <button
             type="button"
             data-testid="open-create-petition-btn"
-            onClick={() => {
-              playTacticalClick();
-              setPetitionError(null);
-              setShowCreatePetitionModal(true);
-            }}
-            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-lg bg-[#261E11] hover:bg-[#332816] text-xs font-mono font-bold text-[#F59E0B] border border-[#F59E0B]/40 transition-colors cursor-pointer"
+            onClick={openCreatePetitionModal}
+            className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-2.5 rounded-lg bg-[#261E11] hover:bg-[#332816] text-[11px] sm:text-xs font-mono font-bold text-[#F59E0B] border border-[#F59E0B]/40 transition-colors cursor-pointer w-full text-center whitespace-nowrap"
           >
-            <FileSignature className="w-4 h-4 text-[#F59E0B]" />
-            <span>START PETITION</span>
-          </button>
-
-          <button
-            type="button"
-            data-testid="open-create-discussion-btn"
-            onClick={() => {
-              playTacticalClick();
-              setEditingPostId(null);
-              setShowCreateModal(true);
-            }}
-            className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-lg bg-[#252A30] hover:bg-[#414851] text-xs font-mono font-bold text-[#F1F3F5] border border-[#414851] transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4 text-[#42B883]" />
-            <span>NEW DISCUSSION</span>
+            <FileSignature className="w-3.5 h-3.5 text-[#F59E0B] shrink-0" />
+            <span className="whitespace-nowrap">START PETITION</span>
           </button>
         </div>
       </div>
@@ -906,7 +923,7 @@ export const Discussions: React.FC = () => {
       {/* Section Mode Selector + Category Tabs & Search */}
       <div className="space-y-3">
         <div className="border-b border-[#282D34] pb-3">
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 text-xs font-mono">
+          <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap items-center text-xs font-mono">
             <button
               type="button"
               data-testid="section-tab-all"
@@ -914,7 +931,7 @@ export const Discussions: React.FC = () => {
                 playTacticalClick();
                 setActiveSectionView('all');
               }}
-              className={`relative px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`relative px-2.5 sm:px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-center ${
                 activeSectionView === 'all'
                   ? 'text-[#F1F3F5] border-transparent font-bold'
                   : 'bg-[#0D0F12] text-[#707883] border-[#282D34] hover:text-[#D4D8DE]'
@@ -927,8 +944,8 @@ export const Discussions: React.FC = () => {
                   className="pointer-events-none absolute inset-0 rounded bg-[#191D22] border border-[#42B883]/50"
                 />
               )}
-              <span className="relative z-10">
-                ALL ({filteredDiscussions.length + filteredPolls.length + filteredPetitions.length})
+              <span className="relative z-10 whitespace-nowrap text-[11px] sm:text-xs">
+                ALL ({filteredPolls.length + filteredPetitions.length})
               </span>
             </button>
             <button
@@ -938,7 +955,7 @@ export const Discussions: React.FC = () => {
                 playTacticalClick();
                 setActiveSectionView('polls');
               }}
-              className={`relative px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`relative px-2.5 sm:px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-center ${
                 activeSectionView === 'polls'
                   ? 'text-[#38BDF8] border-transparent font-bold'
                   : 'bg-[#0D0F12] text-[#707883] border-[#282D34] hover:text-[#D4D8DE]'
@@ -952,7 +969,7 @@ export const Discussions: React.FC = () => {
                 />
               )}
               <Vote className="relative z-10 w-3.5 h-3.5 shrink-0" />
-              <span className="relative z-10">POLLS ({filteredPolls.length})</span>
+              <span className="relative z-10 whitespace-nowrap text-[11px] sm:text-xs">POLLS ({filteredPolls.length})</span>
             </button>
             <button
               type="button"
@@ -961,7 +978,7 @@ export const Discussions: React.FC = () => {
                 playTacticalClick();
                 setActiveSectionView('petitions');
               }}
-              className={`relative px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`relative px-2.5 sm:px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-center ${
                 activeSectionView === 'petitions'
                   ? 'text-[#F59E0B] border-transparent font-bold'
                   : 'bg-[#0D0F12] text-[#707883] border-[#282D34] hover:text-[#D4D8DE]'
@@ -975,30 +992,7 @@ export const Discussions: React.FC = () => {
                 />
               )}
               <FileSignature className="relative z-10 w-3.5 h-3.5 shrink-0" />
-              <span className="relative z-10">PETITIONS ({filteredPetitions.length})</span>
-            </button>
-            <button
-              type="button"
-              data-testid="section-tab-threads"
-              onClick={() => {
-                playTacticalClick();
-                setActiveSectionView('threads');
-              }}
-              className={`relative px-3 py-2 rounded border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeSectionView === 'threads'
-                  ? 'text-[#42B883] border-transparent font-bold'
-                  : 'bg-[#0D0F12] text-[#707883] border-[#282D34] hover:text-[#D4D8DE]'
-              }`}
-            >
-              {activeSectionView === 'threads' && (
-                <motion.span
-                  layoutId="discussion-section-view-pill"
-                  transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                  className="pointer-events-none absolute inset-0 rounded bg-[#191D22] border border-[#42B883]/50"
-                />
-              )}
-              <MessageCircle className="relative z-10 w-3.5 h-3.5 shrink-0" />
-              <span className="relative z-10">THREADS ({filteredDiscussions.length})</span>
+              <span className="relative z-10 whitespace-nowrap text-[11px] sm:text-xs">PETITIONS ({filteredPetitions.length})</span>
             </button>
           </div>
         </div>
@@ -1043,7 +1037,7 @@ export const Discussions: React.FC = () => {
 
       <AvionicsToggleTransition
         activeKey={activeSectionView}
-        orderedKeys={['all', 'polls', 'petitions', 'threads']}
+        orderedKeys={['all', 'polls', 'petitions']}
         accentColor={
           activeSectionView === 'polls'
             ? 'sky'
@@ -1060,12 +1054,12 @@ export const Discussions: React.FC = () => {
           data-testid="discussion-polls-section"
           className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5 space-y-4"
         >
-          <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#282D34]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-[#282D34]">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded bg-[#19232C] border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8]">
+              <div className="w-7 h-7 rounded bg-[#19232C] border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8] shrink-0">
                 <BarChart3 className="w-3.5 h-3.5" />
               </div>
-              <h3 className="text-xs font-mono font-bold text-[#F1F3F5] uppercase tracking-wider flex items-center gap-2">
+              <h3 className="text-xs font-mono font-bold text-[#F1F3F5] uppercase tracking-wider flex items-center gap-2 flex-wrap">
                 <span>COMMUNITY POLLS</span>
                 <span className="text-[10px] px-2 py-0.5 rounded bg-[#19232C] text-[#38BDF8] border border-[#38BDF8]/30">
                   {filteredPolls.length} ACTIVE
@@ -1076,12 +1070,8 @@ export const Discussions: React.FC = () => {
             <button
               type="button"
               data-testid="section-conduct-poll-btn"
-              onClick={() => {
-                playTacticalClick();
-                setPollError(null);
-                setShowCreatePollModal(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#19232C] hover:bg-[#223240] text-[#38BDF8] border border-[#38BDF8]/40 text-xs font-mono font-bold transition-colors shrink-0 whitespace-nowrap cursor-pointer"
+              onClick={openCreatePollModal}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-[#19232C] hover:bg-[#223240] text-[#38BDF8] border border-[#38BDF8]/40 text-xs font-mono font-bold transition-colors shrink-0 whitespace-nowrap cursor-pointer self-start sm:self-auto"
             >
               <Plus className="w-3.5 h-3.5 shrink-0" />
               <span>NEW POLL</span>
@@ -1102,19 +1092,19 @@ export const Discussions: React.FC = () => {
                     className="bg-[#13161A] border border-[#282D34] rounded-lg p-4 flex flex-col justify-between space-y-4"
                   >
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between text-[10px] font-mono">
-                        <span className="px-2 py-0.5 rounded bg-[#19232C] text-[#38BDF8] border border-[#38BDF8]/30 font-semibold">
+                      <div className="flex items-center justify-between gap-2 text-[10px] font-mono flex-wrap sm:flex-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#19232C] text-[#38BDF8] border border-[#38BDF8]/30 font-semibold whitespace-nowrap shrink-0">
                           {poll.category}
                         </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[#707883]" data-testid={`poll-total-votes-${poll.id}`}>
+                        <div className="flex items-center gap-2 ml-auto shrink-0">
+                          <span className="text-[#707883] whitespace-nowrap" data-testid={`poll-total-votes-${poll.id}`}>
                             {stats.totalVotes} {stats.totalVotes === 1 ? 'VOTE' : 'VOTES'}
                           </span>
                           {canDeletePoll && (
                             <button
                               type="button"
                               onClick={() => handleDeletePoll(poll)}
-                              className="p-1 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#707883] hover:text-[#E04F5F]"
+                              className="p-1 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#707883] hover:text-[#E04F5F] transition-colors"
                               title="Delete Poll"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -1202,12 +1192,12 @@ export const Discussions: React.FC = () => {
           data-testid="discussion-petitions-section"
           className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5 space-y-4"
         >
-          <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#282D34]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-[#282D34]">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded bg-[#261E11] border border-[#F59E0B]/40 flex items-center justify-center text-[#F59E0B]">
+              <div className="w-7 h-7 rounded bg-[#261E11] border border-[#F59E0B]/40 flex items-center justify-center text-[#F59E0B] shrink-0">
                 <FileSignature className="w-3.5 h-3.5" />
               </div>
-              <h3 className="text-xs font-mono font-bold text-[#F1F3F5] uppercase tracking-wider flex items-center gap-2">
+              <h3 className="text-xs font-mono font-bold text-[#F1F3F5] uppercase tracking-wider flex items-center gap-2 flex-wrap">
                 <span>COMMUNITY PETITIONS</span>
                 <span className="text-[10px] px-2 py-0.5 rounded bg-[#261E11] text-[#F59E0B] border border-[#F59E0B]/30">
                   {filteredPetitions.length} ACTIVE
@@ -1218,12 +1208,8 @@ export const Discussions: React.FC = () => {
             <button
               type="button"
               data-testid="section-conduct-petition-btn"
-              onClick={() => {
-                playTacticalClick();
-                setPetitionError(null);
-                setShowCreatePetitionModal(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#261E11] hover:bg-[#332816] text-[#F59E0B] border border-[#F59E0B]/40 text-xs font-mono font-bold transition-colors shrink-0 whitespace-nowrap cursor-pointer"
+              onClick={openCreatePetitionModal}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-[#261E11] hover:bg-[#332816] text-[#F59E0B] border border-[#F59E0B]/40 text-xs font-mono font-bold transition-colors shrink-0 whitespace-nowrap cursor-pointer self-start sm:self-auto"
             >
               <Plus className="w-3.5 h-3.5 shrink-0" />
               <span>NEW PETITION</span>
@@ -1246,13 +1232,13 @@ export const Discussions: React.FC = () => {
                     className="bg-[#13161A] border border-[#282D34] rounded-lg p-4 flex flex-col justify-between space-y-4"
                   >
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between text-[10px] font-mono">
-                        <span className="px-2 py-0.5 rounded bg-[#261E11] text-[#F59E0B] border border-[#F59E0B]/30 font-semibold">
+                      <div className="flex items-center justify-between gap-2 text-[10px] font-mono flex-wrap sm:flex-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#261E11] text-[#F59E0B] border border-[#F59E0B]/30 font-semibold whitespace-nowrap shrink-0">
                           {petition.category}
                         </span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 ml-auto shrink-0">
                           <span
-                            className="text-[#FDE68A] font-bold"
+                            className="text-[#FDE68A] font-bold whitespace-nowrap"
                             data-testid={`petition-supporter-count-${petition.id}`}
                           >
                             {progress.supporterCount} / {progress.targetGoal} SUPPORTERS
@@ -1261,7 +1247,7 @@ export const Discussions: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleDeletePetition(petition)}
-                              className="p-1 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#707883] hover:text-[#E04F5F]"
+                              className="p-1 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#707883] hover:text-[#E04F5F] transition-colors"
                               title="Delete Petition"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -1339,271 +1325,6 @@ export const Discussions: React.FC = () => {
             </div>
           )}
         </section>
-      )}
-
-      {/* DISCUSSION THREADS SECTION */}
-      {(activeSectionView === 'all' || activeSectionView === 'threads') && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-5 space-y-3">
-            <div className="text-[11px] font-mono text-[#707883] flex items-center justify-between pb-1 border-b border-[#282D34]">
-              <span>DISCUSSION FEED ({filteredDiscussions.length})</span>
-              <span>SORT: RECENT</span>
-            </div>
-
-            {filteredDiscussions.map(post => {
-              const isSelected = selectedPost?.id === post.id;
-              const hasAnswers = post.comments && post.comments.length > 0;
-              return (
-                <div
-                  key={post.id}
-                  onClick={() => {
-                    playTacticalClick();
-                    setSelectedPost(post);
-                  }}
-                  className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                    isSelected
-                      ? 'bg-[#191D22] border-[#414851] shadow-lg ring-1 ring-[#414851]/50'
-                      : 'bg-[#0D0F12] border-[#282D34] hover:border-[#414851]/60'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-[10px] font-mono mb-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="px-1.5 py-0.5 rounded bg-[#13161A] text-[#729BCB] border border-[#282D34] font-semibold">
-                        {post.category}
-                      </span>
-                      {(post as any).pendingSync && (
-                        <span className="px-1.5 py-0.5 rounded bg-[#E8AA45]/20 text-[#E8AA45] border border-[#E8AA45]/40 font-bold">
-                          PENDING SYNC
-                        </span>
-                      )}
-                      {post.pinned && (
-                        <span className="text-[#42B883] flex items-center gap-0.5 font-bold">
-                          <Pin className="w-3 h-3" /> PINNED
-                        </span>
-                      )}
-                    </div>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold flex items-center gap-1 ${
-                        hasAnswers
-                          ? 'bg-[#42B883]/15 text-[#42B883] border border-[#42B883]/30'
-                          : 'bg-[#252A30] text-[#A0A7B0] border border-[#414851]/40'
-                      }`}
-                    >
-                      <MessageCircle className="w-3 h-3" />
-                      {post.comments.length} {post.comments.length === 1 ? 'REPLY' : 'REPLIES'}
-                    </span>
-                  </div>
-
-                  <h4 className="text-sm font-semibold text-[#F1F3F5] line-clamp-2 leading-snug">
-                    {post.title}
-                  </h4>
-
-                  <p className="text-xs text-[#A0A7B0] line-clamp-2 mt-1.5 font-sans leading-relaxed">
-                    {post.content}
-                  </p>
-
-                  <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-[#282D34] text-[10px] font-mono text-[#707883]">
-                    <span>Posted by {post.authorName} ({post.authorModel})</span>
-                    <span>{new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
-                  </div>
-                </div>
-              );
-            })}
-
-            {filteredDiscussions.length === 0 && (
-              <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-8 text-center text-xs font-mono text-[#707883]">
-                No discussions found matching criteria.
-              </div>
-            )}
-          </div>
-
-          {/* Selected Discussion Detail */}
-          <div className="lg:col-span-7">
-            {selectedPost ? (
-              <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-6 space-y-6 text-xs font-mono">
-                <div className="space-y-3 pb-4 border-b border-[#282D34]">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-[#729BCB]/20 text-[#729BCB] border border-[#729BCB]/40 font-bold tracking-wider">
-                        DISCUSSION
-                      </span>
-                      <span className="text-[#AEB5BE] font-semibold">{selectedPost.category}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {canUserModifyRecord(currentUser, selectedPost) && (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openEditPost(selectedPost)}
-                            className="p-1 rounded bg-[#191D22] hover:bg-[#252A30] text-[#AEB5BE] hover:text-[#F1F3F5] border border-[#282D34]"
-                            title="Edit Discussion"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePost(selectedPost)}
-                            className="p-1 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#AEB5BE] hover:text-[#E04F5F] border border-[#282D34]"
-                            title="Delete Discussion"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                      <span className="text-[#707883]">
-                        {new Date(selectedPost.createdAt).toLocaleDateString([], {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </span>
-                    </div>
-                  </div>
-
-                  <h2 className="text-lg font-bold text-[#FFFFFF] tracking-tight leading-snug">
-                    {selectedPost.title}
-                  </h2>
-
-                  <div className="text-[11px] text-[#A0A7B0] flex items-center gap-2">
-                    <span className="text-[#707883]">Posted by</span>
-                    <span className="text-[#F1F3F5] font-semibold">{selectedPost.authorName}</span>
-                    <span className="text-[#707883]">•</span>
-                    <span className="text-[#AEB5BE]">{selectedPost.authorModel}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-[10px] text-[#707883] uppercase tracking-wider font-bold flex items-center gap-1.5">
-                    <HelpCircle className="w-3.5 h-3.5 text-[#729BCB]" />
-                    <span>DISCUSSION DETAILS</span>
-                  </div>
-                  <div className="text-[#D4D8DE] bg-[#13161A] p-4 rounded-lg border border-[#282D34] font-sans text-sm leading-relaxed whitespace-pre-wrap">
-                    {selectedPost.content}
-                  </div>
-                </div>
-
-                {selectedPost.tags?.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedPost.tags.map((t, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2 py-0.5 rounded bg-[#13161A] text-[10px] text-[#AEB5BE] border border-[#282D34]"
-                      >
-                        #{t}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-[#282D34]">
-                  <button
-                    onClick={() => handleReaction('helpful')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#13161A] border border-[#282D34] hover:border-[#414851] text-xs text-[#D4D8DE] transition-colors"
-                  >
-                    <ThumbsUp className="w-3.5 h-3.5 text-[#42B883]" />
-                    <span>HELPFUL ({selectedPost.reactions.helpful.length})</span>
-                  </button>
-                  <button
-                    onClick={() => handleReaction('salute')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#13161A] border border-[#282D34] hover:border-[#414851] text-xs text-[#D4D8DE] transition-colors"
-                  >
-                    <Shield className="w-3.5 h-3.5 text-[#729BCB]" />
-                    <span>SALUTE ({selectedPost.reactions.salute.length})</span>
-                  </button>
-                  <button
-                    onClick={() => handleReaction('confirmed')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#13161A] border border-[#282D34] hover:border-[#414851] text-xs text-[#D4D8DE] transition-colors"
-                  >
-                    <Check className="w-3.5 h-3.5 text-[#E8AA45]" />
-                    <span>CONFIRMED ({selectedPost.reactions.confirmed.length})</span>
-                  </button>
-                </div>
-
-                <div className="space-y-4 pt-4 border-t border-[#282D34]">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-bold text-[#F1F3F5] uppercase tracking-wider flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-[#42B883]" />
-                      <span>REPLIES ({selectedPost.comments.length})</span>
-                    </div>
-                    <span className="text-[10px] text-[#707883]">SQUADRON RESPONSES</span>
-                  </div>
-
-                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                    {selectedPost.comments.map((c, idx) => (
-                      <div key={c.id} className="p-4 rounded-lg bg-[#13161A] border border-[#282D34] space-y-2">
-                        <div className="flex items-center justify-between text-[11px] pb-1.5 border-b border-[#282D34]/70">
-                          <div className="flex items-center gap-2">
-                            <span className="px-1.5 py-0.2 rounded bg-[#252A30] text-[#42B883] text-[9px] font-bold border border-[#42B883]/30">
-                              REPLY #{idx + 1}
-                            </span>
-                            <span className="text-[#F1F3F5] font-semibold">{c.authorName}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[#707883]">
-                              {new Date(c.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}{' '}
-                              {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                            {canUserModifyRecord(currentUser, c) && (
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteComment(c.id)}
-                                className="p-1 rounded bg-[#191D22] hover:bg-[#E04F5F]/20 text-[#707883] hover:text-[#E04F5F]"
-                                title="Delete Reply"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-xs text-[#D4D8DE] font-sans leading-relaxed whitespace-pre-wrap pl-1">
-                          {c.content}
-                        </div>
-                      </div>
-                    ))}
-
-                    {selectedPost.comments.length === 0 && (
-                      <div className="p-5 rounded bg-[#13161A]/60 border border-[#282D34] text-center text-xs text-[#707883] font-sans">
-                        No replies submitted yet. Be the first squadron pilot to share your thoughts.
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-[#13161A] border border-[#414851]/60 space-y-2.5">
-                    <div className="text-[11px] font-mono font-bold text-[#F1F3F5] flex items-center gap-1.5">
-                      <CornerDownRight className="w-3.5 h-3.5 text-[#42B883]" />
-                      <span>ADD YOUR REPLY</span>
-                    </div>
-                    <form onSubmit={handleAddComment} className="space-y-2.5">
-                      <textarea
-                        rows={3}
-                        value={commentInput}
-                        onChange={e => setCommentInput(e.target.value)}
-                        placeholder="Type your reply, telemetry verification, or recommendation..."
-                        className="w-full bg-[#08090B] border border-[#282D34] focus:border-[#414851] rounded p-3 text-[#F1F3F5] text-xs font-sans focus:outline-none leading-relaxed"
-                      />
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-[#707883] font-mono">
-                          Ground advice on Ultraviolette factory specs or verified ride experience.
-                        </span>
-                        <button
-                          type="submit"
-                          disabled={!commentInput.trim()}
-                          className="px-4 py-2 rounded bg-[#252A30] hover:bg-[#414851] disabled:opacity-40 text-[#F1F3F5] font-bold border border-[#414851] text-xs font-mono transition-colors"
-                        >
-                          SUBMIT REPLY
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-12 text-center text-xs font-mono text-[#707883]">
-                SELECT A DISCUSSION THREAD TO VIEW DETAILS AND REPLIES
-              </div>
-            )}
-          </div>
-        </div>
       )}
       </AvionicsToggleTransition>
 

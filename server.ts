@@ -10,6 +10,9 @@ import {
   validateChargingPlugSubmission,
   isPubliclyPublishedCharger,
   canModifyChargerRecord,
+  isValidChargerSource,
+  buildStationCategories,
+  type ChargerSource,
   CHARGER_PLUG_TYPE_SPECS,
   expandIndianPlaceQuery,
   searchAndRankPlaces,
@@ -36,6 +39,15 @@ import {
   sanitizeContributionConfig,
   redactContributionForPublicWall,
   validateContributionSubmission,
+  resolveActiveUpiNumberToDestination,
+  generateUpiTransactionRef,
+  isConfirmedContributionRecord,
+  validateUpiUtrNumber,
+  ACTIVE_RECIPIENT_UPI_NUMBER,
+  ACTIVE_RECIPIENT_COUNTRY_CODE,
+  type PaymentTransactionRecord,
+  type PaymentTransactionStatus,
+  type UpiAppTarget,
   validatePollCreation,
   castPollVote,
   validatePetitionCreation,
@@ -45,6 +57,7 @@ import {
   validateAndPlaceAuctionBid,
   selectAuctionWinner,
   createMarketplacePresetIllustration,
+  repairBase64JpegIfTruncated,
   resolveChargerSubmitterInfo,
   resolveCommunityChargerTerms,
   calculateChargerReservationCost,
@@ -2135,6 +2148,7 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
     parsed.deletedIds = [];
     mutated = true;
   }
+  parsed.deletedIds = parsed.deletedIds.filter((id: any) => typeof id === 'string' && !id.startsWith('master_cs_'));
   const deletedSet = new Set<string>(parsed.deletedIds);
   if (!isTestMode) {
     for (const demoId of PURGED_DEMO_SEED_IDS) {
@@ -2354,7 +2368,19 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
     }
   }
 
-  // Ensure chargingStations have chargerType, approvalStatus, published, and India-wide seed stations
+  // Ensure chargingStations have chargerType, approvalStatus, published, and India-wide master stations
+  if (!Array.isArray(parsed.chargingStations) || parsed.chargingStations.length === 0) {
+    try {
+      const masterPath = path.join(__dirname, 'public', 'data', 'charging_stations_master.json');
+      if (fs.existsSync(masterPath)) {
+        parsed.chargingStations = JSON.parse(fs.readFileSync(masterPath, 'utf-8'));
+        mutated = true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   if (Array.isArray(parsed.chargingStations)) {
     const seedStations = initial.chargingStations;
     const seedById = new Map(seedStations.map((s: any) => [s.id, s]));
@@ -2362,7 +2388,11 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
     parsed.chargingStations = parsed.chargingStations.map((st: any) => {
       const seedMatch = seedById.get(st.id);
       const updated = { ...st };
-      if (deletedSet.has(updated.id) && updated.approvalStatus !== 'deleted') {
+      if (
+        !String(updated.id).startsWith('master_cs_') &&
+        deletedSet.has(updated.id) &&
+        updated.approvalStatus !== 'deleted'
+      ) {
         updated.approvalStatus = 'deleted';
         updated.published = false;
         updated.verifiedByAdmin = false;
@@ -2459,22 +2489,24 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
       return updated;
     });
 
-    const existingIds = new Set(parsed.chargingStations.map((s: any) => s.id));
-    for (const seedSt of seedStations) {
-      if (!existingIds.has(seedSt.id) && !deletedSet.has(seedSt.id)) {
-        parsed.chargingStations.push(seedSt);
-        existingIds.add(seedSt.id);
-        mutated = true;
+    if (!parsed.hasImportedFilteredChargingStations_v1) {
+      const existingIds = new Set(parsed.chargingStations.map((s: any) => s.id));
+      for (const seedSt of seedStations) {
+        if (!existingIds.has(seedSt.id) && !deletedSet.has(seedSt.id)) {
+          parsed.chargingStations.push(seedSt);
+          existingIds.add(seedSt.id);
+          mutated = true;
+        }
       }
-    }
 
-    // Merge all valid coordinate stations from public/data/charging_stations_minimal.json
-    const minimalDb = getServerMinimalChargingDatabase();
-    for (const minSt of minimalDb.validStations) {
-      if (!existingIds.has(minSt.id) && !deletedSet.has(minSt.id)) {
-        parsed.chargingStations.push(minSt);
-        existingIds.add(minSt.id);
-        mutated = true;
+      // Merge all valid coordinate stations from public/data/charging_stations_minimal.json
+      const minimalDb = getServerMinimalChargingDatabase();
+      for (const minSt of minimalDb.validStations) {
+        if (!existingIds.has(minSt.id) && !deletedSet.has(minSt.id)) {
+          parsed.chargingStations.push(minSt);
+          existingIds.add(minSt.id);
+          mutated = true;
+        }
       }
     }
   }
@@ -2578,22 +2610,33 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
   }
 
   if (Array.isArray(parsed.modifications)) {
-    const MAX_INLINE_IMAGE_CHARS = 180000;
     const fallbackIllustration = createMarketplacePresetIllustration('carbon_wheels');
     parsed.modifications = parsed.modifications.map((mod: any) => {
       const updated = { ...mod };
-      if (typeof updated.imageUrl === 'string' && updated.imageUrl.length > MAX_INLINE_IMAGE_CHARS) {
-        updated.imageUrl = fallbackIllustration;
-        mutated = true;
+      if (typeof updated.imageUrl === 'string' && updated.imageUrl) {
+        const repaired = repairBase64JpegIfTruncated(updated.imageUrl);
+        if (repaired !== updated.imageUrl) {
+          updated.imageUrl = repaired;
+          mutated = true;
+        }
       }
       if (Array.isArray(updated.imageUrls)) {
-        const cleanedUrls = updated.imageUrls.map((u: any) => {
-          if (typeof u === 'string' && u.length > MAX_INLINE_IMAGE_CHARS) {
-            mutated = true;
-            return fallbackIllustration;
-          }
-          return u;
-        });
+        let cleanedUrls = updated.imageUrls
+          .filter((u: any) => typeof u === 'string' && u.trim().length > 0)
+          .map((u: string) => {
+            const repaired = repairBase64JpegIfTruncated(u);
+            if (repaired !== u) {
+              mutated = true;
+              return repaired;
+            }
+            return u;
+          });
+        // If there is a real user-uploaded photo alongside legacy fallback carbon_wheels SVGs, remove the duplicate fallback SVGs
+        const hasRealPhoto = cleanedUrls.some((u: string) => u !== fallbackIllustration);
+        if (hasRealPhoto && cleanedUrls.includes(fallbackIllustration)) {
+          cleanedUrls = cleanedUrls.filter((u: string) => u !== fallbackIllustration);
+          mutated = true;
+        }
         updated.imageUrls = cleanedUrls;
       }
       return updated;
@@ -2691,12 +2734,45 @@ function ensureDbCollections(parsed: any): { data: any; mutated: boolean } {
       }
       if (
         (st.chargerSource === 'Supernova' ||
+          st.chargerSource === 'UV Space Station' ||
           st.chargerSource === '3rd Party Station' ||
           st.isSupernova) &&
         st.submittedByPhone
       ) {
         delete st.submittedByPhone;
         mutated = true;
+      }
+      if (
+        st.chargerSource === 'Supernova' ||
+        st.chargerSource === 'UV Space Station' ||
+        st.chargerSource === '3rd Party Station' ||
+        st.isSupernova
+      ) {
+        if (st.isCommunityReported) {
+          st.isCommunityReported = false;
+          mutated = true;
+        }
+        if (st.requiresReservation) {
+          st.requiresReservation = false;
+          mutated = true;
+        }
+        if (
+          typeof st.pricing === 'string' &&
+          /community charger|community host|prior reservation/i.test(st.pricing)
+        ) {
+          st.pricing = 'Free / Commercial Standard';
+          mutated = true;
+        }
+      }
+      if (st.chargerSource === 'UV Space Station' || st.chargerType) {
+        const syncedCats = buildStationCategories(st.chargerType, st.chargerSource, st.categories);
+        if (
+          st.chargerSource === 'UV Space Station' &&
+          (!Array.isArray(st.categories) || !st.categories.includes('UV Space Stations'))
+        ) {
+          st.categories = syncedCats;
+          mutated = true;
+        }
       }
     }
   }
@@ -2948,6 +3024,22 @@ function recordServerQuotaExhausted(reason: string): void {
   }
 }
 
+process.on('unhandledRejection', (reason: any) => {
+  const errMsg = String(reason?.message || reason || '');
+  if (
+    reason?.code === 8 ||
+    reason?.code === 'resource-exhausted' ||
+    errMsg.includes('RESOURCE_EXHAUSTED') ||
+    errMsg.includes('Quota limit exceeded') ||
+    errMsg.includes('Free daily write units')
+  ) {
+    recordServerQuotaExhausted(errMsg);
+    console.warn('[GHOST VAULT] Handled Firestore quota exhaustion gracefully. Operating in 100% resilient local-first mode.');
+    return;
+  }
+  console.warn('[Server] Unhandled rejection:', errMsg);
+});
+
 let serverFirestoreInstance: any = null;
 let cachedFirestoreSdk: typeof import('firebase/firestore') | null = null;
 let lastVaultPullAtMs = 0;
@@ -3007,6 +3099,9 @@ async function getServerFirestoreDb(): Promise<{
       import('firebase/firestore')
     ]);
     cachedFirestoreSdk = fbFsMod;
+    try {
+      fbFsMod.setLogLevel('silent');
+    } catch {}
     const existing = fbAppMod.getApps().find(a => a.name === 'ghost-server-vault');
     const fbApp = existing || fbAppMod.initializeApp(firebaseServerConfig, 'ghost-server-vault');
     serverFirestoreInstance = fbFsMod.getFirestore(fbApp, firebaseServerConfig.firestoreDatabaseId);
@@ -3024,13 +3119,20 @@ function sanitizeValueForVault(val: any, depth = 0, maxStringLen = 3500): any {
   if (val === null || typeof val === 'boolean') return val;
   if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
   if (typeof val === 'string') {
+    if (val.startsWith('data:image/')) {
+      const repaired = repairBase64JpegIfTruncated(val);
+      if (repaired.length <= 240000) {
+        return repaired;
+      }
+      return '';
+    }
     return val.length > maxStringLen ? val.slice(0, maxStringLen) : val;
   }
   if (Array.isArray(val)) {
     return val
       .slice(0, 60)
       .map(v => sanitizeValueForVault(v, depth + 1, maxStringLen))
-      .filter(v => v !== undefined);
+      .filter(v => v !== undefined && v !== '');
   }
   if (typeof val === 'object') {
     const out: Record<string, any> = {};
@@ -3110,6 +3212,39 @@ function mergeVaultRecordPair(localItem: any, remoteItem: any, deletedSet: Set<s
   let remoteOutdated = false;
 
   const base = rTime > lTime ? { ...localItem, ...remoteItem } : { ...remoteItem, ...localItem };
+
+  if (typeof base.imageUrl === 'string') {
+    const repaired = repairBase64JpegIfTruncated(base.imageUrl);
+    if (repaired !== base.imageUrl) {
+      base.imageUrl = repaired;
+      localChanged = true;
+      remoteOutdated = true;
+    }
+  }
+  if (Array.isArray(base.imageUrls)) {
+    base.imageUrls = base.imageUrls.map((u: any) => {
+      if (typeof u === 'string') {
+        const repaired = repairBase64JpegIfTruncated(u);
+        if (repaired !== u) {
+          localChanged = true;
+          remoteOutdated = true;
+          return repaired;
+        }
+      }
+      return u;
+    });
+  }
+
+  if (
+    typeof localItem.imageUrl === 'string' &&
+    typeof base.imageUrl === 'string' &&
+    localItem.imageUrl.length > base.imageUrl.length &&
+    localItem.imageUrl.startsWith('data:image/jpeg;base64,')
+  ) {
+    base.imageUrl = localItem.imageUrl;
+    remoteOutdated = true;
+  }
+
   if (rTime > lTime && JSON.stringify(base) !== JSON.stringify(localItem)) {
     localChanged = true;
   } else if (lTime > rTime && JSON.stringify(base) !== JSON.stringify(remoteItem)) {
@@ -3183,7 +3318,10 @@ function mergeCollectionListsForVault(
   const filteredLocal: any[] = [];
   for (const item of localList) {
     if (!item || typeof item !== 'object' || !item.id) continue;
-    if (deletedSet.has(item.id) || (colKey === 'chargingStations' && item.approvalStatus === 'deleted')) {
+    if (
+      !String(item.id).startsWith('master_cs_') &&
+      (deletedSet.has(item.id) || (colKey === 'chargingStations' && item.approvalStatus === 'deleted'))
+    ) {
       localMutated = true;
       continue;
     }
@@ -3200,7 +3338,10 @@ function mergeCollectionListsForVault(
   const seenRemoteIds = new Set<string>();
   for (const rItem of remoteList) {
     if (!rItem || typeof rItem !== 'object' || !rItem.id) continue;
-    if (deletedSet.has(rItem.id) || (colKey === 'chargingStations' && rItem.approvalStatus === 'deleted')) {
+    if (
+      !String(rItem.id).startsWith('master_cs_') &&
+      (deletedSet.has(rItem.id) || (colKey === 'chargingStations' && rItem.approvalStatus === 'deleted'))
+    ) {
       remoteNeedsPush = true;
       continue;
     }
@@ -3270,8 +3411,18 @@ function serializeVaultCollectionsJson(
         Array.isArray(remoteCollections[colKey]) ? remoteCollections[colKey] : [],
         deletedSet
       ).list;
-      out[colKey] = mergedList
-        .slice(0, maxItemsPerCol)
+      const orderedList =
+        colKey === 'chargingStations'
+          ? [...mergedList].sort((a, b) => {
+              const aIsMaster = Boolean(a?.isMasterStation || String(a?.id || '').startsWith('master_cs_'));
+              const bIsMaster = Boolean(b?.isMasterStation || String(b?.id || '').startsWith('master_cs_'));
+              if (aIsMaster !== bIsMaster) return aIsMaster ? 1 : -1;
+              return 0;
+            })
+          : mergedList;
+      const effectiveCap = colKey === 'chargingStations' ? Math.max(maxItemsPerCol, 400) : maxItemsPerCol;
+      out[colKey] = orderedList
+        .slice(0, effectiveCap)
         .map(item => sanitizeValueForVault(item, 0, maxStrLen));
     }
     out.longRidePlanningText =
@@ -3307,6 +3458,9 @@ function serializeVaultCollectionsJson(
   return json.length >= 2 && json.length <= 840000 ? json : '{}';
 }
 
+let cachedRemoteVaultData: { exists: boolean; data: any; fetchedAtMs: number } | null = null;
+let lastPushedVaultSignature = '';
+
 async function pushVaultToFirestore(db: any): Promise<boolean> {
   if (!isLiveVaultSyncEnabled() || isApplyingVaultPull) return false;
   pendingVaultPushDb = db;
@@ -3327,8 +3481,23 @@ async function pushVaultToFirestore(db: any): Promise<boolean> {
       pendingVaultPushDb = null;
 
       const ref = fsSdk.doc(fsDb, 'server_vault', SERVER_VAULT_DOC_ID);
-      const existingSnap = await fsSdk.getDoc(ref);
-      const existingData = existingSnap.exists() ? existingSnap.data() : null;
+      let existingExists = false;
+      let existingData: any = null;
+
+      // Reuse recently fetched vault snapshot (within 15s) to avoid redundant read-before-write getDoc()
+      if (cachedRemoteVaultData && Date.now() - cachedRemoteVaultData.fetchedAtMs < 15000) {
+        existingExists = cachedRemoteVaultData.exists;
+        existingData = cachedRemoteVaultData.data;
+      } else {
+        const existingSnap = await fsSdk.getDoc(ref);
+        existingExists = existingSnap.exists();
+        existingData = existingExists ? existingSnap.data() : null;
+        cachedRemoteVaultData = {
+          exists: existingExists,
+          data: existingData,
+          fetchedAtMs: Date.now()
+        };
+      }
 
       const localDeleted: string[] = Array.isArray(targetDb.deletedIds)
         ? targetDb.deletedIds.filter((x: any): x is string => typeof x === 'string' && x.length > 0 && x.length <= 128)
@@ -3371,9 +3540,22 @@ async function pushVaultToFirestore(db: any): Promise<boolean> {
       const collectionsJson = serializeVaultCollectionsJson(targetDb, remoteCollections, deletedSet);
 
       const revision = Math.max(1, Math.min(1000000000, typeof targetDb.revision === 'number' ? targetDb.revision : 1));
+      const candidateSignature = `${collectionsJson}|${JSON.stringify(cleanUsers)}|${JSON.stringify(cleanDeletedIds)}`;
 
-      if (!existingSnap.exists()) {
-        await fsSdk.setDoc(ref, {
+      // Checksum / equality comparison to avoid redundant Firestore write operations
+      if (
+        existingExists &&
+        (candidateSignature === lastPushedVaultSignature ||
+          (existingData?.collectionsJson === collectionsJson &&
+            JSON.stringify(existingData?.users || []) === JSON.stringify(cleanUsers) &&
+            JSON.stringify(existingData?.deletedIds || []) === JSON.stringify(cleanDeletedIds)))
+      ) {
+        lastPushedVaultSignature = candidateSignature;
+        continue;
+      }
+
+      if (!existingExists) {
+        const writtenPayload = {
           vaultId: SERVER_VAULT_DOC_ID,
           serverKey: SERVER_VAULT_SECRET_KEY,
           revision,
@@ -3382,20 +3564,33 @@ async function pushVaultToFirestore(db: any): Promise<boolean> {
           collectionsJson,
           createdAt: fsSdk.serverTimestamp(),
           updatedAt: fsSdk.serverTimestamp()
-        });
+        };
+        await fsSdk.setDoc(ref, writtenPayload);
+        cachedRemoteVaultData = {
+          exists: true,
+          data: { ...writtenPayload },
+          fetchedAtMs: Date.now()
+        };
       } else {
         const nextRevision = Math.max(
           revision,
           (typeof existingData?.revision === 'number' ? existingData.revision : 1) + 1
         );
-        await fsSdk.updateDoc(ref, {
+        const updatedFields = {
           revision: Math.min(1000000000, nextRevision),
           deletedIds: cleanDeletedIds,
           users: cleanUsers,
           collectionsJson,
           updatedAt: fsSdk.serverTimestamp()
-        });
+        };
+        await fsSdk.updateDoc(ref, updatedFields);
+        cachedRemoteVaultData = {
+          exists: true,
+          data: { ...existingData, ...updatedFields },
+          fetchedAtMs: Date.now()
+        };
       }
+      lastPushedVaultSignature = candidateSignature;
     }
     lastVaultPushAtMs = Date.now();
     return true;
@@ -3424,7 +3619,7 @@ async function pushVaultToFirestore(db: any): Promise<boolean> {
 async function pullVaultFromFirestore(force = false): Promise<void> {
   if (!isLiveVaultSyncEnabled()) return;
   const now = Date.now();
-  if (!force && now - lastVaultPullAtMs < 10000) return;
+  if (!force && now - lastVaultPullAtMs < 60000) return;
   if (vaultPullPromise) return vaultPullPromise;
 
   vaultPullPromise = (async () => {
@@ -3443,19 +3638,25 @@ async function pullVaultFromFirestore(force = false): Promise<void> {
       hasCompletedInitialVaultPull = true;
       const db = readDb();
       if (!snap.exists()) {
+        cachedRemoteVaultData = { exists: false, data: null, fetchedAtMs: Date.now() };
         await pushVaultToFirestore(db);
         return;
       }
 
       const remote = snap.data();
       if (!remote) return;
+      cachedRemoteVaultData = { exists: true, data: remote, fetchedAtMs: Date.now() };
 
       const localDeletedIds: string[] = Array.isArray(db.deletedIds) ? db.deletedIds : [];
       const remoteDeletedIds: string[] = Array.isArray(remote.deletedIds)
         ? remote.deletedIds.filter((x: any): x is string => typeof x === 'string')
         : [];
 
-      const mergedDeletedSet = new Set<string>([...localDeletedIds, ...remoteDeletedIds]);
+      const mergedDeletedSet = new Set<string>(
+        [...localDeletedIds, ...remoteDeletedIds].filter(
+          (x: any) => typeof x === 'string' && !x.startsWith('master_cs_')
+        )
+      );
       mergedDeletedSet.delete(OWNER_ACCOUNT_ID);
 
       let localMutated = false;
@@ -3725,7 +3926,7 @@ function runStartupBootstrap() {
         if (isLiveVaultSyncEnabled()) {
           void pullVaultFromFirestore(false);
         }
-      }, 20000);
+      }, 900000); // 15-minute conservative background refresh interval
     } else if (firestoreQuotaExhaustedUntilMs > Date.now()) {
       console.log(
         `[GHOST VAULT] Firestore free-tier daily write limit reached (Spark quota). Sync paused until UTC midnight (${new Date(firestoreQuotaExhaustedUntilMs).toISOString()}). App is operating in 100% resilient local-first mode.`
@@ -3792,6 +3993,11 @@ function canModifyServerRecord(
     return true;
   }
 
+  // Master charging network stations can only be edited or deleted by administrators
+  if (record.isMasterStation) {
+    return false;
+  }
+
   if (
     record.userId === userId ||
     record.authorId === userId ||
@@ -3835,6 +4041,8 @@ function enrichStationWithSubmitter(station: any, usersById: Map<string, any>) {
   });
   return {
     ...station,
+    isCommunityReported: resolved.isCommunityProvided,
+    requiresReservation: resolved.isCommunityProvided ? Boolean(station.requiresReservation ?? true) : false,
     reportedBy: station.reportedBy || submitterUser?.fullName || resolved.submitterName,
     submittedByPhone: resolved.isCommunityProvided
       ? station.submittedByPhone || submitterUser?.mobile || resolved.submitterPhone
@@ -3874,10 +4082,35 @@ function broadcastChargingUpdate(db: any) {
 // -------------------------------------------------------------
 // REST API ROUTES
 // -------------------------------------------------------------
-app.use('/api', (_req: Request, _res: Response, next: express.NextFunction) => {
-  if (isLiveVaultSyncEnabled()) {
-    void pullVaultFromFirestore(false);
+app.use('/api', (_req: Request, res: Response, next: express.NextFunction) => {
+  try {
+    const currentDeleted = Array.isArray(inMemoryDbCache?.deletedIds)
+      ? inMemoryDbCache.deletedIds.slice(-150)
+      : [];
+    res.setHeader('X-Ghost-Deleted-Ids', JSON.stringify(currentDeleted));
+    res.setHeader(
+      'X-Ghost-Sync-Status',
+      isLiveVaultSyncEnabled() ? 'published_cloud' : 'saved_local_pending_cloud'
+    );
+  } catch {
+    // Ignore header serialization error
   }
+  const origJson = res.json.bind(res);
+  res.json = ((body: any) => {
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      if (body.deletedIds === undefined && Array.isArray(inMemoryDbCache?.deletedIds)) {
+        body.deletedIds = inMemoryDbCache.deletedIds;
+      }
+      if (body.syncStatus === undefined) {
+        const cloudActive = isLiveVaultSyncEnabled();
+        body.syncStatus = cloudActive ? 'published_cloud' : 'saved_local_pending_cloud';
+        body.statusMessage = cloudActive
+          ? 'Published successfully – visible to the community.'
+          : 'Saved on this device – waiting to sync.';
+      }
+    }
+    return origJson(body);
+  }) as any;
   next();
 });
 
@@ -4118,27 +4351,29 @@ app.post('/api/auth/google', (req: Request, res: Response) => {
   );
 
   const nowIso = new Date().toISOString();
+  const isOwner = cleanedEmail === OWNER_ACCOUNT_EMAIL;
 
   if (!user) {
     user = {
-      id: `u_google_${Date.now()}`,
-      originalName: name || 'Google Pilot',
-      fullName: name || 'Google Pilot',
-      pilotNickname: inferDefaultPilotNickname('F77'),
+      id: isOwner ? OWNER_ACCOUNT_ID : `u_google_${Date.now()}`,
+      originalName: name || (isOwner ? 'Abinav Thejas K' : 'Google Pilot'),
+      fullName: name || (isOwner ? 'Abinav Thejas K' : 'Google Pilot'),
+      pilotNickname: isOwner ? 'X47 PILOT' : inferDefaultPilotNickname('F77'),
       email: cleanedEmail,
       googleUid: googleUid || undefined,
       photoUrl: photoUrl || undefined,
-      mobile: '',
+      mobile: isOwner ? '+91 98450 11099' : '',
       city: 'Bengaluru',
       state: 'Karnataka',
-      motorcycleModel: 'F77',
+      motorcycleModel: isOwner ? 'X47' : 'F77',
       variant: 'Standard',
       registrationNumber: '',
       purchaseDate: nowIso.split('T')[0],
       bloodGroup: 'Prefer not to disclose',
       emergencyContact: { name: '', relationship: '', phone: '' },
-      role: 'verified_member',
-      accountType: 'customer',
+      role: isOwner ? 'owner' : 'verified_member',
+      accountType: isOwner ? 'admin' : 'customer',
+      isOwner: isOwner,
       verificationStatus: 'verified',
       joinedAt: nowIso,
       optInSquadronAssist: true,
@@ -4160,6 +4395,11 @@ app.post('/api/auth/google', (req: Request, res: Response) => {
     });
   } else {
     user.verificationStatus = 'verified';
+    if (isOwner) {
+      user.isOwner = true;
+      user.role = 'owner';
+      user.accountType = 'admin';
+    }
     if (googleUid) user.googleUid = googleUid;
     if (photoUrl && !user.photoUrl) user.photoUrl = photoUrl;
     db.auditLogs.unshift({
@@ -4608,6 +4848,12 @@ app.post('/api/auth/session-restore', async (req: Request, res: Response) => {
     return res.status(404).json({ authenticated: false, error: 'Account not found.' });
   }
 
+  if (isOwnerAccount(dbUser) || targetEmail === OWNER_ACCOUNT_EMAIL) {
+    dbUser.isOwner = true;
+    dbUser.role = 'owner';
+    dbUser.accountType = 'admin';
+  }
+
   if (!isOwnerAccount(dbUser) && deletedSet.has(dbUser.id)) {
     return res.status(403).json({
       authenticated: false,
@@ -4674,6 +4920,34 @@ app.put('/api/auth/profile', (req: Request, res: Response) => {
     targetUser.pilotNickname = nickCheck.value;
   }
 
+  // Name change support
+  if (body.fullName !== undefined && typeof body.fullName === 'string') {
+    const trimmedName = body.fullName.trim();
+    if (!trimmedName) {
+      return res.status(400).json({ error: 'Name cannot be empty.' });
+    }
+    targetUser.originalName = trimmedName;
+    if (!targetUser.customPrimaryName) {
+      targetUser.fullName = trimmedName;
+    }
+  }
+
+  // Email change support
+  if (body.email !== undefined && typeof body.email === 'string') {
+    const trimmedEmail = body.email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+    const emailTaken = db.users.some(
+      (u: any) => u.id !== targetUser.id && String(u.email || '').trim().toLowerCase() === trimmedEmail
+    );
+    if (emailTaken) {
+      return res.status(409).json({ error: 'Email address is already in use by another squadron account.' });
+    }
+    targetUser.email = trimmedEmail;
+  }
+
   // Safe profile & garage fields
   const allowedFields = [
     'mobile',
@@ -4682,6 +4956,7 @@ app.put('/api/auth/profile', (req: Request, res: Response) => {
     'motorcycleModel',
     'variant',
     'registrationNumber',
+    'chassisNumber',
     'purchaseDate',
     'proofDocumentUrl',
     'rcDocumentUrl',
@@ -4692,6 +4967,10 @@ app.put('/api/auth/profile', (req: Request, res: Response) => {
     'insuranceProvider',
     'insurancePolicyNumber',
     'insuranceExpiryDate',
+    'dlDocumentUrl',
+    'dlDocumentName',
+    'dlNumber',
+    'dlExpiryDate',
     'bloodGroup',
     'emergencyContact',
     'optInSquadronAssist',
@@ -5254,7 +5533,9 @@ app.delete('/api/admin/users/:id', async (req: Request, res: Response) => {
         db.notifications = db.notifications.filter((n: any) => n.userId !== id);
       }
       writeDb(db);
-      await pushVaultToFirestore(db);
+      if (isLiveVaultSyncEnabled()) {
+        await pushVaultToFirestore(db);
+      }
       return res.json({
         success: true,
         deletedId: id,
@@ -7340,7 +7621,7 @@ app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => 
 
   function drawSourceToJpeg(source, sw, sh) {
     try {
-      var maxDim = 1200;
+      var maxDim = 960;
       var w = sw || 800;
       var h = sh || 600;
       if (w > maxDim || h > maxDim) {
@@ -7351,7 +7632,11 @@ app.get('/api/android-media-sheet/:sessionId', (req: Request, res: Response) => 
       c.width = w; c.height = h;
       var ctx = c.getContext('2d');
       ctx.drawImage(source, 0, 0, w, h);
-      return c.toDataURL('image/jpeg', 0.82);
+      var outUrl = c.toDataURL('image/jpeg', 0.76);
+      if (outUrl.length > 95000) {
+        outUrl = c.toDataURL('image/jpeg', 0.62);
+      }
+      return outUrl;
     } catch (e) {
       return '';
     }
@@ -8202,14 +8487,17 @@ app.post('/api/charging', (req: Request, res: Response) => {
   const validPlugType: ChargerPlugType = validation.chargerType;
   const spec = CHARGER_PLUG_TYPE_SPECS[validPlugType];
 
-  const normalizedSource: 'Supernova' | '3rd Party Station' | 'Community Provided Charger' =
-    validPlugType === 'Supernova' && chargerSource !== 'Community Provided Charger'
-      ? 'Supernova'
-      : chargerSource === 'Supernova' ||
-        chargerSource === '3rd Party Station' ||
-        chargerSource === 'Community Provided Charger'
-      ? chargerSource
-      : 'Community Provided Charger';
+  const normalizedSource: ChargerSource = isValidChargerSource(chargerSource)
+    ? (validPlugType === 'Supernova' &&
+      chargerSource !== 'UV Space Station' &&
+      chargerSource !== 'Community Provided Charger'
+        ? 'Supernova'
+        : chargerSource)
+    : validPlugType === 'Supernova'
+    ? 'Supernova'
+    : 'Community Provided Charger';
+
+  const isCommunitySource = normalizedSource === 'Community Provided Charger';
 
   // Any authenticated user's charging station submission is published immediately and synced to all users
   const canPublishDirectly = true;
@@ -8241,16 +8529,28 @@ app.post('/api/charging', (req: Request, res: Response) => {
     availabilityEndTime: rawAvailabilityEndTime,
     availabilityDays: rawAvailabilityDays,
     availabilityTimeText: rawAvailabilityTimeText,
-    requiresReservation: rawRequiresReservation,
+    requiresReservation: isCommunitySource ? rawRequiresReservation : false,
     pricing
   });
 
-  const resolvedPricingString =
-    typeof pricing === 'string' && pricing.trim()
+  const cleanedNonCommunityPricing =
+    typeof pricing === 'string' &&
+    pricing.trim() &&
+    !/community charger|community host|prior reservation/i.test(pricing)
       ? pricing.trim()
-      : normalizedSource === 'Community Provided Charger'
-      ? `${resolvedTerms.formattedPricingSummary} • Available ${resolvedTerms.availabilityTimeText}`
       : 'Free / Commercial Standard';
+
+  const resolvedPricingString = isCommunitySource
+    ? typeof pricing === 'string' && pricing.trim()
+      ? pricing.trim()
+      : `${resolvedTerms.formattedPricingSummary} • Available ${resolvedTerms.availabilityTimeText}`
+    : cleanedNonCommunityPricing;
+
+  const syncedCategories = buildStationCategories(
+    validPlugType,
+    normalizedSource,
+    req.body?.categories
+  );
 
   const newStation = {
     id: `cs_${Date.now()}`,
@@ -8277,28 +8577,27 @@ app.post('/api/charging', (req: Request, res: Response) => {
         ? 6.0
         : 3.3),
     chargerSource: normalizedSource,
+    categories: syncedCategories,
     isSupernova: validPlugType === 'Supernova' || normalizedSource === 'Supernova',
-    isCommunityReported: !caller.isOwner || normalizedSource === 'Community Provided Charger',
+    isCommunityReported: isCommunitySource,
     verifiedByAdmin: canPublishDirectly,
     approvalStatus: canPublishDirectly ? ('approved' as const) : ('pending' as const),
     published: canPublishDirectly,
     submittedByUserId: caller.userId,
     submittedByRole: caller.isOwner || caller.hasPermission('moderate_chargers') ? ('admin' as const) : ('user' as const),
-    submittedByPhone:
-      normalizedSource === 'Community Provided Charger' ? reporterPhone : undefined,
+    submittedByPhone: isCommunitySource ? reporterPhone : undefined,
     operatingStatus: 'Operational' as const,
     accessConditions: accessConditions || 'Public 24/7',
-    pricingType: resolvedTerms.pricingType,
-    chargingCostAmount: resolvedTerms.chargingCostAmount,
+    pricingType: isCommunitySource ? resolvedTerms.pricingType : 'Free',
+    chargingCostAmount: isCommunitySource ? resolvedTerms.chargingCostAmount : 0,
     chargingCostUnit: resolvedTerms.chargingCostUnit,
     availabilityStartTime: resolvedTerms.availabilityStartTime,
     availabilityEndTime: resolvedTerms.availabilityEndTime,
     availabilityDays: resolvedTerms.availabilityDays,
-    availabilityTimeText: resolvedTerms.availabilityTimeText,
-    requiresReservation:
-      normalizedSource === 'Community Provided Charger'
-        ? true
-        : Boolean(rawRequiresReservation),
+    availabilityTimeText: isCommunitySource
+      ? resolvedTerms.availabilityTimeText
+      : accessConditions || 'Public 24/7',
+    requiresReservation: isCommunitySource,
     reservations: [] as ChargerReservation[],
     pricing: resolvedPricingString,
     createdAt: new Date().toISOString(),
@@ -8408,14 +8707,23 @@ app.put('/api/charging/:id', (req: Request, res: Response) => {
 
   const validPlugType: ChargerPlugType = validation.chargerType;
   const spec = CHARGER_PLUG_TYPE_SPECS[validPlugType];
-  const nextSource =
-    validPlugType === 'Supernova' && chargerSource !== 'Community Provided Charger'
-      ? 'Supernova'
-      : chargerSource || existing.chargerSource;
+  const candidateSource = chargerSource || existing.chargerSource;
+  const nextSource: ChargerSource = isValidChargerSource(candidateSource)
+    ? (validPlugType === 'Supernova' &&
+      candidateSource !== 'UV Space Station' &&
+      candidateSource !== 'Community Provided Charger'
+        ? 'Supernova'
+        : candidateSource)
+    : validPlugType === 'Supernova'
+    ? 'Supernova'
+    : 'Community Provided Charger';
+
+  const isNextCommunity = nextSource === 'Community Provided Charger';
 
   const mergedTerms = resolveCommunityChargerTerms({
     ...existing,
     chargerSource: nextSource,
+    isCommunityReported: isNextCommunity,
     pricingType: pricingType !== undefined ? pricingType : existing.pricingType,
     chargingCostAmount:
       chargingCostAmount !== undefined ? chargingCostAmount : existing.chargingCostAmount,
@@ -8429,10 +8737,27 @@ app.put('/api/charging/:id', (req: Request, res: Response) => {
       availabilityDays !== undefined ? availabilityDays : existing.availabilityDays,
     availabilityTimeText:
       availabilityTimeText !== undefined ? availabilityTimeText : undefined,
-    requiresReservation:
-      requiresReservation !== undefined ? requiresReservation : existing.requiresReservation,
+    requiresReservation: isNextCommunity,
     pricing: pricing !== undefined ? pricing : existing.pricing
   });
+
+  const rawNextPricing =
+    pricing !== undefined && String(pricing).trim()
+      ? String(pricing).trim()
+      : existing.pricing || 'Free / Commercial Standard';
+  const resolvedNextPricing = isNextCommunity
+    ? pricing !== undefined && String(pricing).trim()
+      ? String(pricing).trim()
+      : `${mergedTerms.formattedPricingSummary} • Available ${mergedTerms.availabilityTimeText}`
+    : /community charger|community host|prior reservation/i.test(rawNextPricing)
+    ? 'Free / Commercial Standard'
+    : rawNextPricing;
+
+  const syncedCategories = buildStationCategories(
+    validPlugType,
+    nextSource,
+    Array.isArray(req.body.categories) ? req.body.categories : existing.categories
+  );
 
   const updatedStation = {
     ...existing,
@@ -8454,32 +8779,33 @@ app.put('/api/charging/:id', (req: Request, res: Response) => {
     powerOutputKw:
       powerOutputKw !== undefined ? Number(powerOutputKw) || existing.powerOutputKw : existing.powerOutputKw,
     chargerSource: nextSource,
-    isSupernova: validPlugType === 'Supernova',
+    isSupernova: validPlugType === 'Supernova' || nextSource === 'Supernova',
+    isCommunityReported: isNextCommunity,
     accessConditions: accessConditions || existing.accessConditions,
     operatingStatus: operatingStatus || existing.operatingStatus,
-    pricingType: mergedTerms.pricingType,
-    chargingCostAmount: mergedTerms.chargingCostAmount,
+    pricingType: isNextCommunity ? mergedTerms.pricingType : 'Free',
+    chargingCostAmount: isNextCommunity ? mergedTerms.chargingCostAmount : 0,
     chargingCostUnit: mergedTerms.chargingCostUnit,
     availabilityStartTime: mergedTerms.availabilityStartTime,
     availabilityEndTime: mergedTerms.availabilityEndTime,
     availabilityDays: mergedTerms.availabilityDays,
-    availabilityTimeText: mergedTerms.availabilityTimeText,
-    requiresReservation: mergedTerms.requiresReservation,
-    pricing:
-      pricing !== undefined && String(pricing).trim()
-        ? String(pricing).trim()
-        : nextSource === 'Community Provided Charger'
-        ? `${mergedTerms.formattedPricingSummary} • Available ${mergedTerms.availabilityTimeText}`
-        : existing.pricing,
+    availabilityTimeText: isNextCommunity
+      ? mergedTerms.availabilityTimeText
+      : accessConditions || existing.accessConditions || 'Public 24/7',
+    requiresReservation: isNextCommunity,
+    reservations: isNextCommunity ? existing.reservations || [] : [],
+    pricing: resolvedNextPricing,
     userNotes: userNotes !== undefined ? String(userNotes).trim() : existing.userNotes,
     reportedBy:
       typeof reportedBy === 'string' && reportedBy.trim() ? reportedBy.trim() : existing.reportedBy,
-    submittedByPhone:
-      nextSource === 'Community Provided Charger'
-        ? typeof submittedByPhone === 'string' && submittedByPhone.trim()
-          ? submittedByPhone.trim()
-          : existing.submittedByPhone
-        : undefined,
+    submittedByPhone: isNextCommunity
+      ? typeof submittedByPhone === 'string' && submittedByPhone.trim()
+        ? submittedByPhone.trim()
+        : existing.submittedByPhone
+      : undefined,
+    categories: syncedCategories,
+    exactLocationCoordinates: req.body.exactLocationCoordinates || existing.exactLocationCoordinates,
+    isMasterStation: Boolean(existing.isMasterStation),
     lastVerifiedDate: new Date().toISOString().split('T')[0]
   };
 
@@ -8681,6 +9007,21 @@ app.delete('/api/charging/:id', (req: Request, res: Response) => {
 
   const idx = (db.chargingStations || []).findIndex((s: any) => s.id === id);
   if (idx === -1) {
+    if (caller.isOwner || caller.isAdmin || caller.hasPermission('moderate_chargers')) {
+      markServerRecordDeleted(db, id);
+      db.auditLogs.unshift({
+        id: `aud_${Date.now()}`,
+        adminId: caller.userId,
+        adminName: resolveUserDisplayIdentity(caller.userObj).primaryName,
+        action: 'DELETE_CHARGING_STATION',
+        targetId: id,
+        details: `Removed charging station '${id}'`,
+        timestamp: new Date().toISOString()
+      });
+      writeDb(db);
+      broadcastChargingUpdate(db);
+      return res.json({ success: true, deletedId: id });
+    }
     return res.status(404).json({ error: 'Charging station not found.' });
   }
 
@@ -10215,7 +10556,7 @@ app.post('/api/discussions', (req: Request, res: Response) => {
   }
 
   const newPost = {
-    id: `disc_${Date.now()}`,
+    id: `disc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     clientRequestId: reqId || undefined,
     authorId: caller.userId,
     authorName: resolveUserDisplayIdentity(caller.userObj).primaryName,
@@ -10231,7 +10572,7 @@ app.post('/api/discussions', (req: Request, res: Response) => {
 
   db.discussions.unshift(newPost);
   writeDb(db);
-  res.status(201).json({ post: newPost });
+  res.status(201).json({ post: newPost, discussion: newPost });
 });
 
 app.put('/api/discussions/:id', (req: Request, res: Response) => {
@@ -10291,8 +10632,9 @@ app.post('/api/discussions/:id/comments', (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Authentication required to comment.' });
   }
 
-  const { content, clientRequestId } = req.body || {};
-  if (!content || !String(content).trim()) return res.status(400).json({ error: 'Comment content cannot be empty' });
+  const { content, text, clientRequestId } = req.body || {};
+  const resolvedContent = content || text;
+  if (!resolvedContent || !String(resolvedContent).trim()) return res.status(400).json({ error: 'Comment content cannot be empty' });
 
   const post = db.discussions.find((d: any) => d.id === id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -10304,11 +10646,12 @@ app.post('/api/discussions/:id/comments', (req: Request, res: Response) => {
   }
 
   const comment = {
-    id: `c_${Date.now()}`,
+    id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     clientRequestId: reqId || undefined,
     authorId: caller.userId,
     authorName: resolveUserDisplayIdentity(caller.userObj).primaryName,
-    content: String(content).trim(),
+    content: String(resolvedContent).trim(),
+    text: String(resolvedContent).trim(),
     createdAt: new Date().toISOString()
   };
 
@@ -10501,16 +10844,151 @@ app.get('/api/search', (req: Request, res: Response) => {
 });
 
 // 13B. Contribution & Payment Modes Endpoints
-app.get('/api/contributions', (_req: Request, res: Response) => {
+app.get('/api/contributions', (req: Request, res: Response) => {
   const db = readDb();
+  const caller = resolveRequestUser(req, db);
   const config = sanitizeContributionConfig(db.contributionConfig, DEFAULT_CONTRIBUTION_CONFIG);
-  const rawContributions = Array.isArray(db.contributions) ? db.contributions : [];
-  const contributions = rawContributions.map((item: ContributionRecord) =>
-    redactContributionForPublicWall(item)
-  );
+  const rawContributions: ContributionRecord[] = Array.isArray(db.contributions) ? db.contributions : [];
+
+  // Only confirmed (SUCCESS or legacy pre-existing) contributions appear on the public Squadron Backers wall
+  const confirmedContributions = rawContributions
+    .filter((item: ContributionRecord) => isConfirmedContributionRecord(item))
+    .map((item: ContributionRecord) => redactContributionForPublicWall(item));
+
+  const isAdminOrOwner =
+    caller.isAuthenticated &&
+    (caller.isOwner || isAdminOrOwnerAccount(caller.userObj));
+
   res.json({
     config,
-    contributions
+    contributions: confirmedContributions,
+    ...(isAdminOrOwner
+      ? {
+          adminContributions: rawContributions,
+          paymentTransactions: Array.isArray(db.paymentTransactions) ? db.paymentTransactions : []
+        }
+      : {})
+  });
+});
+
+/**
+ * Performs a local configuration lookup for the registered UPI Number (9019884970, +91)
+ * and creates an auditable INITIATED transaction record with a unique transaction reference (tr).
+ * NOTE: This is a local configuration lookup (isLiveNpciResolution: false), not a live NPCI Central Mapper query.
+ */
+app.post('/api/upi/resolve-number', (req: Request, res: Response) => {
+  const db = readDb();
+  const caller = resolveRequestUser(req, db);
+  const config = sanitizeContributionConfig(db.contributionConfig, DEFAULT_CONTRIBUTION_CONFIG);
+  const body = req.body || {};
+
+  const targetApp: UpiAppTarget =
+    body.targetApp === 'gpay' || body.targetApp === 'phonepe' || body.targetApp === 'paytm'
+      ? body.targetApp
+      : 'upi';
+  const optionId =
+    body.optionId === 'chai' || body.optionId === 'biryani' || body.optionId === 'custom'
+      ? body.optionId
+      : 'chai';
+  const rawAmount = Number(body.amountInr);
+  if (!Number.isFinite(rawAmount) || rawAmount < 1 || !Number.isInteger(Math.round(rawAmount))) {
+    return res.status(400).json({
+      resolved: false,
+      error: 'Invalid contribution amount. Amount must be a positive INR value (>= 1 Rs).'
+    });
+  }
+  const amountInr = Math.round(rawAmount);
+
+  const resolution = resolveActiveUpiNumberToDestination({
+    mobileNumber: body.mobileNumber || config.recipientMobileNumber || ACTIVE_RECIPIENT_UPI_NUMBER,
+    countryCode: body.countryCode || config.recipientCountryCode || ACTIVE_RECIPIENT_COUNTRY_CODE,
+    targetApp,
+    config
+  });
+
+  if (!resolution.resolved) {
+    return res.status(400).json(resolution);
+  }
+
+  const tr = generateUpiTransactionRef('GP');
+  const nowIso = new Date().toISOString();
+  const txRecord: PaymentTransactionRecord = {
+    id: `upitx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    tr,
+    recipientMobileNumber: resolution.recipientMobileNumber,
+    recipientCountryCode: resolution.recipientCountryCode,
+    resolvedUpiId: resolution.resolvedUpiId,
+    targetApp,
+    optionId,
+    amountInr,
+    status: 'INITIATED',
+    userId: caller.userId || undefined,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+
+  if (!Array.isArray(db.paymentTransactions)) {
+    db.paymentTransactions = [];
+  }
+  db.paymentTransactions.unshift(txRecord);
+  if (db.paymentTransactions.length > 500) {
+    db.paymentTransactions = db.paymentTransactions.slice(0, 500);
+  }
+  writeDb(db);
+
+  res.json({
+    ...resolution,
+    transactionId: txRecord.id,
+    transactionRef: tr,
+    amountInr,
+    optionId,
+    status: txRecord.status
+  });
+});
+
+/**
+ * Updates a payment transaction status (INITIATED -> PENDING | FAILED | CANCELLED | UNVERIFIED).
+ * Never permits a client to mark a transaction SUCCESS without server/admin verification.
+ */
+app.post('/api/contributions/transaction-status', (req: Request, res: Response) => {
+  const db = readDb();
+  const body = req.body || {};
+  const tr = typeof body.tr === 'string' ? body.tr.trim() : '';
+  const requestedStatus = typeof body.status === 'string' ? body.status.trim().toUpperCase() : '';
+
+  const allowedClientStatuses: PaymentTransactionStatus[] = [
+    'INITIATED',
+    'PENDING',
+    'FAILED',
+    'CANCELLED',
+    'UNVERIFIED'
+  ];
+
+  if (!tr || !allowedClientStatuses.includes(requestedStatus as PaymentTransactionStatus)) {
+    return res.status(400).json({ error: 'Valid transaction reference (tr) and status required.' });
+  }
+
+  if (!Array.isArray(db.paymentTransactions)) {
+    db.paymentTransactions = [];
+  }
+
+  const tx = db.paymentTransactions.find((t: PaymentTransactionRecord) => t.tr === tr || t.id === tr);
+  if (!tx) {
+    return res.status(404).json({ error: 'Transaction record not found.' });
+  }
+
+  if (tx.status !== 'SUCCESS') {
+    tx.status = requestedStatus as PaymentTransactionStatus;
+    if (typeof body.failureReason === 'string' && body.failureReason.trim()) {
+      tx.failureReason = body.failureReason.trim().slice(0, 240);
+    }
+    tx.updatedAt = new Date().toISOString();
+    writeDb(db);
+  }
+
+  res.json({
+    success: true,
+    transaction: tx
   });
 });
 
@@ -10575,6 +11053,19 @@ app.post('/api/contributions', (req: Request, res: Response) => {
     db.contributions = [];
   }
 
+  // Prevent duplicate UTR submissions across all contribution records
+  const submittedUtr = validation.value.utrNumber;
+  if (submittedUtr) {
+    const duplicateUtrRecord = db.contributions.find(
+      (c: ContributionRecord) => c.utrNumber && c.utrNumber === submittedUtr
+    );
+    if (duplicateUtrRecord) {
+      return res.status(409).json({
+        error: `Duplicate UTR detected: UTR ${submittedUtr} has already been submitted.`
+      });
+    }
+  }
+
   const clientRequestId =
     typeof req.body?.clientRequestId === 'string' ? req.body.clientRequestId.trim() : undefined;
   if (clientRequestId) {
@@ -10582,28 +11073,121 @@ app.post('/api/contributions', (req: Request, res: Response) => {
     if (existing) {
       return res.json({
         success: true,
-        contribution: redactContributionForPublicWall(existing)
+        contribution: redactContributionForPublicWall(existing),
+        verificationStatus: existing.transactionStatus || 'UNVERIFIED'
       });
     }
   }
+
+  // Direct UPI payments without a server-side bank webhook are stored as UNVERIFIED until checked by Admin/Owner
+  const initialStatus: PaymentTransactionStatus = 'UNVERIFIED';
+  const txRef = validation.value.transactionReference || generateUpiTransactionRef('GP');
 
   const record: ContributionRecord = {
     id: `contrib_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     contributorName: validation.value.contributorName,
     contributorModel: validation.value.contributorModel,
+    amountInr: validation.value.amountInr,
     optionId: validation.value.optionId,
     paymentMethod: validation.value.paymentMethod,
     note: validation.value.note || undefined,
     createdAt: new Date().toISOString(),
     userId: caller.userId || undefined,
-    clientRequestId
+    clientRequestId,
+    transactionReference: txRef,
+    utrNumber: submittedUtr,
+    transactionStatus: initialStatus
   };
+
+  if (Array.isArray(db.paymentTransactions)) {
+    const matchingTx = db.paymentTransactions.find(
+      (t: PaymentTransactionRecord) => t.tr === txRef
+    );
+    if (matchingTx) {
+      matchingTx.status = 'UNVERIFIED';
+      matchingTx.utrNumber = submittedUtr;
+      matchingTx.contributorName = record.contributorName;
+      matchingTx.contributorNote = record.note;
+      matchingTx.updatedAt = new Date().toISOString();
+    }
+  }
 
   db.contributions.unshift(record);
   writeDb(db);
   res.status(201).json({
     success: true,
-    contribution: redactContributionForPublicWall(record)
+    contribution: redactContributionForPublicWall(record),
+    verificationStatus: record.transactionStatus,
+    requiresAdminVerification: record.transactionStatus !== 'SUCCESS'
+  });
+});
+
+/**
+ * Admin / Website Owner Verification Facility:
+ * Allows verifying an UNVERIFIED contribution (marking it SUCCESS so it appears on the public
+ * Squadron Backers wall) or marking it FAILED / CANCELLED.
+ */
+app.put('/api/contributions/:id/verify', (req: Request, res: Response) => {
+  const db = readDb();
+  const caller = resolveRequestUser(req, db);
+  if (
+    !caller.isAuthenticated ||
+    (!caller.isOwner && !isAdminOrOwnerAccount(caller.userObj))
+  ) {
+    return res.status(403).json({
+      error: 'Admin or Website Owner clearance required to verify contribution transactions.'
+    });
+  }
+
+  const targetId = String(req.params.id || '').trim();
+  const nextStatus = String(req.body?.status || 'SUCCESS').trim().toUpperCase() as PaymentTransactionStatus;
+  const allowedVerifyStatuses: PaymentTransactionStatus[] = [
+    'SUCCESS',
+    'FAILED',
+    'CANCELLED',
+    'UNVERIFIED'
+  ];
+
+  if (!allowedVerifyStatuses.includes(nextStatus)) {
+    return res.status(400).json({ error: 'Invalid verification status.' });
+  }
+
+  if (!Array.isArray(db.contributions)) {
+    db.contributions = [];
+  }
+
+  const target = db.contributions.find((c: ContributionRecord) => c.id === targetId);
+  if (!target) {
+    return res.status(404).json({ error: 'Contribution record not found.' });
+  }
+
+  target.transactionStatus = nextStatus;
+  if (nextStatus === 'SUCCESS') {
+    target.verifiedAt = new Date().toISOString();
+    target.verifiedBy = caller.userId || 'owner';
+  }
+
+  if (target.transactionReference && Array.isArray(db.paymentTransactions)) {
+    const matchingTx = db.paymentTransactions.find(
+      (t: PaymentTransactionRecord) => t.tr === target.transactionReference
+    );
+    if (matchingTx) {
+      matchingTx.status = nextStatus;
+      matchingTx.updatedAt = new Date().toISOString();
+      if (nextStatus === 'SUCCESS') {
+        matchingTx.verifiedAt = target.verifiedAt;
+        matchingTx.verifiedBy = target.verifiedBy;
+      }
+    }
+  }
+
+  writeDb(db);
+  res.json({
+    success: true,
+    contribution: target,
+    publicWallEntry: isConfirmedContributionRecord(target)
+      ? redactContributionForPublicWall(target)
+      : null
   });
 });
 

@@ -20,7 +20,9 @@ import {
   Phone,
   Store,
   Link2,
-  Loader2
+  Loader2,
+  Info,
+  Zap
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAudio } from '../context/AudioContext';
@@ -32,7 +34,9 @@ import {
   claimNativePhotoDeliveryBatch,
   hasRecentNativePhotoDelivery,
   pollAndroidPhotoBridgeForTarget,
-  processUploadedDevicePhoto
+  processUploadedDevicePhoto,
+  createMarketplacePresetIllustration,
+  repairBase64JpegIfTruncated
 } from '../utils/rules';
 import { BackButton } from './BackButton';
 import {
@@ -78,14 +82,23 @@ function normalizeModModel(modelStr?: string): 'F77' | 'X47' {
   return 'F77';
 }
 
+const FALLBACK_CARBON_WHEELS_SVG = createMarketplacePresetIllustration('carbon_wheels');
+
 function extractModImages(m: ModificationItem): string[] {
+  let list: string[] = [];
   if (Array.isArray(m.imageUrls) && m.imageUrls.length > 0) {
-    return m.imageUrls.filter(Boolean);
+    list = m.imageUrls.filter(Boolean);
+  } else if (m.imageUrl && m.imageUrl.trim().length > 0) {
+    list = [m.imageUrl.trim()];
   }
-  if (m.imageUrl && m.imageUrl.trim().length > 0) {
-    return [m.imageUrl.trim()];
-  }
-  return [];
+  const uniqueList = list.filter((url, idx, arr) => arr.indexOf(url) === idx);
+  const repairedList = uniqueList
+    .map(url => (typeof url === 'string' ? repairBase64JpegIfTruncated(url) : url))
+    .filter(Boolean);
+  const hasRealPhoto = repairedList.some(url => url !== FALLBACK_CARBON_WHEELS_SVG);
+  return hasRealPhoto
+    ? repairedList.filter(url => url !== FALLBACK_CARBON_WHEELS_SVG)
+    : repairedList;
 }
 
 export const ModificationsLab: React.FC = () => {
@@ -97,6 +110,15 @@ export const ModificationsLab: React.FC = () => {
   );
   const [loading, setLoading] = useState(true);
   const [selectedMod, setSelectedMod] = useState<ModificationItem | null>(null);
+  const [failedImageUrls, setFailedImageUrls] = useState<Set<string>>(() => new Set());
+  const handleImageError = (url: string) => {
+    if (!url) return;
+    setFailedImageUrls(prev => {
+      const next = new Set(prev);
+      next.add(url);
+      return next;
+    });
+  };
   const [showAddModal, setShowAddModalState] = useState<boolean>(() => {
     try {
       return (
@@ -404,6 +426,41 @@ export const ModificationsLab: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetFormForNewSubmission = () => {
+    clearFormDraft(DRAFT_KEY);
+    try {
+      localStorage.removeItem('ghost_current_mod_photos');
+    } catch {}
+    setEditingModId(null);
+    setTitle('');
+    setModel((currentUser?.motorcycleModel === 'X47' ? 'X47' : 'F77') as 'F77' | 'X47');
+    setVariant('');
+    setComponent('Aesthetics & Bodywork');
+    setDifficulty('Intermediate');
+    setCostRange('₹5,000 - ₹15,000');
+    setCompatibilityStatus('Verified Compatible');
+    setIsOfficial(false);
+    setDescription('');
+    setPartsUsed('');
+    setInstallationGuide('');
+    setSafetyConsiderations('');
+    setWarrantyConsiderations('');
+    setUploadedImages([]);
+    setShopName('');
+    setShopMapLink('');
+    // Auto-apply mobile number from saved user profile
+    setShopNumber(currentUser?.mobile || '');
+    setProductLinks([{ url: '', name: '' }]);
+    setLinkErrors({});
+    setSubmitError(null);
+  };
+
+  const handleOpenAddModal = () => {
+    playTacticalClick();
+    resetFormForNewSubmission();
+    setShowAddModal(true);
   };
 
   const openEditMod = (m: ModificationItem, e?: React.MouseEvent) => {
@@ -825,11 +882,7 @@ export const ModificationsLab: React.FC = () => {
         </div>
 
         <button
-          onClick={() => {
-            playTacticalClick();
-            setEditingModId(null);
-            setShowAddModal(true);
-          }}
+          onClick={handleOpenAddModal}
           className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm rounded-lg transition-colors shadow-lg shadow-amber-500/10 cursor-pointer self-start md:self-auto"
         >
           <Plus className="w-4 h-4" />
@@ -927,80 +980,71 @@ export const ModificationsLab: React.FC = () => {
                 }}
                 className="bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all hover:translate-y-[-2px] hover:shadow-xl group"
               >
-                {/* Photo Header Banner */}
+                {/* Photo Header Banner - clean image preview without blocking overlays */}
                 <div className="relative aspect-video bg-zinc-950 overflow-hidden">
-                  {mainPhoto ? (
+                  {mainPhoto && !failedImageUrls.has(mainPhoto) ? (
                     <img
                       src={mainPhoto}
                       alt={m.title}
+                      onError={() => handleImageError(mainPhoto)}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                   ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-zinc-600 bg-zinc-950">
-                      <ImageIcon className="w-10 h-10 mb-1 opacity-50" />
-                      <span className="text-xs">No image provided</span>
-                    </div>
+                    <img
+                      src={createMarketplacePresetIllustration('carbon_wheels')}
+                      alt={m.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90"
+                    />
                   )}
-
-                  {additionalPhotosCount > 0 && (
-                    <div className="absolute bottom-3 right-3 bg-black/80 backdrop-blur-md text-amber-400 border border-amber-500/30 text-xs font-semibold px-2.5 py-1 rounded-md flex items-center gap-1.5 shadow-md">
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      <span>+{additionalPhotosCount} More</span>
-                    </div>
-                  )}
-
-                  <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                    <span className="bg-black/70 backdrop-blur-md border border-zinc-700 text-zinc-300 text-xs font-semibold px-2.5 py-1 rounded-md uppercase tracking-wider">
-                      {m.component}
-                    </span>
-                    {(m as any).pendingSync && (
-                      <span className="bg-amber-500/90 text-black text-[10px] font-bold px-2 py-1 rounded-md uppercase">
-                        PENDING SYNC
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="absolute top-3 right-3 bg-amber-500 text-black text-xs font-black px-2.5 py-1 rounded-md shadow-lg">
-                    {m.costRange}
-                  </div>
                 </div>
 
                 {/* Card Body */}
                 <div className="p-5 flex-1 flex flex-col justify-between">
                   <div>
-                    <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition-colors line-clamp-1 mb-2">
-                      {m.title}
-                    </h3>
-                    <p className="text-zinc-400 text-sm line-clamp-2 mb-3">
+                    <div className="flex items-start justify-between gap-3 mb-2.5">
+                      <h3 className="text-base sm:text-lg font-bold text-white group-hover:text-amber-400 transition-colors leading-snug break-words flex-1 min-w-0">
+                        {m.title}
+                      </h3>
+                      {m.costRange && (
+                        <div className="bg-amber-500 text-black text-xs font-black px-2.5 py-1 rounded-md shadow shrink-0 self-start whitespace-nowrap">
+                          {m.costRange}
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-zinc-300 text-xs sm:text-sm leading-relaxed mb-3 break-words whitespace-pre-line">
                       {m.description}
                     </p>
                     {m.shopName && (
-                      <div className="flex items-center gap-1.5 text-xs text-amber-400/90 mb-3 truncate">
-                        <Store className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{m.shopName}</span>
+                      <div className="flex items-center gap-1.5 text-xs text-amber-400/90 mb-3 font-mono">
+                        <Store className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                        <span className="break-words">{m.shopName}</span>
                       </div>
                     )}
                   </div>
 
-                  <div className="border-t border-zinc-800/80 pt-4 flex items-center justify-between text-xs text-zinc-400">
-                    <div className="flex items-center gap-1.5 truncate pr-2">
-                      <span className="font-semibold text-zinc-300 truncate">{m.authorName}</span>
+                  <div className="border-t border-zinc-800/80 pt-3.5 mt-auto flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className="font-semibold text-zinc-300 text-xs truncate" title={m.authorName}>
+                        {m.authorName}
+                      </span>
                       {m.isOfficialAccessory && (
                         <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded text-[10px] font-medium">
+                    <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                      <span className="bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap">
                         {m.difficulty}
                       </span>
-                      <span className="text-zinc-500">{m.motorcycleModel}</span>
+                      <span className="bg-zinc-950 text-zinc-400 px-1.5 py-0.5 rounded text-[10px] font-mono border border-zinc-800 shrink-0">
+                        {m.motorcycleModel}
+                      </span>
                       {canModify && (
-                        <div className="flex items-center gap-1 ml-1">
+                        <div className="flex items-center gap-1 ml-1 pl-1.5 border-l border-zinc-800">
                           <button
                             type="button"
                             onClick={e => openEditMod(m, e)}
-                            className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-amber-400 transition-colors"
+                            className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-amber-400 transition-colors cursor-pointer"
                             title="Edit Modification"
                           >
                             <Edit2 className="w-3 h-3" />
@@ -1008,7 +1052,7 @@ export const ModificationsLab: React.FC = () => {
                           <button
                             type="button"
                             onClick={e => handleDeleteMod(m, e)}
-                            className="p-1 rounded bg-zinc-800 hover:bg-red-900/60 text-zinc-300 hover:text-red-400 transition-colors"
+                            className="p-1 rounded bg-zinc-800 hover:bg-red-900/60 text-zinc-300 hover:text-red-400 transition-colors cursor-pointer"
                             title="Delete Modification"
                           >
                             <Trash2 className="w-3 h-3" />
@@ -1026,307 +1070,354 @@ export const ModificationsLab: React.FC = () => {
 
       {/* Marketplace-Style Detail Gallery & Specification Modal */}
       {selectedMod && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 overflow-y-auto p-2 sm:p-4 md:p-6 flex flex-col items-center justify-start pt-[max(1rem,env(safe-area-inset-top))] pb-16">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-3xl w-full mt-2 sm:mt-4 mb-8 overflow-hidden shadow-2xl relative">
+        <div
+          data-testid="mod-product-detail-modal"
+          className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 md:p-6"
+          onClick={() => setSelectedMod(null)}
+        >
+          <div
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl relative overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Close Button - Sticky Floating top right */}
             <button
               onClick={() => setSelectedMod(null)}
               aria-label="Close modal"
-              className="absolute top-3 right-3 z-30 p-2.5 bg-black/80 hover:bg-black text-white hover:text-amber-400 rounded-full border border-white/20 shadow-xl transition-all cursor-pointer active:scale-95"
+              className="absolute top-3 right-3 z-40 p-2 bg-black/80 hover:bg-black text-white hover:text-amber-400 rounded-full border border-white/20 shadow-xl transition-all cursor-pointer active:scale-95"
             >
               <X className="w-5 h-5" />
             </button>
 
-            {(() => {
-              const galleryPhotos = extractModImages(selectedMod);
-              const activePhotoUrl = galleryPhotos[activeImageIndex] || galleryPhotos[0];
-
-              return (
-                <div className="bg-zinc-950 border-b border-zinc-800">
-                  <div className="relative aspect-video max-h-[300px] sm:max-h-[420px] bg-black flex items-center justify-center overflow-hidden">
-                    {activePhotoUrl ? (
-                      <img
-                        src={activePhotoUrl}
-                        alt={`${selectedMod.title} - photo ${activeImageIndex + 1}`}
-                        className="w-full h-full object-contain"
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center text-zinc-600 p-8">
-                        <ImageIcon className="w-12 h-12 mb-2" />
-                        <span>No image available for this modification</span>
-                      </div>
-                    )}
-
-                    {galleryPhotos.length > 1 && (
-                      <>
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            setActiveImageIndex(prev => (prev === 0 ? galleryPhotos.length - 1 : prev - 1));
-                          }}
-                          className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-black/70 hover:bg-black text-white rounded-full transition-colors cursor-pointer"
-                        >
-                          <ChevronLeft className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            setActiveImageIndex(prev => (prev === galleryPhotos.length - 1 ? 0 : prev + 1));
-                          }}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-black/70 hover:bg-black text-white rounded-full transition-colors cursor-pointer"
-                        >
-                          <ChevronRight className="w-5 h-5" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  {galleryPhotos.length > 1 && (
-                    <div className="p-3 bg-zinc-900/90 border-t border-zinc-800/80 flex items-center gap-2.5 overflow-x-auto">
-                      <span className="text-xs font-semibold text-zinc-400 mr-1 shrink-0">
-                        Gallery ({galleryPhotos.length}):
-                      </span>
-                      {galleryPhotos.map((photo, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => setActiveImageIndex(idx)}
-                          className={`relative w-16 h-12 rounded-lg overflow-hidden border-2 transition-all cursor-pointer shrink-0 ${
-                            activeImageIndex === idx
-                              ? 'border-amber-500 scale-105 shadow-md'
-                              : 'border-zinc-800 opacity-60 hover:opacity-100'
-                          }`}
-                        >
-                          <img src={photo} alt="" className="w-full h-full object-cover" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            <div className="p-6 md:p-8 space-y-6">
-              <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold px-2.5 py-0.5 rounded-full uppercase">
-                      {selectedMod.component}
-                    </span>
-                    <span className="bg-zinc-800 text-zinc-300 text-xs font-medium px-2.5 py-0.5 rounded-full">
-                      Model: {selectedMod.motorcycleModel}
-                    </span>
-                    <span className="bg-zinc-800 text-zinc-300 text-xs font-medium px-2.5 py-0.5 rounded-full">
-                      Difficulty: {selectedMod.difficulty}
-                    </span>
-                    <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold px-2.5 py-0.5 rounded-full">
-                      {selectedMod.compatibilityStatus}
-                    </span>
-                  </div>
-                  <h2 className="text-2xl font-black text-white">{selectedMod.title}</h2>
-                </div>
-
-                <div className="text-2xl font-black text-amber-400 shrink-0">
-                  {selectedMod.costRange}
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Overview</h4>
-                <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap bg-zinc-950/60 p-4 border border-zinc-800/80 rounded-xl">
-                  {selectedMod.description}
-                </p>
-              </div>
-
-              {(selectedMod.shopName || selectedMod.shopMapLink || selectedMod.shopNumber) && (
-                <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-3">
-                  <div className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Store className="w-4 h-4" /> Shop / Installer Information
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                    {selectedMod.shopName && (
-                      <div>
-                        <div className="text-xs text-zinc-500">Shop Name</div>
-                        <div className="font-semibold text-zinc-200 mt-0.5">{selectedMod.shopName}</div>
-                      </div>
-                    )}
-                    {selectedMod.shopNumber && (
-                      <div>
-                        <div className="text-xs text-zinc-500">Shop Number</div>
-                        <a
-                          href={`tel:${selectedMod.shopNumber}`}
-                          className="font-semibold text-emerald-400 hover:underline mt-0.5 inline-flex items-center gap-1.5"
-                        >
-                          <Phone className="w-3.5 h-3.5" />
-                          <span>{selectedMod.shopNumber}</span>
-                        </a>
-                      </div>
-                    )}
-                    {selectedMod.shopMapLink && (
-                      <div>
-                        <div className="text-xs text-zinc-500">Shop Location</div>
-                        <a
-                          href={sanitizeGoogleMapsUrl(
-                            selectedMod.shopMapLink,
-                            undefined,
-                            undefined,
-                            selectedMod.shopName || selectedMod.title
-                          )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-semibold text-amber-400 hover:underline mt-0.5 inline-flex items-center gap-1.5"
-                        >
-                          <MapPin className="w-3.5 h-3.5" />
-                          <span>Open Shop Map Link</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {selectedMod.partsUsed && (
-                <div>
-                  <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                    Parts & Fasteners Used
-                  </h4>
-                  <p className="text-zinc-300 text-sm leading-relaxed bg-zinc-950/60 p-4 border border-zinc-800/80 rounded-xl">
-                    {selectedMod.partsUsed}
-                  </p>
-                </div>
-              )}
-
-              {selectedMod.installationGuide && (
-                <div>
-                  <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                    Installation Procedure
-                  </h4>
-                  <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap bg-zinc-950/60 p-4 border border-zinc-800/80 rounded-xl">
-                    {selectedMod.installationGuide}
-                  </p>
-                </div>
-              )}
-
+            {/* Scrollable Modal Body */}
+            <div className="flex-1 overflow-y-auto space-y-6">
+              {/* Photo & Thumbnail Gallery Header */}
               {(() => {
-                const customSafety =
-                  selectedMod.safetyConsiderations &&
-                  selectedMod.safetyConsiderations.trim().length > 0 &&
-                  selectedMod.safetyConsiderations.trim() !== 'Check all torques to factory specs before riding.'
-                    ? selectedMod.safetyConsiderations.trim()
-                    : null;
-
-                const customWarranty =
-                  selectedMod.warrantyConsiderations &&
-                  selectedMod.warrantyConsiderations.trim().length > 0 &&
-                  selectedMod.warrantyConsiderations.trim() !== 'Bolt-on modification. Reversible without electrical harness cut.'
-                    ? selectedMod.warrantyConsiderations.trim()
-                    : null;
-
-                if (!customSafety && !customWarranty) return null;
+                const galleryPhotos = extractModImages(selectedMod);
+                const activePhotoUrl = galleryPhotos[activeImageIndex] || galleryPhotos[0];
 
                 return (
-                  <div
-                    className={`grid gap-4 ${
-                      customSafety && customWarranty ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'
-                    }`}
-                  >
-                    {customSafety && (
-                      <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                        <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5 mb-1.5">
-                          <AlertCircle className="w-4 h-4" /> SAFETY CONSIDERATIONS
+                  <div className="bg-zinc-950 border-b border-zinc-800 shrink-0">
+                    <div className="relative aspect-video max-h-[260px] sm:max-h-[360px] bg-zinc-950 flex items-center justify-center overflow-hidden">
+                      {activePhotoUrl && !failedImageUrls.has(activePhotoUrl) ? (
+                        <img
+                          src={activePhotoUrl}
+                          alt={`${selectedMod.title} - photo ${activeImageIndex + 1}`}
+                          onError={() => handleImageError(activePhotoUrl)}
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <div className="w-full h-full relative flex items-center justify-center">
+                          <img
+                            src={createMarketplacePresetIllustration('carbon_wheels')}
+                            alt={selectedMod.title}
+                            className="w-full h-full object-contain opacity-90"
+                          />
+                          <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/80 rounded border border-amber-500/30 text-[10px] text-amber-400 font-mono">
+                            SPECIFICATION SCHEMATIC PREVIEW
+                          </div>
                         </div>
-                        <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">
-                          {customSafety}
-                        </div>
-                      </div>
-                    )}
+                      )}
 
-                    {customWarranty && (
-                      <div className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-800">
-                        <div className="text-xs font-bold text-sky-400 flex items-center gap-1.5 mb-1.5">
-                          <ShieldCheck className="w-4 h-4" /> WARRANTY IMPLICATIONS
-                        </div>
-                        <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">
-                          {customWarranty}
-                        </div>
+                      {galleryPhotos.length > 1 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setActiveImageIndex(prev => (prev === 0 ? galleryPhotos.length - 1 : prev - 1));
+                            }}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-black/70 hover:bg-black text-white rounded-full transition-colors cursor-pointer"
+                          >
+                            <ChevronLeft className="w-5 h-5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setActiveImageIndex(prev => (prev === galleryPhotos.length - 1 ? 0 : prev + 1));
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-black/70 hover:bg-black text-white rounded-full transition-colors cursor-pointer"
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    {galleryPhotos.length > 1 && (
+                      <div className="p-2.5 bg-zinc-900/90 border-t border-zinc-800 flex items-center gap-2 overflow-x-auto">
+                        <span className="text-xs font-semibold text-zinc-400 mr-1 shrink-0">
+                          Photos ({galleryPhotos.length}):
+                        </span>
+                        {galleryPhotos.map((photo, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setActiveImageIndex(idx)}
+                            className={`relative w-14 h-10 rounded-lg overflow-hidden border-2 transition-all cursor-pointer shrink-0 ${
+                              activeImageIndex === idx
+                                ? 'border-amber-500 scale-105 shadow-md'
+                                : 'border-zinc-800 opacity-60 hover:opacity-100'
+                            }`}
+                          >
+                            <img
+                              src={failedImageUrls.has(photo) ? createMarketplacePresetIllustration('carbon_wheels') : photo}
+                              alt=""
+                              onError={() => handleImageError(photo)}
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
                 );
               })()}
 
-              {selectedMod.productLinks && selectedMod.productLinks.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-zinc-800">
-                  <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold flex items-center gap-1.5">
-                    <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Attached Product Links ({selectedMod.productLinks.length})</span>
+              {/* Specification & Details Body */}
+              <div className="p-4 sm:p-6 space-y-5">
+                {/* Header Row: Title, Badges & Cost Range */}
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-zinc-800/80">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <span className="bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide">
+                        {selectedMod.component}
+                      </span>
+                      <span className="bg-zinc-800 text-zinc-300 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                        Model: {selectedMod.motorcycleModel}
+                      </span>
+                      <span className="bg-zinc-800 text-zinc-300 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                        Difficulty: {selectedMod.difficulty}
+                      </span>
+                      <span className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                        {selectedMod.compatibilityStatus}
+                      </span>
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-black text-white leading-snug">
+                      {selectedMod.title}
+                    </h2>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {selectedMod.productLinks.map((link, idx) => {
-                      let domain = '';
-                      try {
-                        domain = new URL(link.url).hostname.replace(/^www\./, '');
-                      } catch (_) {
-                        domain = link.url;
-                      }
-                      const titleText = link.name || domain || link.url;
 
-                      return (
-                        <a
-                          key={idx}
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-between p-3 rounded-xl bg-zinc-950/80 hover:bg-zinc-800 border border-zinc-800 hover:border-amber-500/40 transition-colors group"
-                        >
-                          <div className="truncate pr-2">
-                            <div className="text-white font-bold text-xs truncate group-hover:text-amber-400">
-                              {titleText}
-                            </div>
-                            {link.name && domain && (
-                              <div className="text-[10px] text-zinc-500 truncate">{domain}</div>
-                            )}
-                          </div>
-                          <ExternalLink className="w-4 h-4 text-zinc-500 group-hover:text-amber-400 shrink-0" />
-                        </a>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between gap-3 pt-4 border-t border-zinc-800">
-                <div className="text-xs text-zinc-400">
-                  Contributed by <span className="font-semibold text-zinc-200">{selectedMod.authorName}</span> •{' '}
-                  <span>{selectedMod.isOfficialAccessory ? 'OEM Approved Accessory' : 'Owner-Tested Mod'}</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {canUserModifyRecord(currentUser, selectedMod) && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => openEditMod(selectedMod)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" /> Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteMod(selectedMod)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-800/50 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" /> Delete
-                      </button>
-                    </>
+                  {selectedMod.costRange && (
+                    <div className="text-xl sm:text-2xl font-black text-amber-400 shrink-0">
+                      {selectedMod.costRange}
+                    </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMod(null)}
-                    className="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                  >
-                    Close
-                  </button>
                 </div>
+
+                {/* Overview Box */}
+                <div>
+                  <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-amber-400" />
+                    Overview
+                  </h4>
+                  <p className="text-zinc-200 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap bg-zinc-950/80 p-3.5 sm:p-4 border border-zinc-800 rounded-xl font-sans">
+                    {selectedMod.description}
+                  </p>
+                </div>
+
+                {/* Shop / Installer Details */}
+                {(selectedMod.shopName || selectedMod.shopMapLink || selectedMod.shopNumber) && (
+                  <div className="p-3.5 sm:p-4 rounded-xl bg-zinc-950/90 border border-zinc-800 space-y-3">
+                    <div className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Store className="w-4 h-4" /> Shop / Installer Details
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs sm:text-sm">
+                      {selectedMod.shopName && (
+                        <div>
+                          <div className="text-[11px] text-zinc-500 font-semibold uppercase">Shop Name</div>
+                          <div className="font-bold text-zinc-100 mt-0.5">{selectedMod.shopName}</div>
+                        </div>
+                      )}
+                      {selectedMod.shopNumber && (
+                        <div>
+                          <div className="text-[11px] text-zinc-500 font-semibold uppercase">Shop Number</div>
+                          <a
+                            href={`tel:${selectedMod.shopNumber}`}
+                            className="font-bold text-emerald-400 hover:underline mt-0.5 inline-flex items-center gap-1.5"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>{selectedMod.shopNumber}</span>
+                          </a>
+                        </div>
+                      )}
+                      {selectedMod.shopMapLink && (
+                        <div>
+                          <div className="text-[11px] text-zinc-500 font-semibold uppercase">Shop Location</div>
+                          <a
+                            href={sanitizeGoogleMapsUrl(
+                              selectedMod.shopMapLink,
+                              undefined,
+                              undefined,
+                              selectedMod.shopName || selectedMod.title
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-bold text-amber-400 hover:underline mt-0.5 inline-flex items-center gap-1.5"
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span>Open Shop Location</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Parts & Fasteners Used */}
+                {selectedMod.partsUsed && (
+                  <div>
+                    <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <Wrench className="w-3.5 h-3.5 text-amber-400" />
+                      Parts & Fasteners Used
+                    </h4>
+                    <p className="text-zinc-200 text-xs sm:text-sm leading-relaxed bg-zinc-950/80 p-3.5 sm:p-4 border border-zinc-800 rounded-xl font-sans">
+                      {selectedMod.partsUsed}
+                    </p>
+                  </div>
+                )}
+
+                {/* Installation Procedure */}
+                {selectedMod.installationGuide && (
+                  <div>
+                    <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      Installation Procedure
+                    </h4>
+                    <p className="text-zinc-200 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap bg-zinc-950/80 p-3.5 sm:p-4 border border-zinc-800 rounded-xl font-sans">
+                      {selectedMod.installationGuide}
+                    </p>
+                  </div>
+                )}
+
+                {/* Safety & Warranty Considerations */}
+                {(() => {
+                  const customSafety =
+                    selectedMod.safetyConsiderations &&
+                    selectedMod.safetyConsiderations.trim().length > 0 &&
+                    selectedMod.safetyConsiderations.trim() !== 'Check all torques to factory specs before riding.'
+                      ? selectedMod.safetyConsiderations.trim()
+                      : null;
+
+                  const customWarranty =
+                    selectedMod.warrantyConsiderations &&
+                    selectedMod.warrantyConsiderations.trim().length > 0 &&
+                    selectedMod.warrantyConsiderations.trim() !== 'Bolt-on modification. Reversible without electrical harness cut.'
+                      ? selectedMod.warrantyConsiderations.trim()
+                      : null;
+
+                  if (!customSafety && !customWarranty) return null;
+
+                  return (
+                    <div
+                      className={`grid gap-3 ${
+                        customSafety && customWarranty ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'
+                      }`}
+                    >
+                      {customSafety && (
+                        <div className="p-3.5 rounded-xl bg-zinc-950/90 border border-zinc-800">
+                          <div className="text-xs font-bold text-amber-400 flex items-center gap-1.5 mb-1.5">
+                            <AlertCircle className="w-4 h-4" /> SAFETY CONSIDERATIONS
+                          </div>
+                          <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                            {customSafety}
+                          </div>
+                        </div>
+                      )}
+
+                      {customWarranty && (
+                        <div className="p-3.5 rounded-xl bg-zinc-950/90 border border-zinc-800">
+                          <div className="text-xs font-bold text-sky-400 flex items-center gap-1.5 mb-1.5">
+                            <ShieldCheck className="w-4 h-4" /> WARRANTY IMPLICATIONS
+                          </div>
+                          <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                            {customWarranty}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Attached Product Links */}
+                {selectedMod.productLinks && selectedMod.productLinks.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-zinc-800">
+                    <div className="text-xs text-zinc-400 uppercase tracking-wider font-bold flex items-center gap-1.5">
+                      <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Attached Product Links ({selectedMod.productLinks.length})</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {selectedMod.productLinks.map((link, idx) => {
+                        let domain = '';
+                        try {
+                          domain = new URL(link.url).hostname.replace(/^www\./, '');
+                        } catch (_) {
+                          domain = link.url;
+                        }
+                        const titleText = link.name || domain || link.url;
+
+                        return (
+                          <a
+                            key={idx}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between p-3 rounded-xl bg-zinc-950/80 hover:bg-zinc-800 border border-zinc-800 hover:border-amber-500/40 transition-colors group"
+                          >
+                            <div className="truncate pr-2">
+                              <div className="text-white font-bold text-xs truncate group-hover:text-amber-400">
+                                {titleText}
+                              </div>
+                              {link.name && domain && (
+                                <div className="text-[10px] text-zinc-500 truncate">{domain}</div>
+                              )}
+                            </div>
+                            <ExternalLink className="w-4 h-4 text-zinc-500 group-hover:text-amber-400 shrink-0" />
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sticky Footer Action Bar */}
+            <div className="p-3.5 sm:p-5 bg-zinc-950 border-t border-zinc-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shrink-0 z-10">
+              <div className="text-xs text-zinc-400 font-mono truncate max-w-full">
+                Contributed by <span className="font-bold text-zinc-100">{selectedMod.authorName}</span> •{' '}
+                <span className="text-amber-400 font-semibold">
+                  {selectedMod.isOfficialAccessory ? 'OEM Accessory' : 'Owner-Tested Mod'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap">
+                {canUserModifyRecord(currentUser, selectedMod) && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openEditMod(selectedMod)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteMod(selectedMod)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-red-950/80 hover:bg-red-900 text-red-300 border border-red-800/60 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedMod(null)}
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold uppercase tracking-wide rounded-lg shadow-md transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>
@@ -1684,13 +1775,13 @@ export const ModificationsLab: React.FC = () => {
                     <div>
                       <label className="block text-zinc-400 text-[11px] mb-1 flex items-center gap-1">
                         <Phone className="w-3 h-3 text-emerald-400" />
-                        <span>Shop Number (Optional)</span>
+                        <span>Contact / Shop Number (Optional)</span>
                       </label>
                       <input
                         type="tel"
                         value={shopNumber}
                         onChange={e => setShopNumber(e.target.value)}
-                        placeholder="e.g. +91 98765 43210"
+                        placeholder={currentUser?.mobile || 'e.g. +91 98765 43210'}
                         className="w-full bg-zinc-900 border border-zinc-800 focus:border-amber-500/50 rounded-lg p-2 text-white text-xs focus:outline-none"
                       />
                     </div>

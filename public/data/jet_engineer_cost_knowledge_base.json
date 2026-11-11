@@ -1,0 +1,623 @@
+{
+  "database_name": "Ghost Protocol Jet Engineer - Ultraviolette Parts and Labour Cost Knowledge Base",
+  "schema_version": "1.0.0",
+  "currency": "INR",
+  "currency_symbol": "₹",
+  "purpose": "Searchable reference data for Jet Engineer to answer user questions about part prices, labour charges, service costs and service intervals.",
+  "important_usage_rules": [
+    "All listed amounts are in INR and are transcribed from the supplied invoices or estimates.",
+    "Amounts in the parts and labour records are tax-inclusive net amounts shown on the source documents, unless a record explicitly says otherwise.",
+    "Treat estimate prices as historical quoted prices, not confirmed current prices.",
+    "Never combine records from different motorcycles or documents unless the user explicitly asks for a comparison.",
+    "Do not present an estimate as a paid invoice.",
+    "Do not invent a price for an unlisted part, labour operation, service interval, or model.",
+    "If the exact model, part variant, side (LH/RH), or assembly is unclear, ask a clarifying question before quoting a price.",
+    "When answering a cost question, show the part/service cost and the matching labour charge separately when both are available.",
+    "If labour is not listed for a part, say that a separate labour price was not available in this database.",
+    "Prices can change by dealer, location, date, tax treatment, warranty status and parts availability. Recommend confirming the latest quote with an authorised service centre."
+  ],
+  "records": [
+    {
+      "record_id": "F77-PAID-SERVICE-2026-08-16",
+      "document_type": "paid_invoice",
+      "status": "paid",
+      "vehicle_model": "Ultraviolette F77",
+      "vehicle_variant": "Not specified on the visible invoice",
+      "document_date": "2026-08-16",
+      "odometer_km": 20537,
+      "service_interval": {
+        "description": "3rd paid service",
+        "interval_km": 20000,
+        "time_limit_days": 720,
+        "display_text": "3rd paid service - 20,000 km / 720 days"
+      },
+      "parts": [
+        {
+          "part_number": "SRV_MX100171",
+          "name": "M5 Clip Nut",
+          "aliases": [
+            "clip nut",
+            "M5 nut"
+          ],
+          "quantity": 1,
+          "total_price_inr": 11.5
+        },
+        {
+          "part_number": "SRV_MX100250",
+          "name": "O-Ring",
+          "aliases": [
+            "oring",
+            "O ring"
+          ],
+          "quantity": 1,
+          "total_price_inr": 38.7
+        },
+        {
+          "part_number": "SRV_VX160170",
+          "name": "Magnetic Drain Plug",
+          "aliases": [
+            "magnetic drain plug",
+            "drain plug"
+          ],
+          "quantity": 1,
+          "total_price_inr": 153.27
+        },
+        {
+          "part_number": "SRV_VX184330",
+          "name": "Chain Slider",
+          "aliases": [
+            "chain slider"
+          ],
+          "quantity": 1,
+          "total_price_inr": 105.0
+        }
+      ],
+      "fluids": [
+        {
+          "part_number": "SRV_VX160410",
+          "name": "Transmission Oil",
+          "aliases": [
+            "transmission oil",
+            "gearbox oil"
+          ],
+          "quantity": 1,
+          "total_price_inr": 141.6
+        }
+      ],
+      "labour": [
+        {
+          "operation_code": null,
+          "operation": "3rd Paid Service - 20K km / 720 days",
+          "aliases": [
+            "20k service",
+            "third service",
+            "3rd service",
+            "paid service"
+          ],
+          "total_price_inr": 4823.25
+        },
+        {
+          "operation_code": "ME-F77-063",
+          "operation": "Chain Slider Removal and Replacement",
+          "aliases": [
+            "chain slider replacement",
+            "chain slider R&R"
+          ],
+          "total_price_inr": 29.5
+        },
+        {
+          "operation_code": "ME-X47-048",
+          "operation": "Magnetic Drain Plug Removal and Replacement",
+          "aliases": [
+            "magnetic drain plug replacement",
+            "drain plug R&R"
+          ],
+          "total_price_inr": 29.5
+        }
+      ],
+      "document_totals_inr": {
+        "parts_subtotal": 308.47,
+        "fluids_subtotal": 141.6,
+        "labour_subtotal": 4882.25,
+        "pre_rounding_total": 5332.32,
+        "rounding_adjustment": -0.32,
+        "invoice_total_paid": 5332.0
+      },
+      "notes": [
+        "The invoice identifies this as a paid service for 20K km / 720 days.",
+        "The source invoice lists the magnetic drain plug R&R operation with code ME-X47-048 even though the vehicle is an F77; retain the source code as printed and do not infer a model compatibility rule."
+      ],
+      "source_confidence": "high"
+    },
+    {
+      "record_id": "X47-PARTS-INVOICE-UNDATED",
+      "document_type": "invoice",
+      "status": "invoice_total_shown",
+      "vehicle_model": "Ultraviolette X47",
+      "vehicle_variant": "Not specified",
+      "document_date": null,
+      "parts": [
+        {
+          "part_number": "SRV_VQ180260TR",
+          "name": "X47 Tank Cover Trim LH DL Assembly",
+          "aliases": [
+            "tank cover trim LH",
+            "left tank cover trim"
+          ],
+          "quantity": 1,
+          "total_price_inr": 2742.95
+        },
+        {
+          "part_number": "SRV_VQ270980TR",
+          "name": "Knuckle Guard RH Assembly",
+          "aliases": [
+            "right knuckle guard",
+            "RH knuckle guard"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1000.0
+        },
+        {
+          "part_number": "SRV_VQ270970TR",
+          "name": "Knuckle Guard LH Assembly",
+          "aliases": [
+            "left knuckle guard",
+            "LH knuckle guard"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1000.0
+        },
+        {
+          "part_number": "SRV_VQ170060",
+          "name": "Handlebar Tube",
+          "aliases": [
+            "handlebar",
+            "handle bar tube"
+          ],
+          "quantity": 1,
+          "total_price_inr": 3984.0
+        },
+        {
+          "part_number": "SRV_VX170190",
+          "name": "Bar End",
+          "aliases": [
+            "handlebar end",
+            "bar end"
+          ],
+          "quantity": 1,
+          "total_price_inr": 161.05
+        },
+        {
+          "part_number": "SRV_VX190020",
+          "name": "Rear Indicator Assembly LH",
+          "aliases": [
+            "left rear indicator",
+            "LH rear turn indicator"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1184.61
+        },
+        {
+          "part_number": "SRV_VQ180700",
+          "name": "ADAS Mirror Assembly LH",
+          "aliases": [
+            "left ADAS mirror",
+            "LH mirror"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1559.0
+        },
+        {
+          "part_number": "SRV_VQ180440SSAB",
+          "name": "X47 Side Panel TR LH DL Assembly",
+          "aliases": [
+            "left side panel",
+            "LH side panel"
+          ],
+          "quantity": 1,
+          "total_price_inr": 4249.12
+        },
+        {
+          "part_number": "SRV_VQ180520CB",
+          "name": "Belly Panel Bottom LH",
+          "aliases": [
+            "left lower belly panel",
+            "bottom belly panel LH"
+          ],
+          "quantity": 1,
+          "total_price_inr": 710.24
+        },
+        {
+          "part_number": "SRV_VQ180480",
+          "name": "Belly Panel Centre",
+          "aliases": [
+            "centre belly panel",
+            "center belly panel"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1576.49
+        },
+        {
+          "part_number": "SRV_VQ180780",
+          "name": "Belly Panel Bottom",
+          "aliases": [
+            "bottom belly panel"
+          ],
+          "quantity": 1,
+          "total_price_inr": 710.4
+        }
+      ],
+      "accessories": [
+        {
+          "part_number": "VQ270860",
+          "name": "Bullbar (X47)",
+          "aliases": [
+            "X47 bullbar",
+            "bull bar"
+          ],
+          "quantity": 1,
+          "total_price_inr": 3999.0
+        }
+      ],
+      "labour": [
+        {
+          "operation_code": "PL-X47-062",
+          "operation": "X47 Tank Cover Trim LH DL Assembly Removal and Replacement",
+          "aliases": [
+            "tank cover trim replacement"
+          ],
+          "total_price_inr": 693.25
+        },
+        {
+          "operation_code": "ME-X47-122",
+          "operation": "Handlebar Tube Removal and Replacement",
+          "aliases": [
+            "handlebar replacement",
+            "handle bar R&R"
+          ],
+          "total_price_inr": 590.0
+        },
+        {
+          "operation_code": "ME-F77-010",
+          "operation": "Bar End Removal and Replacement",
+          "aliases": [
+            "bar end replacement"
+          ],
+          "total_price_inr": 29.5
+        },
+        {
+          "operation_code": "EE-X47-004",
+          "operation": "Rear Indicator Assembly LH Removal and Replacement",
+          "aliases": [
+            "left rear indicator replacement"
+          ],
+          "total_price_inr": 398.25
+        },
+        {
+          "operation_code": "EE-X47-018",
+          "operation": "ADAS Mirror Assembly LH Removal and Replacement",
+          "aliases": [
+            "left ADAS mirror replacement"
+          ],
+          "total_price_inr": 44.25
+        },
+        {
+          "operation_code": "PL-X47-065",
+          "operation": "X47 Side Panel TR LH DL Assembly Removal and Replacement",
+          "aliases": [
+            "left side panel replacement"
+          ],
+          "total_price_inr": 545.75
+        },
+        {
+          "operation_code": "PL-X47-035",
+          "operation": "Belly Panel Centre Removal and Replacement",
+          "aliases": [
+            "centre belly panel replacement"
+          ],
+          "total_price_inr": 14.75
+        }
+      ],
+      "document_totals_inr": {
+        "parts_subtotal": 18877.86,
+        "accessories_subtotal": 3999.0,
+        "labour_subtotal": 2315.75,
+        "total_before_rounding": 25192.61,
+        "invoice_total_rounded": 25193.0
+      },
+      "notes": [
+        "The visible document gives an invoice total of ₹25,193.00.",
+        "The invoice date was not reliably visible in the supplied image."
+      ],
+      "source_confidence": "high"
+    },
+    {
+      "record_id": "X47-RECON-ESTIMATE-2026-10-23",
+      "document_type": "service_estimate",
+      "status": "estimate_not_confirmation_of_payment",
+      "vehicle_model": "Ultraviolette X47 Recon",
+      "vehicle_variant": "X47 Recon",
+      "document_date": "2026-10-23",
+      "parts": [
+        {
+          "part_number": "VQ180260",
+          "name": "Tank Cover LH",
+          "aliases": [
+            "left tank cover",
+            "tank cover left"
+          ],
+          "quantity": 1,
+          "total_price_inr": 4231.0
+        },
+        {
+          "part_number": "VQ180440",
+          "name": "Side Panel LH Centre",
+          "aliases": [
+            "left centre side panel",
+            "LH centre side panel"
+          ],
+          "quantity": 1,
+          "total_price_inr": 4174.99
+        },
+        {
+          "part_number": "VQ180680",
+          "name": "Side Panel Front LH",
+          "aliases": [
+            "left front side panel"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1731.99
+        },
+        {
+          "part_number": "VQ180220",
+          "name": "Tank Cover Front LH",
+          "aliases": [
+            "front left tank cover"
+          ],
+          "quantity": 1,
+          "total_price_inr": 499.0
+        },
+        {
+          "part_number": "VQ270860",
+          "name": "Bullbar X47",
+          "aliases": [
+            "X47 bullbar",
+            "bull bar"
+          ],
+          "quantity": 1,
+          "total_price_inr": 4000.0
+        },
+        {
+          "part_number": "VQ180410",
+          "name": "Tank Ring",
+          "aliases": [
+            "tank ring"
+          ],
+          "quantity": 1,
+          "total_price_inr": 2828.0
+        },
+        {
+          "part_number": "VQ181270",
+          "name": "Tank Ring Damper",
+          "aliases": [
+            "tank ring rubber damper"
+          ],
+          "quantity": 1,
+          "total_price_inr": 9.99
+        },
+        {
+          "part_number": "VQ270850T",
+          "name": "Knuckle Guard Set",
+          "aliases": [
+            "knuckle guards",
+            "hand guards"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1999.99
+        },
+        {
+          "part_number": "VQ180520",
+          "name": "Panel Bottom LH",
+          "aliases": [
+            "left bottom panel"
+          ],
+          "quantity": 1,
+          "total_price_inr": 715.0
+        },
+        {
+          "part_number": "VQ180780",
+          "name": "X47 Belly Panel Bottom",
+          "aliases": [
+            "bottom belly panel"
+          ],
+          "quantity": 1,
+          "total_price_inr": 709.99
+        },
+        {
+          "part_number": "VQ180530",
+          "name": "Side Panel Bottom RH",
+          "aliases": [
+            "right bottom side panel"
+          ],
+          "quantity": 1,
+          "total_price_inr": 909.99
+        },
+        {
+          "part_number": "VX190020",
+          "name": "Front Indicator Assembly LH",
+          "aliases": [
+            "left front indicator",
+            "LH front turn indicator"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1183.99
+        },
+        {
+          "part_number": "VQ180190",
+          "name": "Head Lamp Mask RH Centre",
+          "aliases": [
+            "right headlamp mask",
+            "headlight mask RH"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1050.0
+        },
+        {
+          "part_number": "VQ120210",
+          "name": "Fork Leg Assembly LH - Gold",
+          "aliases": [
+            "left gold fork leg",
+            "front fork LH"
+          ],
+          "quantity": 1,
+          "total_price_inr": 14813.32
+        },
+        {
+          "part_number": "VX120060",
+          "name": "Lower Triple Clamp",
+          "aliases": [
+            "lower triple tree",
+            "lower yoke"
+          ],
+          "quantity": 1,
+          "total_price_inr": 5934.1
+        },
+        {
+          "part_number": "VX120070",
+          "name": "Steering Column",
+          "aliases": [
+            "steering stem",
+            "steering shaft"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1209.92
+        },
+        {
+          "part_number": "VX240670",
+          "name": "Speaker Assembly",
+          "aliases": [
+            "speaker"
+          ],
+          "quantity": 1,
+          "total_price_inr": 1050.0
+        },
+        {
+          "part_number": "VX152420",
+          "name": "Fixed Pack - High Range Battery",
+          "aliases": [
+            "high range battery",
+            "battery pack",
+            "fixed battery pack"
+          ],
+          "quantity": 1,
+          "total_price_inr": 162929.42
+        }
+      ],
+      "labour": [
+        {
+          "operation_code": "TAN-00001",
+          "operation": "Tank Cover LH Removal and Replacement",
+          "aliases": [
+            "left tank cover R&R"
+          ],
+          "total_price_inr": 236.0
+        },
+        {
+          "operation_code": "SID-00002",
+          "operation": "Side Panel LH Removal and Replacement",
+          "aliases": [
+            "left side panel R&R"
+          ],
+          "total_price_inr": 302.95
+        },
+        {
+          "operation_code": "SID-00004",
+          "operation": "Side Panel Bottom LH Removal and Replacement",
+          "aliases": [
+            "left bottom side panel R&R"
+          ],
+          "total_price_inr": 96.39
+        },
+        {
+          "operation_code": "X47-00005",
+          "operation": "X47 Bullbar Removal and Replacement",
+          "aliases": [
+            "bullbar R&R"
+          ],
+          "total_price_inr": 177.0
+        },
+        {
+          "operation_code": "FR0-00001",
+          "operation": "Front Tank Cover Removal and Replacement",
+          "aliases": [
+            "front tank cover R&R"
+          ],
+          "total_price_inr": 633.45
+        },
+        {
+          "operation_code": "KNU-00002",
+          "operation": "Knuckle Guard Removal and Replacement",
+          "aliases": [
+            "knuckle guard R&R"
+          ],
+          "total_price_inr": 236.0
+        },
+        {
+          "operation_code": "FOR-00004",
+          "operation": "Fork Leg Assembly LH Removal and Replacement",
+          "aliases": [
+            "left fork leg R&R"
+          ],
+          "total_price_inr": 977.71
+        },
+        {
+          "operation_code": "MAI-00001",
+          "operation": "Main Frame Complete Removal and Replacement",
+          "aliases": [
+            "main frame R&R"
+          ],
+          "total_price_inr": 6651.2
+        }
+      ],
+      "document_totals_inr": {
+        "parts_subtotal": 209980.69,
+        "labour_subtotal": 9310.7,
+        "grand_total_estimate": 219291.39
+      },
+      "notes": [
+        "This is an estimate, not evidence that the work was approved, completed or paid.",
+        "The high-range fixed battery pack is listed at ₹1,62,929.42.",
+        "The estimate contains only the labour operations shown above; do not assume that every listed part has a separately itemised labour charge."
+      ],
+      "source_confidence": "high"
+    },
+    {
+      "record_id": "UNITEMISED-ESTIMATE-87535",
+      "document_type": "service_estimate_or_quote",
+      "status": "unitemised_amount_only",
+      "vehicle_model": "Not confidently identifiable from the photograph",
+      "document_date": null,
+      "parts": [],
+      "labour": [],
+      "document_totals_inr": {
+        "quoted_total_inr": 87535.0
+      },
+      "notes": [
+        "The amount ₹87,535 is visible in the photograph, but individual part names, part prices and labour lines are not sufficiently legible.",
+        "Jet Engineer must not use this record to quote an individual part or labour operation.",
+        "Only use this record if a user asks whether the database contains an unitemised estimate of ₹87,535."
+      ],
+      "source_confidence": "low_for_itemisation"
+    }
+  ],
+  "service_interval_reference": [
+    {
+      "vehicle_model": "Ultraviolette F77",
+      "service_name": "3rd paid service",
+      "interval_km": 20000,
+      "time_limit_days": 720,
+      "source_record_id": "F77-PAID-SERVICE-2026-08-16",
+      "caution": "This is the interval printed on the supplied invoice. It is not a complete manufacturer service schedule. Confirm other intervals using the current official owner's manual or authorised service centre."
+    }
+  ]
+}

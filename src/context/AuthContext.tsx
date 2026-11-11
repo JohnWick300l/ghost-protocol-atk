@@ -17,6 +17,7 @@ import {
 import {
   resolveUserDisplayIdentity,
   isOwnerAccount,
+  isAdminOrOwnerAccount,
   inferDefaultPilotNickname,
   canPermanentlyRemoveUser
 } from '../utils/rules';
@@ -360,6 +361,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // If authenticated as admin or owner, fetch full directory for AdminCentre
         if (
+          isOwnerAccount(activeSessionUser) ||
+          isAdminOrOwnerAccount(activeSessionUser) ||
           activeSessionUser.role === 'admin' ||
           activeSessionUser.role === 'superadmin' ||
           activeSessionUser.isOwner

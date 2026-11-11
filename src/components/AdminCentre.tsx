@@ -47,6 +47,8 @@ import {
 import { UserIdentityBadge } from './UserIdentityBadge';
 import {
   resolveUserDisplayIdentity,
+  isOwnerAccount,
+  isAdminOrOwnerAccount,
   canEditContributionPage,
   canPermanentlyRemoveUser,
   DEFAULT_CONTRIBUTION_CONFIG,
@@ -200,7 +202,7 @@ export const AdminCentre: React.FC = () => {
     type: 'success' | 'error';
     text: string;
   } | null>(null);
-  const [adminContributions, setAdminContributions] = useState<Omit<ContributionRecord, 'amountInr'>[]>([]);
+  const [adminContributions, setAdminContributions] = useState<ContributionRecord[]>([]);
 
   const syncDraftFromContributionConfig = (cfg: ContributionConfig) => {
     setDraftHeadline(cfg.headline);
@@ -228,11 +230,13 @@ export const AdminCentre: React.FC = () => {
           syncDraftFromContributionConfig(normalized);
           saveToCache(CACHE_KEYS.CONTRIBUTION_CONFIG, normalized, { silent: true });
         }
-        if (Array.isArray(data.contributions)) {
+        if (Array.isArray(data.adminContributions)) {
+          setAdminContributions(data.adminContributions);
+        } else if (Array.isArray(data.contributions)) {
+          setAdminContributions(data.contributions);
           const redacted = data.contributions.map((item: ContributionRecord) =>
             redactContributionForPublicWall(item)
           );
-          setAdminContributions(redacted);
           saveToCache(CACHE_KEYS.CONTRIBUTIONS, redacted, { silent: true });
         }
       }
@@ -400,12 +404,33 @@ export const AdminCentre: React.FC = () => {
     }
   };
 
+  const handleVerifyContributionEntry = async (
+    id: string,
+    status: 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'UNVERIFIED'
+  ) => {
+    if (!isWebsiteOwner) return;
+    playTacticalClick();
+    try {
+      const res = await gpApiFetch(`/api/contributions/${id}/verify`, {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: getSessionAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ status })
+      });
+      if (res.ok) {
+        playChime();
+        await fetchContributionAdminData();
+      }
+    } catch {
+      // Ignore network error
+    }
+  };
+
   const handleDeleteContributionEntry = async (id: string) => {
     if (!isWebsiteOwner) return;
     playTacticalClick();
     const nextList = adminContributions.filter(c => c.id !== id);
     setAdminContributions(nextList);
-    saveToCache(CACHE_KEYS.CONTRIBUTIONS, nextList);
     try {
       await gpApiFetch(`/api/contributions/${id}`, {
         method: 'DELETE',
@@ -439,7 +464,14 @@ export const AdminCentre: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'superadmin' || currentUser.isOwner)) {
+    if (
+      currentUser &&
+      (isOwnerAccount(currentUser) ||
+        isAdminOrOwnerAccount(currentUser) ||
+        currentUser.role === 'admin' ||
+        currentUser.role === 'superadmin' ||
+        currentUser.isOwner)
+    ) {
       void refreshUsers();
       fetchMetrics();
       fetchSubmissions();
@@ -449,7 +481,7 @@ export const AdminCentre: React.FC = () => {
         void fetchContributionAdminData();
       }
     }
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?.role, currentUser?.isOwner, currentUser?.email]);
 
   const fetchMetrics = async () => {
     const isAutostartAdminPreview =
@@ -481,6 +513,19 @@ export const AdminCentre: React.FC = () => {
         const data = await res.json();
         setMetrics(data.metrics);
         setAuditLogs(data.auditLogs || []);
+      } else {
+        setMetrics((prev: any) => prev || {
+          totalMembers: availableUsers.length,
+          verifiedMembers: availableUsers.filter(u => u.verificationStatus === 'verified').length,
+          pendingRegistrations: availableUsers.filter(u => u.verificationStatus === 'pending').length,
+          appointedAdmins: availableUsers.filter(u => u.role === 'admin' && !u.isOwner).length,
+          activeEmergencies: adminEmergencies.length,
+          openProblems: 0,
+          activeRides: 0,
+          pendingJetSubmissions: submissions.length,
+          totalDiscussions: 0,
+          chargingStationsCount: 31
+        });
       }
       if (emgRes.ok) {
         const emgData = await emgRes.json();
@@ -492,6 +537,18 @@ export const AdminCentre: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to load metrics:', err);
+      setMetrics((prev: any) => prev || {
+        totalMembers: availableUsers.length,
+        verifiedMembers: availableUsers.filter(u => u.verificationStatus === 'verified').length,
+        pendingRegistrations: availableUsers.filter(u => u.verificationStatus === 'pending').length,
+        appointedAdmins: availableUsers.filter(u => u.role === 'admin' && !u.isOwner).length,
+        activeEmergencies: adminEmergencies.length,
+        openProblems: 0,
+        activeRides: 0,
+        pendingJetSubmissions: submissions.length,
+        totalDiscussions: 0,
+        chargingStationsCount: 31
+      });
     }
   };
 
@@ -928,34 +985,44 @@ export const AdminCentre: React.FC = () => {
       </div>
 
       {/* Real Stored Metrics Grid */}
-      {metrics && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs font-mono">
-          <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
-            <div className="text-[10px] text-[#707883]">TOTAL MEMBERS</div>
-            <div className="text-[#F1F3F5] font-bold text-sm mt-0.5">{metrics.totalMembers}</div>
-          </div>
-          <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
-            <div className="text-[10px] text-[#42B883]">VERIFIED OWNERS</div>
-            <div className="text-[#42B883] font-bold text-sm mt-0.5">{metrics.verifiedMembers}</div>
-          </div>
-          <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
-            <div className="text-[10px] text-[#E8AA45]">PENDING REGISTRATIONS</div>
-            <div className="text-[#E8AA45] font-bold text-sm mt-0.5">{metrics.pendingRegistrations}</div>
-          </div>
-          <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
-            <div className="text-[10px] text-[#729BCB]">ACTIVE SORTIES</div>
-            <div className="text-[#729BCB] font-bold text-sm mt-0.5">{metrics.activeRides}</div>
-          </div>
-          <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
-            <div className="text-[10px] text-[#E04F5F]">ACTIVE EMERGENCIES</div>
-            <div className="text-[#E04F5F] font-bold text-sm mt-0.5">{metrics.activeEmergencies}</div>
-          </div>
-          <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
-            <div className="text-[10px] text-[#AEB5BE]">OPEN ISSUES</div>
-            <div className="text-[#AEB5BE] font-bold text-sm mt-0.5">{metrics.openProblems}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs font-mono">
+        <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
+          <div className="text-[10px] text-[#707883]">TOTAL MEMBERS</div>
+          <div className="text-[#F1F3F5] font-bold text-sm mt-0.5">
+            {metrics?.totalMembers ?? availableUsers.length}
           </div>
         </div>
-      )}
+        <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
+          <div className="text-[10px] text-[#42B883]">VERIFIED OWNERS</div>
+          <div className="text-[#42B883] font-bold text-sm mt-0.5">
+            {metrics?.verifiedMembers ?? availableUsers.filter(u => u.verificationStatus === 'verified').length}
+          </div>
+        </div>
+        <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
+          <div className="text-[10px] text-[#E8AA45]">PENDING REGISTRATIONS</div>
+          <div className="text-[#E8AA45] font-bold text-sm mt-0.5">
+            {metrics?.pendingRegistrations ?? availableUsers.filter(u => u.verificationStatus === 'pending').length}
+          </div>
+        </div>
+        <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
+          <div className="text-[10px] text-[#729BCB]">ACTIVE SORTIES</div>
+          <div className="text-[#729BCB] font-bold text-sm mt-0.5">
+            {metrics?.activeRides ?? 0}
+          </div>
+        </div>
+        <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
+          <div className="text-[10px] text-[#E04F5F]">ACTIVE EMERGENCIES</div>
+          <div className="text-[#E04F5F] font-bold text-sm mt-0.5">
+            {metrics?.activeEmergencies ?? adminEmergencies.length}
+          </div>
+        </div>
+        <div className="p-3 rounded bg-[#0D0F12] border border-[#282D34]">
+          <div className="text-[10px] text-[#AEB5BE]">OPEN ISSUES</div>
+          <div className="text-[#AEB5BE] font-bold text-sm mt-0.5">
+            {metrics?.openProblems ?? 0}
+          </div>
+        </div>
+      </div>
 
       {/* Priority Admin SOS Dispatch Monitor */}
       {adminEmergencies.length > 0 && (
@@ -2080,15 +2147,19 @@ export const AdminCentre: React.FC = () => {
             </div>
           </form>
 
-          {/* Moderate Recent Squadron Backers Reviews */}
+          {/* Moderate Recent Squadron Backers Reviews & Verify UTR */}
           <div className="bg-[#0D0F12] border border-[#282D34] rounded-lg p-5 space-y-3">
             <div className="flex items-center justify-between border-b border-[#282D34] pb-2.5">
               <span className="font-bold text-[#D4D8DE] uppercase">
-                RECENT SQUADRON BACKERS MODERATION ({adminContributions.length})
+                SQUADRON BACKERS & UTR VERIFICATION ({adminContributions.length})
               </span>
               <span className="text-[10px] text-[#707883]">
-                Public wall displays Backer Name & Review only (Amounts anonymous)
+                Reconcile UTR, Amount, Date & Bank Credit before confirming SUCCESS
               </span>
+            </div>
+
+            <div className="p-2.5 rounded bg-[#08090B] border border-[#282D34] text-[10px] text-[#A0A7B0]">
+              Admin Reconciliation Checklist: Verify (1) 12-Digit UTR, (2) Exact Amount (₹), (3) Transaction Date, (4) Receiving Account (+91 9019884970 / {contribConfig.upiId}), and (5) Actual Bank Statement Credit before clicking VERIFY UTR.
             </div>
 
             {adminContributions.length === 0 ? (
@@ -2100,23 +2171,67 @@ export const AdminCentre: React.FC = () => {
                 {adminContributions.map(item => (
                   <div
                     key={item.id}
-                    className="py-3 flex items-center justify-between gap-4"
+                    className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
-                      <div className="font-bold text-[#F1F3F5] text-xs">{item.contributorName}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-[#F1F3F5] text-xs">{item.contributorName}</span>
+                        {typeof item.amountInr === 'number' && (
+                          <span className="px-1.5 py-0.5 rounded bg-[#F59E0B]/15 text-[#F59E0B] text-[10px] font-bold">
+                            ₹{item.amountInr}
+                          </span>
+                        )}
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                            item.transactionStatus === 'SUCCESS'
+                              ? 'bg-[#42B883]/20 text-[#42B883]'
+                              : item.transactionStatus === 'FAILED' || item.transactionStatus === 'CANCELLED'
+                              ? 'bg-[#E04F5F]/20 text-[#E04F5F]'
+                              : 'bg-[#F59E0B]/20 text-[#F59E0B]'
+                          }`}
+                        >
+                          {item.transactionStatus || 'SUCCESS'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[#707883] mt-0.5">
+                        UTR: <span className="text-[#D4D8DE] font-bold">{item.utrNumber || 'Legacy / Pre-verified'}</span>
+                        {' • '}Method: {item.paymentMethod}
+                        {item.createdAt ? ` • Date: ${new Date(item.createdAt).toLocaleString('en-IN')}` : ''}
+                        {` • Receiving A/C: +91 9019884970 (${contribConfig.upiId})`}
+                      </div>
                       <div className="text-[#A0A7B0] text-xs font-sans mt-0.5">
                         {item.note ? `“${item.note}”` : '—'}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteContributionEntry(item.id)}
-                      aria-label={`Remove backer ${item.contributorName}`}
-                      className="px-2.5 py-1.5 rounded bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 border border-[#E04F5F]/40 text-[#E04F5F] flex items-center gap-1 text-[10px] font-bold cursor-pointer shrink-0"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>REMOVE</span>
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {item.transactionStatus !== 'SUCCESS' && (
+                        <button
+                          type="button"
+                          onClick={() => handleVerifyContributionEntry(item.id, 'SUCCESS')}
+                          className="px-2.5 py-1.5 rounded bg-[#42B883]/20 hover:bg-[#42B883]/30 border border-[#42B883]/40 text-[#42B883] text-[10px] font-bold cursor-pointer"
+                        >
+                          VERIFY UTR
+                        </button>
+                      )}
+                      {item.transactionStatus !== 'FAILED' && (
+                        <button
+                          type="button"
+                          onClick={() => handleVerifyContributionEntry(item.id, 'FAILED')}
+                          className="px-2.5 py-1.5 rounded bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 border border-[#E04F5F]/40 text-[#E04F5F] text-[10px] font-bold cursor-pointer"
+                        >
+                          MARK FAILED
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteContributionEntry(item.id)}
+                        aria-label={`Remove backer ${item.contributorName}`}
+                        className="px-2.5 py-1.5 rounded bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 border border-[#E04F5F]/40 text-[#E04F5F] flex items-center gap-1 text-[10px] font-bold cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>REMOVE</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

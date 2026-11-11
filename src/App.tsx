@@ -43,6 +43,9 @@ import {
   hydrateAllCachesFromIndexedDB,
   OFFLINE_SYNC_EVENT,
   DATA_UPDATED_EVENT,
+  NETWORK_MODE_CHANGED_EVENT,
+  isManualOfflineMode,
+  setManualOfflineMode,
   getSessionAuthHeaders,
   BikeTelemetrySnapshot,
   CacheStorageStats,
@@ -78,39 +81,37 @@ const AppContent: React.FC = () => {
       if (window.location.pathname === '/squadron-showdown') {
         return 'squadron-showdown';
       }
-      const params = new URLSearchParams(window.location.search);
-      const urlRoute = params.get('route');
-      if (urlRoute) return urlRoute;
       try {
-        const savedRoute = sessionStorage.getItem('ghost_protocol_active_tab');
-        if (savedRoute) return savedRoute;
-        const photoTs = Number(localStorage.getItem('ghost_active_photo_timestamp') || 0);
-        const photoTarget = localStorage.getItem('ghost_active_photo_target') || '';
-        if (photoTarget && photoTs > 0 && Date.now() - photoTs < 5 * 60 * 1000) {
-          const targetRouteMap: Record<string, string> = {
-            modifications: 'modifications',
-            marketplace: 'marketplace',
-            problems: 'problems',
-            problems_update: 'problems',
-            jet_engineer: 'jet_engineer',
-            admin_qr: 'admin'
-          };
-          if (targetRouteMap[photoTarget]) {
-            return targetRouteMap[photoTarget];
-          }
+        // Ensure the app always starts cleanly on Home Screen (Cockpit Dashboard)
+        const url = new URL(window.location.href);
+        if (
+          url.searchParams.has('route') ||
+          url.searchParams.has('target') ||
+          url.searchParams.has('photoBridgeSynced')
+        ) {
+          url.searchParams.delete('route');
+          url.searchParams.delete('target');
+          url.searchParams.delete('photoBridgeSynced');
+          window.history.replaceState({ tab: 'dashboard', isGuard: false, isRoot: true }, '', url.pathname);
         }
+        sessionStorage.removeItem('ghost_protocol_active_tab');
+        localStorage.removeItem('ghost_protocol_active_tab');
+        localStorage.removeItem('ghost_active_photo_target');
+        localStorage.removeItem('ghost_active_photo_timestamp');
       } catch {}
     }
     return 'dashboard';
   };
 
-  const [currentTab, setCurrentTabState] = useState<string>(resolveInitialTab);
+  const [currentTab, setCurrentTabState] = useState<string>('dashboard');
 
   // Initialize initial history entry with a Root Guard so Android Back button can never close the app unexpectedly
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       const initialTab = resolveInitialTab();
+      setCurrentTabState(initialTab);
+      setTabHistory([initialTab]);
 
       // Always establish a root_guard entry at the base of the history stack
       window.history.replaceState(
@@ -189,11 +190,7 @@ const AppContent: React.FC = () => {
             if (url.pathname === '/squadron-showdown') {
               url.pathname = '/';
             }
-            if (tab === 'dashboard') {
-              url.searchParams.delete('route');
-            } else {
-              url.searchParams.set('route', tab);
-            }
+            url.searchParams.delete('route');
           }
           window.history.pushState(
             { tab, isGuard: false, isRoot: tab === 'dashboard' },
@@ -351,14 +348,15 @@ const AppContent: React.FC = () => {
       }
 
       // 3. Regular History Navigation between subpages
+      if (!hasCompletedInitialBoot) {
+        return;
+      }
       const stateTab = e.state?.tab;
-      const params = new URLSearchParams(window.location.search);
       const fromPath =
         window.location.pathname === '/squadron-showdown' ? 'squadron-showdown' : null;
-      const targetTab = stateTab || fromPath || params.get('route');
+      const targetTab = stateTab || fromPath;
 
       if (targetTab && targetTab !== currentTab) {
-        setHasCompletedInitialBoot(true);
         setCurrentTabState(targetTab);
         setTabHistory(h => (h.length > 0 ? h.slice(0, h.length - 1) : ['dashboard']));
         try {
@@ -380,12 +378,8 @@ const AppContent: React.FC = () => {
         try {
           sessionStorage.setItem('ghost_protocol_active_tab', prevTab);
           const url = new URL(window.location.href);
-          if (prevTab === 'dashboard') {
-            url.pathname = '/';
-            url.searchParams.delete('route');
-          } else {
-            url.searchParams.set('route', prevTab);
-          }
+          url.pathname = '/';
+          url.searchParams.delete('route');
           window.history.replaceState(
             { tab: prevTab, isGuard: false, isRoot: prevTab === 'dashboard' },
             '',
@@ -445,8 +439,17 @@ const AppContent: React.FC = () => {
   );
 
   // Offline and cache version telemetry state
-  const [isOffline, setIsOffline] = useState<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
-  const [isSimulatedOffline, setIsSimulatedOffline] = useState<boolean>(false);
+  const [isSimulatedOffline, setIsSimulatedOffline] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? isManualOfflineMode() : false
+  );
+  const isSimulatedOfflineRef = useRef<boolean>(isSimulatedOffline);
+  isSimulatedOfflineRef.current = isSimulatedOffline;
+
+  const [isOffline, setIsOffline] = useState<boolean>(() => {
+    const netOffline = typeof navigator !== 'undefined' ? !navigator.onLine : false;
+    const manualOff = typeof window !== 'undefined' ? isManualOfflineMode() : false;
+    return netOffline || manualOff;
+  });
   const [cacheAge, setCacheAge] = useState<string>(getCacheRelativeAge(initialCache?.updatedAt));
   const [cacheStats, setCacheStats] = useState<CacheStorageStats | null>(
     typeof window !== 'undefined' ? getCacheStorageStats() : null
@@ -455,34 +458,9 @@ const AppContent: React.FC = () => {
     typeof window !== 'undefined' ? getOfflineQueue() : []
   );
 
-  useEffect(() => {
-    void hydrateAllCachesFromIndexedDB();
-    initHybridDatabaseEngine();
-    const handleQueueEvent = () => {
-      setQueuedActions(getOfflineQueue());
-    };
-    const handleDataUpdated = () => {
-      const cached = loadCachedTelemetry();
-      if (cached) {
-        setRides(cached.data.rides);
-        setEmergencies(cached.data.emergencies);
-        setProblems(cached.data.problems);
-        setDiscussions(cached.data.discussions);
-        setChargingStations(cached.data.chargingStations);
-        setCacheStats(getCacheStorageStats());
-      }
-      void loadGlobalData();
-    };
-    window.addEventListener(OFFLINE_SYNC_EVENT, handleQueueEvent);
-    window.addEventListener(DATA_UPDATED_EVENT, handleDataUpdated);
-    return () => {
-      window.removeEventListener(OFFLINE_SYNC_EVENT, handleQueueEvent);
-      window.removeEventListener(DATA_UPDATED_EVENT, handleDataUpdated);
-    };
-  }, []);
-
   // Sync queued offline actions when network returns
   const syncOfflineQueue = async () => {
+    if (isSimulatedOfflineRef.current || isManualOfflineMode()) return;
     const queue = getOfflineQueue();
     if (queue.length === 0) return;
 
@@ -490,14 +468,18 @@ const AppContent: React.FC = () => {
     setQueuedActions(getOfflineQueue());
     if (syncedCount > 0) {
       playChime();
-      await loadGlobalData();
+      await loadGlobalData(true);
     }
   };
 
   // Load telemetry data from backend with versioned cache fallback & bidirectional reconciliation
-  const loadGlobalData = async () => {
-    if (isSimulatedOffline) {
-      // In simulated offline downtime, serve directly from versioned local cache
+  const loadGlobalData = async (forceOnline?: boolean) => {
+    const manualOfflineActive =
+      forceOnline === true ? false : isSimulatedOfflineRef.current || isManualOfflineMode();
+
+    if (manualOfflineActive) {
+      // In manual/simulated offline mode, serve directly from versioned local cache
+      setIsOffline(true);
       const cached = loadCachedTelemetry();
       if (cached) {
         setRides(cached.data.rides);
@@ -509,6 +491,8 @@ const AppContent: React.FC = () => {
         if (cached.data.bikeTelemetry) setBikeTelemetry(cached.data.bikeTelemetry);
         setCacheAge(getCacheRelativeAge(cached.updatedAt));
         setCacheStats(getCacheStorageStats());
+      } else {
+        setCacheAge('Cached');
       }
       return;
     }
@@ -554,8 +538,10 @@ const AppContent: React.FC = () => {
       setChargingStations(fetchedChargers);
       setNotifications(fetchedNotifications);
 
-      setIsOffline(false);
-      setCacheAge('Live');
+      if (!isSimulatedOfflineRef.current && !isManualOfflineMode()) {
+        setIsOffline(false);
+        setCacheAge('Live');
+      }
 
       // Persist fresh snapshot to versioned localStorage cache
       saveCachedTelemetry({
@@ -586,26 +572,73 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleToggleSimulateOffline = () => {
-    setIsSimulatedOffline(prev => {
-      const next = !prev;
-      if (next) {
-        setIsOffline(true);
-        const cached = loadCachedTelemetry();
-        if (cached) {
-          setCacheAge(getCacheRelativeAge(cached.updatedAt));
-          setCacheStats(getCacheStorageStats());
-        }
-      } else {
-        const netOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
-        setIsOffline(!netOnline);
-        if (netOnline) {
-          syncOfflineQueue();
-          setTimeout(loadGlobalData, 100);
-        }
+  useEffect(() => {
+    void hydrateAllCachesFromIndexedDB();
+    initHybridDatabaseEngine();
+    const handleQueueEvent = () => {
+      setQueuedActions(getOfflineQueue());
+    };
+    const handleDataUpdated = () => {
+      const cached = loadCachedTelemetry();
+      if (cached) {
+        setRides(cached.data.rides);
+        setEmergencies(cached.data.emergencies);
+        setProblems(cached.data.problems);
+        setDiscussions(cached.data.discussions);
+        setChargingStations(cached.data.chargingStations);
+        setCacheStats(getCacheStorageStats());
       }
-      return next;
-    });
+      if (!isSimulatedOfflineRef.current && !isManualOfflineMode()) {
+        void loadGlobalData();
+      }
+    };
+    const handleNetworkModeChanged = () => {
+      const manualOff = isManualOfflineMode();
+      isSimulatedOfflineRef.current = manualOff;
+      setIsSimulatedOffline(manualOff);
+      const netOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      setIsOffline(manualOff || !netOnline);
+    };
+    window.addEventListener(OFFLINE_SYNC_EVENT, handleQueueEvent);
+    window.addEventListener(DATA_UPDATED_EVENT, handleDataUpdated);
+    window.addEventListener(NETWORK_MODE_CHANGED_EVENT, handleNetworkModeChanged);
+    return () => {
+      window.removeEventListener(OFFLINE_SYNC_EVENT, handleQueueEvent);
+      window.removeEventListener(DATA_UPDATED_EVENT, handleDataUpdated);
+      window.removeEventListener(NETWORK_MODE_CHANGED_EVENT, handleNetworkModeChanged);
+    };
+  }, []);
+
+  const handleToggleSimulateOffline = () => {
+    const next = !(isSimulatedOfflineRef.current || isManualOfflineMode());
+    isSimulatedOfflineRef.current = next;
+    setManualOfflineMode(next);
+    setIsSimulatedOffline(next);
+
+    if (next) {
+      setIsOffline(true);
+      const cached = loadCachedTelemetry();
+      if (cached) {
+        setRides(cached.data.rides);
+        setEmergencies(cached.data.emergencies);
+        setProblems(cached.data.problems);
+        setDiscussions(cached.data.discussions);
+        setChargingStations(cached.data.chargingStations);
+        setNotifications(cached.data.notifications);
+        if (cached.data.bikeTelemetry) setBikeTelemetry(cached.data.bikeTelemetry);
+        setCacheAge(getCacheRelativeAge(cached.updatedAt));
+        setCacheStats(getCacheStorageStats());
+      } else {
+        setCacheAge('Cached');
+      }
+    } else {
+      const netOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      setIsOffline(!netOnline);
+      if (netOnline) {
+        void syncOfflineQueue();
+        void loadGlobalData(true);
+      }
+    }
   };
 
   const handleForceRefreshCache = async () => {
@@ -614,10 +647,10 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const handleOnline = () => {
-      if (!isSimulatedOffline) {
+      if (!isSimulatedOfflineRef.current && !isManualOfflineMode()) {
         setIsOffline(false);
-        syncOfflineQueue();
-        loadGlobalData();
+        void syncOfflineQueue();
+        void loadGlobalData(true);
       }
     };
 
@@ -638,13 +671,7 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     loadGlobalData();
-    const interval = setInterval(() => {
-      if (!isSimulatedOffline) {
-        loadGlobalData();
-      }
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [currentUser?.id, isSimulatedOffline]);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' as any });
@@ -859,6 +886,8 @@ const AppContent: React.FC = () => {
                 onClearAllNotifications={handleClearAllNotifications}
                 onClearNotification={handleClearNotification}
                 isOffline={effectiveOffline}
+                isSimulatedOffline={isSimulatedOffline}
+                onToggleSimulateOffline={handleToggleSimulateOffline}
                 cacheAge={cacheAge}
                 queuedActionCount={queuedActions.length}
               />

@@ -477,6 +477,30 @@ export const ProblemTracker: React.FC = () => {
     setShowCreateModal(true);
   };
 
+  const resetFormForNewIssue = () => {
+    clearFormDraft(DRAFT_KEY);
+    setEditingProblemId(null);
+    setFormTitle('');
+    setFormModel(currentUser?.motorcycleModel?.includes('X47') ? 'X47' : 'F77');
+    setFormVariant(currentUser?.motorcycleModel?.includes('X47') ? 'Crossover' : 'Mach 2');
+    setFormCategory('Motor & Drivetrain');
+    setFormDescription('');
+    setFormFirstObserved(new Date().toISOString().split('T')[0]);
+    setFormMileageKm('');
+    setFormSeverity('Moderate');
+    setFormWarningCode('');
+    setFormIsRecurring(false);
+    setFormTroubleshooting('');
+    setFormServiceVisits('');
+    setFormMediaUrls([]);
+  };
+
+  const handleOpenReportModal = () => {
+    playTacticalClick();
+    resetFormForNewIssue();
+    setShowCreateModal(true);
+  };
+
   const handleDeleteProblem = async (prob: ProblemReport) => {
     if (!currentUser) return;
     playTacticalClick();
@@ -1072,11 +1096,7 @@ export const ProblemTracker: React.FC = () => {
         </div>
 
         <button
-          onClick={() => {
-            playTacticalClick();
-            setEditingProblemId(null);
-            setShowCreateModal(true);
-          }}
+          onClick={handleOpenReportModal}
           className="w-full sm:w-auto flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-lg bg-[#E8AA45] hover:bg-[#F59E0B] text-xs sm:text-sm font-mono font-bold text-[#08090B] transition-colors shrink-0 shadow-sm cursor-pointer"
         >
           <Plus className="w-4 h-4" />

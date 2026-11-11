@@ -574,39 +574,46 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
             </button>
 
             {/* Matchup Showcase: Clean side-by-side fighter preview */}
-            <div className="grid grid-cols-11 items-center gap-1.5 sm:gap-3 bg-slate-950/70 rounded-xl p-2.5 sm:p-3 border border-slate-800/80">
+            <div className="grid grid-cols-11 items-stretch gap-1.5 sm:gap-3 bg-slate-950/70 rounded-xl p-2.5 sm:p-3 border border-slate-800/80">
               {/* P1 Section */}
               <div
                 onClick={() => setSelectTarget('PLAYER')}
-                className={`col-span-5 p-2 rounded-xl transition cursor-pointer flex flex-col sm:flex-row items-center gap-2 ${
+                className={`col-span-5 p-2.5 rounded-xl transition cursor-pointer flex flex-col sm:flex-row items-center sm:items-start gap-2 h-full overflow-hidden ${
                   selectTarget === 'PLAYER'
                     ? 'bg-cyan-950/50 border border-cyan-400 ring-2 ring-cyan-500/30'
-                    : 'hover:bg-slate-900/60 border border-transparent'
+                    : 'bg-slate-900/60 hover:bg-slate-900/80 border border-slate-800'
                 }`}
               >
                 <img
                   src={playerDef.spriteAsset}
                   alt={playerDef.name}
-                  className="w-14 h-20 sm:w-16 sm:h-24 object-contain drop-shadow"
+                  className="w-12 h-16 sm:w-16 sm:h-24 object-contain drop-shadow shrink-0"
                 />
-                <div className="text-center sm:text-left min-w-0 flex-1">
-                  <span className="inline-block px-1.5 py-0.5 rounded bg-cyan-400 text-slate-950 text-[9px] font-black tracking-wider uppercase">
-                    P1 (YOU)
-                  </span>
+                <div className="text-center sm:text-left min-w-0 flex-1 flex flex-col justify-center w-full">
+                  <div>
+                    <span className="inline-block px-1.5 py-0.5 rounded bg-cyan-400 text-slate-950 text-[9px] font-black tracking-wider uppercase">
+                      P1 (YOU)
+                    </span>
+                  </div>
                   <h3 className="text-xs sm:text-sm font-black text-white uppercase truncate mt-0.5">
                     {playerDef.name}
                   </h3>
                   <p className="text-[10px] text-cyan-300 font-bold truncate">
                     {playerDef.title}
                   </p>
-                  <p className="text-[9px] text-amber-300 truncate mt-0.5 hidden xs:block">
+                  {playerDef.tagline && (
+                    <p className="text-[9.5px] sm:text-xs text-amber-300 font-semibold italic mt-1 leading-snug break-words whitespace-normal">
+                      &ldquo;{playerDef.tagline}&rdquo;
+                    </p>
+                  )}
+                  <p className="text-[9px] text-slate-400 truncate mt-0.5 hidden xs:block">
                     ⚡ {playerDef.specialName}
                   </p>
                 </div>
               </div>
 
               {/* Center VS & Quick Swap */}
-              <div className="col-span-1 flex flex-col items-center justify-center gap-1.5">
+              <div className="col-span-1 flex flex-col items-center justify-center gap-1.5 py-1">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 via-amber-500 to-cyan-400 flex items-center justify-center font-black text-xs text-slate-950 shadow-md animate-pulse">
                   VS
                 </div>
@@ -623,28 +630,35 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
               {/* CPU Section */}
               <div
                 onClick={() => setSelectTarget('AI')}
-                className={`col-span-5 p-2 rounded-xl transition cursor-pointer flex flex-col sm:flex-row-reverse items-center gap-2 ${
+                className={`col-span-5 p-2.5 rounded-xl transition cursor-pointer flex flex-col sm:flex-row-reverse items-center sm:items-start gap-2 h-full overflow-hidden ${
                   selectTarget === 'AI'
                     ? 'bg-rose-950/50 border border-rose-400 ring-2 ring-rose-500/30'
-                    : 'hover:bg-slate-900/60 border border-transparent'
+                    : 'bg-slate-900/60 hover:bg-slate-900/80 border border-slate-800'
                 }`}
               >
                 <img
                   src={opponentDef.spriteAsset}
                   alt={opponentDef.name}
-                  className="w-14 h-20 sm:w-16 sm:h-24 object-contain drop-shadow transform scale-x-[-1]"
+                  className="w-12 h-16 sm:w-16 sm:h-24 object-contain drop-shadow transform scale-x-[-1] shrink-0"
                 />
-                <div className="text-center sm:text-right min-w-0 flex-1">
-                  <span className="inline-block px-1.5 py-0.5 rounded bg-rose-500 text-white text-[9px] font-black tracking-wider uppercase">
-                    CPU RIVAL
-                  </span>
+                <div className="text-center sm:text-right min-w-0 flex-1 flex flex-col justify-center w-full">
+                  <div>
+                    <span className="inline-block px-1.5 py-0.5 rounded bg-rose-500 text-white text-[9px] font-black tracking-wider uppercase">
+                      CPU RIVAL
+                    </span>
+                  </div>
                   <h3 className="text-xs sm:text-sm font-black text-white uppercase truncate mt-0.5">
                     {opponentDef.name}
                   </h3>
                   <p className="text-[10px] text-rose-300 font-bold truncate">
                     {opponentDef.title}
                   </p>
-                  <p className="text-[9px] text-amber-300 truncate mt-0.5 hidden xs:block">
+                  {opponentDef.tagline && (
+                    <p className="text-[9.5px] sm:text-xs text-amber-300 font-semibold italic mt-1 leading-snug break-words whitespace-normal">
+                      &ldquo;{opponentDef.tagline}&rdquo;
+                    </p>
+                  )}
+                  <p className="text-[9px] text-slate-400 truncate mt-0.5 hidden xs:block">
                     ⚡ {opponentDef.specialName}
                   </p>
                 </div>
@@ -835,6 +849,14 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                       <div className="text-[8px] text-slate-400 font-bold truncate">
                         {fighter.title}
                       </div>
+                      {fighter.tagline && (
+                        <div
+                          className="text-[8.5px] leading-tight text-amber-300 italic font-semibold mt-1 px-0.5 break-words whitespace-normal text-center"
+                          title={fighter.tagline}
+                        >
+                          &ldquo;{fighter.tagline}&rdquo;
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -897,7 +919,12 @@ export const SquadronShowdownGame: React.FC<SquadronShowdownGameProps> = ({
                             {isAI && <span className="text-[8px] font-bold text-rose-300">CPU</span>}
                           </div>
                           <div className="text-[9px] text-slate-400 truncate">{fighter.title}</div>
-                          <div className="text-[8px] text-amber-400 truncate">⚡ {fighter.specialName}</div>
+                          {fighter.tagline && (
+                            <div className="text-[8.5px] text-amber-300 italic font-semibold leading-snug mt-0.5 break-words whitespace-normal" title={fighter.tagline}>
+                              &ldquo;{fighter.tagline}&rdquo;
+                            </div>
+                          )}
+                          <div className="text-[8px] text-cyan-400 truncate">⚡ {fighter.specialName}</div>
                         </div>
                       </div>
                     );

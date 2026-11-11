@@ -71,6 +71,11 @@ export interface User {
   insuranceProvider?: string; // Private Insurance provider
   insurancePolicyNumber?: string; // Private Insurance policy number
   insuranceExpiryDate?: string; // Private Insurance expiry
+  dlDocumentUrl?: string; // Private DL Document
+  dlDocumentName?: string; // Private DL filename
+  dlNumber?: string; // Private DL Number
+  dlExpiryDate?: string; // Private DL Expiry Date
+  chassisNumber?: string; // Private Chassis/VIN Number
   bloodGroup: BloodGroup; // Private
   emergencyContact: {
     name: string;
@@ -313,7 +318,7 @@ export interface ChargingStation {
   vehicleCompatibility?: string;
   connectorTypes: string[];
   powerOutputKw: number;
-  chargerSource?: 'Supernova' | '3rd Party Station' | 'Community Provided Charger';
+  chargerSource?: 'Supernova' | '3rd Party Station' | 'Community Provided Charger' | 'UV Space Station';
   isSupernova: boolean;
   isCommunityReported: boolean;
   verifiedByAdmin: boolean;
@@ -337,6 +342,10 @@ export interface ChargingStation {
   lastVerifiedDate: string;
   userNotes?: string;
   reportedBy?: string;
+  categories?: string[];
+  isMasterStation?: boolean;
+  originalCoordinates?: string;
+  isDmsConverted?: boolean;
 }
 
 export interface MarketplaceItem {

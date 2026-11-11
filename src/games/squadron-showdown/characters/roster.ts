@@ -235,6 +235,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#0284c7',
     specialName: 'ARC OVERLOAD',
     specialDescription: 'Discharges a twin-gauntlet arc cannon surge across the lane.',
+    tagline: 'Arcing through the night circuit!',
     lore: 'A night-circuit test rider engineered for high-frequency cornering and rapid-fire electric combinations.',
     stats: {
       strength: 78,
@@ -256,6 +257,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#9333ea',
     specialName: 'ION LANCE KICK',
     specialDescription: 'Propels forward on violet ion thrusters for an armor-piercing lance kick.',
+    tagline: 'Ion thrusters engaged, sky is the limit.',
     lore: 'Equipped with a silver-violet aero suit and ion-assisted boots, Zara controls air and ground spacing with surgical precision.',
     stats: {
       strength: 82,
@@ -277,6 +279,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#ea580c',
     specialName: 'TORQUE CRUSHER',
     specialDescription: 'Unstoppable armored shoulder ram followed by a seismic molten uppercut.',
+    tagline: 'Unstoppable torque, unbreakable frame.',
     lore: 'Built like an endurance superbike chassis, Rex absorbs punishment and answers with bone-rattling torque.',
     stats: {
       strength: 92,
@@ -298,6 +301,7 @@ export const SQUADRON_ROSTER: FighterDefinition[] = [
     secondaryColor: '#10b981',
     specialName: 'PLASMA CYCLONE',
     specialDescription: 'Whirlwind emerald plasma slash that launches and juggles opponents.',
+    tagline: 'Plasma slashes in full 60FPS precision.',
     lore: 'Master of highway drift telemetry and emerald plasma gauntlets, Kenji thrives in relentless high-speed exchanges.',
     stats: {
       strength: 76,

@@ -66,14 +66,6 @@ interface MarketplaceProps {
   currentUser?: User | null;
 }
 
-const SAMPLE_PHOTO_PRESETS = [
-  { name: 'Boost Charger 3.0kW', url: createMarketplacePresetIllustration('charger') },
-  { name: 'Aero Carbon Helmet', url: createMarketplacePresetIllustration('helmet') },
-  { name: 'Touring Pannier Rig', url: createMarketplacePresetIllustration('panniers') },
-  { name: 'Armored Track Suit', url: createMarketplacePresetIllustration('jacket') },
-  { name: 'Carbon Wheels & Rearsets', url: createMarketplacePresetIllustration('carbon_wheels') }
-];
-
 const DRAFT_KEY = 'marketplace_listing_form_v2';
 const MARKETPLACE_MODAL_OPEN_KEY = 'ghost_marketplace_modal_open_v1';
 
@@ -196,7 +188,6 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
   );
 
   const [photoList, setPhotoList] = useState<string[]>(initialDraft.photoList || []);
-  const [photoUrlInput, setPhotoUrlInput] = useState('');
   const [photoBridgeNotice, setPhotoBridgeNotice] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -234,21 +225,21 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
   useEffect(() => {
     if (activeUser) {
       if (activeUser.mobile) {
-        setContactPhone(prev => prev || activeUser.mobile);
-        setRenterPhoneInput(prev => prev || activeUser.mobile);
-        setBidderPhoneInput(prev => prev || activeUser.mobile);
+        if (!editingItemId) setContactPhone(activeUser.mobile);
+        setRenterPhoneInput(activeUser.mobile);
+        setBidderPhoneInput(activeUser.mobile);
       }
       if (activeUser.email) {
-        setContactEmail(prev => prev || activeUser.email);
-        setRenterEmailInput(prev => prev || activeUser.email);
-        setBidderEmailInput(prev => prev || activeUser.email);
+        if (!editingItemId) setContactEmail(activeUser.email);
+        setRenterEmailInput(activeUser.email);
+        setBidderEmailInput(activeUser.email);
       }
       if (activeUser.fullName) {
-        setRenterNameInput(prev => prev || activeUser.fullName);
-        setBidderNameInput(prev => prev || activeUser.fullName);
+        setRenterNameInput(activeUser.fullName);
+        setBidderNameInput(activeUser.fullName);
       }
     }
-  }, [activeUser]);
+  }, [activeUser, editingItemId]);
 
   // Persist draft whenever creating a new listing
   useEffect(() => {
@@ -453,18 +444,8 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
     }
   };
 
-  const handleAddPhotoUrl = () => {
-    if (!photoUrlInput.trim()) return;
-    setPhotoList(prev => [...prev, photoUrlInput.trim()]);
-    setPhotoUrlInput('');
-  };
-
   const handleRemovePhoto = (index: number) => {
     setPhotoList(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleAddPresetPhoto = (url: string) => {
-    setPhotoList(prev => [...prev, url]);
   };
 
   const openCreateModalForType = (targetType: MarketplaceListingType) => {
@@ -942,6 +923,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
   };
 
   const resetForm = (defaultType: MarketplaceListingType = 'buy') => {
+    clearFormDraft(DRAFT_KEY);
     setListingType(defaultType);
     setTitle('');
     setDescription('');
@@ -952,8 +934,8 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
     setCondition('Like New');
     setCompatibleModel('Both');
     setGeneralLocation('');
-    setContactPhone(activeUser?.mobile || '+91 98450 11099');
-    setContactEmail(activeUser?.email || 'pilot-desk@ultraviolette-squadron.in');
+    setContactPhone(activeUser?.mobile || '');
+    setContactEmail(activeUser?.email || '');
     setCostPerDay('850');
     setSecurityDeposit('5000');
     setMinRentalDays('1');
@@ -967,7 +949,6 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
     setReservePrice('');
     setAuctionEndTime(new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
     setPhotoList([]);
-    setPhotoUrlInput('');
     setError('');
     setEditingItemId(null);
   };
@@ -1239,76 +1220,54 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
                 onClick={() => {
                   setSelectedItem(item);
                   setActiveGalleryIndex(0);
+                  if (activeUser) {
+                    setRenterNameInput(activeUser.fullName || '');
+                    setRenterPhoneInput(activeUser.mobile || '');
+                    setRenterEmailInput(activeUser.email || '');
+                    setBidderNameInput(activeUser.fullName || '');
+                    setBidderPhoneInput(activeUser.mobile || '');
+                    setBidderEmailInput(activeUser.email || '');
+                  }
+                  setRentNotes('');
+                  setRentActionError('');
                 }}
                 className="bg-zinc-900/95 border border-zinc-800 hover:border-zinc-700 rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all hover:translate-y-[-2px] hover:shadow-xl group"
               >
-                {/* Cover Photo */}
+                {/* Cover Photo - clean image preview without blocking overlays */}
                 <div className="relative aspect-video bg-zinc-950 overflow-hidden">
                   <img
                     src={mainPhoto}
                     alt={item.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
-
-                  {additionalPhotosCount > 0 && (
-                    <div className="absolute bottom-3 right-3 bg-black/80 backdrop-blur-md text-amber-400 border border-amber-500/30 text-xs font-semibold px-2.5 py-1 rounded-md flex items-center gap-1.5 shadow-md">
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      <span>+{additionalPhotosCount} Photos</span>
-                    </div>
-                  )}
-
-                  <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                    <span
-                      className={`text-[11px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider shadow ${
-                        itemType === 'rent'
-                          ? 'bg-cyan-400 text-black'
-                          : itemType === 'auction'
-                          ? 'bg-emerald-400 text-black'
-                          : 'bg-black/80 border border-zinc-700 text-zinc-200'
-                      }`}
-                    >
-                      {itemType === 'rent'
-                        ? 'FOR RENT'
-                        : itemType === 'auction'
-                        ? auctionSummary.isClosedOrAwarded
-                          ? 'AUCTION AWARDED'
-                          : 'LIVE AUCTION'
-                        : 'BUY & SELL'}
-                    </span>
-                    {(item as any).pendingSync && (
-                      <span className="bg-amber-500/90 text-black text-[10px] font-bold px-2 py-1 rounded-md uppercase">
-                        PENDING SYNC
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Price / Daily Rate / Current Bid Badge */}
-                  <div
-                    className={`absolute top-3 right-3 text-black text-sm font-black px-3 py-1 rounded-md shadow-lg ${
-                      itemType === 'rent'
-                        ? 'bg-cyan-400'
-                        : itemType === 'auction'
-                        ? 'bg-emerald-400'
-                        : 'bg-amber-500'
-                    }`}
-                  >
-                    {itemType === 'rent'
-                      ? `₹${dailyCost.toLocaleString('en-IN')}/day`
-                      : itemType === 'auction'
-                      ? `Bid: ₹${auctionSummary.currentHighAmount.toLocaleString('en-IN')}`
-                      : `₹${displayPrice.toLocaleString('en-IN')}`}
-                  </div>
                 </div>
 
                 {/* Card Content */}
                 <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
                   <div>
-                    <div className="flex items-center gap-2 text-xs text-zinc-400 mb-1.5">
-                      <span className="uppercase font-semibold text-zinc-300">{item.category}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{item.compatibleModel || 'F77 & X47'}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{item.condition}</span>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2 text-xs text-zinc-400">
+                        <span className="uppercase font-semibold text-zinc-300">{item.category}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{item.compatibleModel || 'F77 & X47'}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{item.condition}</span>
+                      </div>
+                      <div
+                        className={`text-sm font-black px-2.5 py-1 rounded-md shadow shrink-0 ${
+                          itemType === 'rent'
+                            ? 'bg-cyan-400 text-black'
+                            : itemType === 'auction'
+                            ? 'bg-emerald-400 text-black'
+                            : 'bg-amber-500 text-black'
+                        }`}
+                      >
+                        {itemType === 'rent'
+                          ? `₹${dailyCost.toLocaleString('en-IN')}/day`
+                          : itemType === 'auction'
+                          ? `Bid: ₹${auctionSummary.currentHighAmount.toLocaleString('en-IN')}`
+                          : `₹${displayPrice.toLocaleString('en-IN')}`}
+                      </div>
                     </div>
 
                     <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition-colors line-clamp-1 mb-1.5">
@@ -2306,7 +2265,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
                       setListingType('buy');
                       if (category === 'rentals' || category === 'auctions') setCategory('parts');
                     }}
-                    className={`py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all cursor-pointer ${
+                    className={`flex items-center justify-center text-center leading-tight min-h-[46px] py-2 px-2.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all cursor-pointer ${
                       listingType === 'buy'
                         ? 'bg-amber-500 text-black border-amber-400'
                         : 'bg-zinc-950 text-zinc-300 border-zinc-800 hover:border-zinc-700'
@@ -2320,7 +2279,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
                       setListingType('rent');
                       setCategory('rentals');
                     }}
-                    className={`py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all cursor-pointer ${
+                    className={`flex items-center justify-center text-center leading-tight min-h-[46px] py-2 px-2.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all cursor-pointer ${
                       listingType === 'rent'
                         ? 'bg-cyan-400 text-black border-cyan-300'
                         : 'bg-zinc-950 text-zinc-300 border-zinc-800 hover:border-zinc-700'
@@ -2334,7 +2293,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
                       setListingType('auction');
                       setCategory('auctions');
                     }}
-                    className={`py-2.5 px-3 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all cursor-pointer ${
+                    className={`flex items-center justify-center text-center leading-tight min-h-[46px] py-2 px-2.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all cursor-pointer ${
                       listingType === 'auction'
                         ? 'bg-emerald-400 text-black border-emerald-300'
                         : 'bg-zinc-950 text-zinc-300 border-zinc-800 hover:border-zinc-700'
@@ -2670,36 +2629,6 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ currentUser: propUser 
                   </div>
                 )}
 
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    placeholder="Or paste image URL..."
-                    value={photoUrlInput}
-                    onChange={e => setPhotoUrlInput(e.target.value)}
-                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddPhotoUrl}
-                    className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                  >
-                    Add URL
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 overflow-x-auto py-1">
-                  <span className="text-[10px] text-zinc-500 shrink-0">Quick Hardware Graphics:</span>
-                  {SAMPLE_PHOTO_PRESETS.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleAddPresetPhoto(preset.url)}
-                      className="text-[10px] bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 px-2 py-0.5 rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                    >
-                      + {preset.name}
-                    </button>
-                  ))}
-                </div>
 
                 {photoList.length > 0 && (
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 pt-2">

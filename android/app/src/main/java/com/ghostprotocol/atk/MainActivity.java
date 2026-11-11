@@ -32,6 +32,94 @@ public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
     private ValueCallback<Uri[]> fileUploadCallback;
+    private String lastLaunchedUpiPackage = "";
+
+    private final ActivityResultLauncher<Intent> upiPaymentLauncher =
+            registerForActivityResult(
+                    new ActivityResultContracts.StartActivityForResult(),
+                    result -> {
+                        if (webView == null) return;
+                        int resultCode = result.getResultCode();
+                        Intent data = result.getData();
+                        String rawResponse = "";
+                        String status = "CANCELLED";
+                        String approvalRefNo = "";
+                        String txnId = "";
+
+                        if (data != null) {
+                            String respExtra = data.getStringExtra("response");
+                            if (respExtra != null) {
+                                rawResponse = respExtra;
+                            }
+                            String statusExtra = data.getStringExtra("Status");
+                            if (statusExtra == null) {
+                                statusExtra = data.getStringExtra("status");
+                            }
+                            String refExtra = data.getStringExtra("ApprovalRefNo");
+                            if (refExtra == null) {
+                                refExtra = data.getStringExtra("txnRef");
+                            }
+                            String idExtra = data.getStringExtra("txnId");
+
+                            if (refExtra != null) approvalRefNo = refExtra;
+                            if (idExtra != null) txnId = idExtra;
+
+                            // Parse standard key=value&key2=value2 UPI response string if present
+                            if (!rawResponse.isEmpty()) {
+                                String[] pairs = rawResponse.split("&");
+                                for (String pair : pairs) {
+                                    int eq = pair.indexOf('=');
+                                    if (eq > 0) {
+                                        String k = pair.substring(0, eq).trim();
+                                        String v = pair.substring(eq + 1).trim();
+                                        if (k.equalsIgnoreCase("Status") && statusExtra == null) {
+                                            statusExtra = v;
+                                        } else if ((k.equalsIgnoreCase("ApprovalRefNo") || k.equalsIgnoreCase("txnRef")) && approvalRefNo.isEmpty()) {
+                                            approvalRefNo = v;
+                                        } else if (k.equalsIgnoreCase("txnId") && txnId.isEmpty()) {
+                                            txnId = v;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (statusExtra != null) {
+                                String upper = statusExtra.trim().toUpperCase();
+                                if (upper.equals("SUCCESS")) {
+                                    // Never mark confirmed without server/UTR verification; transition to UNVERIFIED with returned ref
+                                    status = "UNVERIFIED";
+                                } else if (upper.equals("SUBMITTED") || upper.equals("PENDING")) {
+                                    status = "PENDING";
+                                } else if (upper.equals("FAILURE") || upper.equals("FAILED")) {
+                                    status = "FAILED";
+                                } else {
+                                    status = "CANCELLED";
+                                }
+                            } else if (resultCode == Activity.RESULT_OK) {
+                                status = "PENDING";
+                            }
+                        } else if (resultCode == Activity.RESULT_OK) {
+                            status = "PENDING";
+                        }
+
+                        final String safeStatus = status.replace("\"", "");
+                        final String safeRef = approvalRefNo.replace("\"", "");
+                        final String safeTxnId = txnId.replace("\"", "");
+                        final String safePkg = (lastLaunchedUpiPackage != null ? lastLaunchedUpiPackage : "").replace("\"", "");
+                        final String js =
+                                "(function(){" +
+                                "try{" +
+                                "window.dispatchEvent(new CustomEvent('ghost-upi-payment-result',{detail:{" +
+                                "status:'" + safeStatus + "'," +
+                                "approvalRefNo:'" + safeRef + "'," +
+                                "txnId:'" + safeTxnId + "'," +
+                                "package:'" + safePkg + "'" +
+                                "}}));" +
+                                "}catch(e){}" +
+                                "})();";
+                        webView.post(() -> webView.evaluateJavascript(js, null));
+                    }
+            );
 
     private final ActivityResultLauncher<Intent> fileChooserLauncher =
             registerForActivityResult(
@@ -323,6 +411,63 @@ public class MainActivity extends AppCompatActivity {
                     return true;
                 }
 
+                // Direct UPI App Package Launch for Mobile-Number Lookup Workflow (no unsigned personal-VPA upi://pay intent)
+                String targetPkg = parsedIntent.getPackage();
+                if ((url.startsWith("intent://upi-app-launch") || Intent.ACTION_MAIN.equals(action))
+                        && targetPkg != null && !targetPkg.isEmpty()) {
+                    lastLaunchedUpiPackage = targetPkg;
+                    Intent launchIntent = getPackageManager().getLaunchIntentForPackage(targetPkg);
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try {
+                            startActivity(launchIntent);
+                            return true;
+                        } catch (ActivityNotFoundException ignored) {
+                        }
+                    }
+                    final String missingPkg = targetPkg.replace("\"", "");
+                    if (webView != null) {
+                        final String errJs =
+                                "(function(){" +
+                                "try{" +
+                                "window.dispatchEvent(new CustomEvent('ghost-upi-app-unavailable',{detail:{package:'" + missingPkg + "',status:'FAILED'}}));" +
+                                "}catch(e){}" +
+                                "})();";
+                        webView.post(() -> webView.evaluateJavascript(errJs, null));
+                    }
+                    return true;
+                }
+
+                Uri intentData = parsedIntent.getData();
+                String scheme = intentData != null ? intentData.getScheme() : parsedIntent.getScheme();
+                if ("upi".equalsIgnoreCase(scheme)) {
+                    Uri cleanUpiUri = intentData != null ? intentData : Uri.parse(
+                            url.replaceFirst("^intent://", "upi://").replaceFirst("#Intent;.*$", "")
+                    );
+                    Intent cleanUpiIntent = new Intent(Intent.ACTION_VIEW, cleanUpiUri);
+                    cleanUpiIntent.addCategory(Intent.CATEGORY_DEFAULT);
+                    lastLaunchedUpiPackage = targetPkg != null ? targetPkg : "";
+                    if (targetPkg != null && !targetPkg.isEmpty()) {
+                        cleanUpiIntent.setPackage(targetPkg);
+                    }
+                    try {
+                        upiPaymentLauncher.launch(cleanUpiIntent);
+                        return true;
+                    } catch (ActivityNotFoundException e) {
+                        final String missingPkg = (targetPkg != null ? targetPkg : "upi").replace("\"", "");
+                        if (webView != null) {
+                            final String errJs =
+                                    "(function(){" +
+                                    "try{" +
+                                    "window.dispatchEvent(new CustomEvent('ghost-upi-app-unavailable',{detail:{package:'" + missingPkg + "',status:'FAILED'}}));" +
+                                    "}catch(e){}" +
+                                    "})();";
+                            webView.post(() -> webView.evaluateJavascript(errJs, null));
+                        }
+                        return true;
+                    }
+                }
+
                 String fallbackUrl =
                         parsedIntent.getStringExtra("browser_fallback_url");
 
@@ -333,7 +478,8 @@ public class MainActivity extends AppCompatActivity {
                 } catch (ActivityNotFoundException e) {
 
                     if (fallbackUrl != null &&
-                            !fallbackUrl.isEmpty()) {
+                            !fallbackUrl.isEmpty() &&
+                            !fallbackUrl.startsWith("upi://")) {
                         openInBrowser(fallbackUrl);
                         return true;
                     }
@@ -342,7 +488,7 @@ public class MainActivity extends AppCompatActivity {
                             .replaceFirst("^intent://", "https://")
                             .replaceFirst("#Intent;.*$", "");
 
-                    if (!webUrl.equals("https://") && !webUrl.isEmpty()) {
+                    if (!webUrl.equals("https://") && !webUrl.isEmpty() && !webUrl.startsWith("https://pay?")) {
                         openInBrowser(webUrl);
                     }
                     return true;

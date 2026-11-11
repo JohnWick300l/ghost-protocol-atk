@@ -111,13 +111,15 @@ test('Firebase Spark Free-Tier Quota Guard guarantees 600 riders stay strictly w
   assert.equal(resetUsage.writes, 0);
 });
 
-test('sanitizeBundleItemsForFirestore enforces blueprint volumetric limits and strips sensitive/heavy fields', () => {
+test('sanitizeBundleItemsForFirestore enforces blueprint volumetric limits, preserves compressed photos, and strips sensitive/oversized fields', () => {
   const oversizedText = 'A'.repeat(6000);
-  const oversizedImage = 'data:image/png;base64,' + 'B'.repeat(12000);
+  const validCompressedImage = 'data:image/jpeg;base64,' + 'C'.repeat(12000);
+  const oversizedImage = 'data:image/png;base64,' + 'B'.repeat(190000);
   const rawItems = Array.from({ length: 130 }, (_, idx) => ({
     id: `item_${idx}`,
     title: `Post ${idx}`,
     summary: oversizedText,
+    imageUrl: validCompressedImage,
     photoUrl: oversizedImage,
     passwordHash: 'secret_hash_should_never_sync',
     upvotes: idx
@@ -126,6 +128,7 @@ test('sanitizeBundleItemsForFirestore enforces blueprint volumetric limits and s
   const sanitized = sanitizeBundleItemsForFirestore(rawItems);
   assert.equal(sanitized.length, FIREBASE_FREE_TIER_LIMITS.MAX_BUNDLE_ITEMS);
   assert.equal(sanitized[0].summary.length, FIREBASE_FREE_TIER_LIMITS.MAX_STRING_FIELD_LENGTH);
+  assert.equal(sanitized[0].imageUrl, validCompressedImage);
   assert.equal('passwordHash' in sanitized[0], false);
   assert.equal('photoUrl' in sanitized[0], false);
 });

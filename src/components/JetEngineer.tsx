@@ -247,6 +247,7 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
   const [reportReason, setReportReason] = useState('');
   const [lightboxPhotos, setLightboxPhotos] = useState<{ photos: string[]; index: number; title?: string } | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const lastScrolledMsgIdRef = useRef<string | null>('m_welcome');
 
   // TRAIN MODE STATE
   const [submissions, setSubmissions] = useState<JetEngineerSubmission[]>(() =>
@@ -427,10 +428,27 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
   }, [currentUser?.id]);
 
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [messages, loadingAnswer]);
+    const container = chatContainerRef.current;
+    if (!container || messages.length === 0) return;
+
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.id === lastScrolledMsgIdRef.current) return;
+
+    lastScrolledMsgIdRef.current = lastMsg.id;
+
+    // Wait for DOM paint, then align the start (top) of the specific message at the top of the chat viewport
+    requestAnimationFrame(() => {
+      if (!chatContainerRef.current) return;
+      const scrollEl = chatContainerRef.current;
+      const targetEl = scrollEl.querySelector<HTMLElement>(`[data-message-id="${lastMsg.id}"]`);
+      if (targetEl) {
+        const containerRect = scrollEl.getBoundingClientRect();
+        const targetRect = targetEl.getBoundingClientRect();
+        const nextScrollTop = Math.max(0, scrollEl.scrollTop + (targetRect.top - containerRect.top) - 8);
+        scrollEl.scrollTo({ top: nextScrollTop, behavior: 'smooth' });
+      }
+    });
+  }, [messages]);
 
   const fetchSubmissions = async () => {
     try {
@@ -789,11 +807,6 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
 
     setMessages(prev => [...prev, userMsg, assistantMsg]);
     playChime();
-    setTimeout(() => {
-      if (chatContainerRef.current) {
-        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-      }
-    }, 60);
   };
 
   return (
@@ -958,6 +971,8 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                 {messages.map(msg => (
                   <div
                     key={msg.id}
+                    data-message-id={msg.id}
+                    data-message-sender={msg.sender}
                     className={`flex flex-col ${
                       msg.sender === 'user' ? 'items-end' : 'items-start'
                     }`}
@@ -1086,7 +1101,7 @@ export const JetEngineer: React.FC<JetEngineerProps> = ({
                     type="text"
                     value={inputQuery}
                     onChange={e => setInputQuery(e.target.value)}
-                    placeholder="Ask regarding battery, charging, warning codes, service protocols..."
+                    placeholder="Ask regarding parts & labour costs, 20K service, battery, charging, warning codes..."
                     className="flex-1 bg-[#08090B] border border-[#282D34] focus:border-[#414851] rounded px-3 py-2 text-xs text-[#F1F3F5] focus:outline-none font-sans"
                     disabled={loadingAnswer}
                   />

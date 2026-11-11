@@ -626,13 +626,8 @@ export function initHybridDatabaseEngine(): void {
     emitSyncStatus();
   });
 
-  // Initial & periodic hybrid sync so user deletions and roster updates propagate across all open devices
+  // Initial hybrid sync cycle on application boot
   void runHybridSyncCycle({ force: false });
-  setInterval(() => {
-    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-      void runHybridSyncCycle({ force: false });
-    }
-  }, 8000);
 }
 
 export { ALLOWED_SHARED_MODULE_IDS };

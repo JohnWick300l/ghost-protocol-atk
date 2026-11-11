@@ -339,28 +339,40 @@ export function sanitizeBundleItemsForFirestore<T extends Record<string, any>>(
       if (key === 'passwordHash' || key === 'password' || key === 'setupToken') continue;
 
       if (typeof val === 'string') {
-        if (val.startsWith('data:image/') && val.length > 8192) {
-          // Omit heavy inline base64 blobs from cloud bundle to keep Firestore free tier lean
+        if (val.startsWith('data:image/')) {
+          if (val.length > 180000) {
+            continue;
+          }
+          cleanObj[key] = val;
           continue;
         }
         cleanObj[key] = val.slice(0, FIREBASE_FREE_TIER_LIMITS.MAX_STRING_FIELD_LENGTH);
       } else if (Array.isArray(val)) {
-        cleanObj[key] = val.slice(0, 50).map(entry => {
-          if (typeof entry === 'string') {
-            if (entry.startsWith('data:image/') && entry.length > 8192) return '';
-            return entry.slice(0, 1000);
-          }
-          if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
-            const cleanEntry: Record<string, any> = {};
-            for (const [ek, ev] of Object.entries(entry)) {
-              if (ev !== undefined && typeof ev !== 'function') {
-                cleanEntry[ek] = typeof ev === 'string' ? ev.slice(0, 1000) : ev;
+        cleanObj[key] = val
+          .slice(0, 50)
+          .map(entry => {
+            if (typeof entry === 'string') {
+              if (entry.startsWith('data:image/')) {
+                return entry.length <= 180000 ? entry : '';
               }
+              return entry.slice(0, 1000);
             }
-            return cleanEntry;
-          }
-          return entry;
-        });
+            if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+              const cleanEntry: Record<string, any> = {};
+              for (const [ek, ev] of Object.entries(entry)) {
+                if (ev !== undefined && typeof ev !== 'function') {
+                  if (typeof ev === 'string' && ev.startsWith('data:image/')) {
+                    if (ev.length <= 180000) cleanEntry[ek] = ev;
+                  } else {
+                    cleanEntry[ek] = typeof ev === 'string' ? ev.slice(0, 1000) : ev;
+                  }
+                }
+              }
+              return cleanEntry;
+            }
+            return entry;
+          })
+          .filter(entry => entry !== '');
       } else {
         cleanObj[key] = val;
       }
@@ -637,6 +649,27 @@ export function mergeHybridDataset<T extends Record<string, any>>(
     return typeof id === 'string' && id.trim() ? id.trim() : `idx_${fallbackIdx}`;
   };
 
+  const preserveMediaFields = (winner: Record<string, any>, fallback: Record<string, any>): T => {
+    const merged: Record<string, any> = { ...fallback, ...winner };
+    for (const imgField of ['imageUrl', 'photoUrl', 'avatar'] as const) {
+      if (
+        (!merged[imgField] || typeof merged[imgField] !== 'string' || !merged[imgField].trim()) &&
+        typeof fallback[imgField] === 'string' &&
+        fallback[imgField].trim()
+      ) {
+        merged[imgField] = fallback[imgField];
+      }
+    }
+    for (const arrField of ['imageUrls', 'photos', 'stepPhotos'] as const) {
+      const winArr = Array.isArray(winner[arrField]) ? winner[arrField].filter(Boolean) : [];
+      const fbArr = Array.isArray(fallback[arrField]) ? fallback[arrField].filter(Boolean) : [];
+      if (winArr.length === 0 && fbArr.length > 0) {
+        merged[arrField] = fbArr;
+      }
+    }
+    return merged as T;
+  };
+
   const upsert = (item: T, idx: number) => {
     if (!item || typeof item !== 'object') return;
     const id = getItemId(item, idx);
@@ -652,7 +685,9 @@ export function mergeHybridDataset<T extends Record<string, any>>(
     const incomingTime = getTimestampMs(item);
     const existingTime = getTimestampMs(existing);
     if (incomingTime >= existingTime) {
-      byId.set(id, { ...existing, ...item });
+      byId.set(id, preserveMediaFields(item, existing));
+    } else {
+      byId.set(id, preserveMediaFields(existing, item));
     }
   };
 

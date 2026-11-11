@@ -5,6 +5,23 @@ import {
   computeOfflineTileUrlsForRegions,
   type PlaceSuggestion
 } from './rules.ts';
+import {
+  JET_ENGINEER_COST_KB_VERSION,
+  JET_ENGINEER_COST_KB_LAST_UPDATED,
+  JET_ENGINEER_UNKNOWN_FALLBACK_MESSAGE,
+  getJetEngineerCostKnowledgeIndex,
+  queryJetEngineerCostKnowledgeBase,
+  formatInrAmount
+} from './jetEngineerCostKnowledgeBase.ts';
+
+export {
+  JET_ENGINEER_COST_KB_VERSION,
+  JET_ENGINEER_COST_KB_LAST_UPDATED,
+  JET_ENGINEER_UNKNOWN_FALLBACK_MESSAGE,
+  getJetEngineerCostKnowledgeIndex,
+  queryJetEngineerCostKnowledgeBase,
+  formatInrAmount
+};
 
 export const CURRENT_CACHE_VERSION = 3;
 export const SCHEMA_VERSION = '3.0.0';
@@ -24,7 +41,7 @@ export const CACHE_KEYS = {
   SERVICE: 'ghost_cache_service_v1',
   SERVICE_REVIEWS: 'ghost_cache_service_v1',
   LEADERBOARD: 'ghost_cache_leaderboard_v1',
-  CHARGING: 'ghost_cache_charging_v1',
+  CHARGING: 'ghost_cache_charging_v2',
   CHARGING_PLANNING: 'ghost_cache_charging_planning_v1',
   CHARGER_REPORTS: 'ghost_cache_charger_reports_v1',
   MODIFICATIONS: 'ghost_cache_modifications_v1',
@@ -33,6 +50,7 @@ export const CACHE_KEYS = {
   VISITED_DESTINATIONS: 'ghost_cache_visited_destinations_v1',
   AUTOPILOT_MISSIONS: 'ghost_cache_autopilot_missions_v1',
   JET_KNOWLEDGE: 'ghost_cache_jet_knowledge_v1',
+  JET_COST_KB: 'ghost_cache_jet_cost_kb_v1',
   JET_SUBMISSIONS: 'ghost_cache_jet_submissions_v1',
   JET_CHAT_HISTORY: 'ghost_cache_jet_chat_history_v1',
   JET_QA_HISTORY: 'ghost_cache_jet_chat_history_v1',
@@ -141,6 +159,86 @@ const nativeWindowFetch: typeof fetch | null =
     ? window.fetch.bind(window)
     : null;
 
+export type SubmissionSyncState =
+  | 'saving'
+  | 'published_cloud'
+  | 'saved_local_pending_cloud'
+  | 'sync_failed_retained_locally';
+
+export const SUBMISSION_STATUS_MESSAGES: Record<SubmissionSyncState, string> = {
+  saving: 'Saving...',
+  published_cloud: 'Published successfully – visible to the community.',
+  saved_local_pending_cloud: 'Saved on this device – waiting to sync.',
+  sync_failed_retained_locally: 'Sync failed – your contribution is safely retained locally.'
+};
+
+export function resolveSubmissionSyncFeedback(
+  responseOrStatus?: Response | { ok?: boolean; headers?: Headers } | null,
+  bodyData?: { syncStatus?: string; statusMessage?: string } | null
+): { state: SubmissionSyncState; message: string } {
+  if (!responseOrStatus || responseOrStatus.ok === false) {
+    return {
+      state: 'sync_failed_retained_locally',
+      message: SUBMISSION_STATUS_MESSAGES.sync_failed_retained_locally
+    };
+  }
+  const headerStatus =
+    typeof responseOrStatus.headers?.get === 'function'
+      ? responseOrStatus.headers.get('X-Ghost-Sync-Status')
+      : null;
+  const syncStatus = bodyData?.syncStatus || headerStatus;
+  if (syncStatus === 'saved_local_pending_cloud') {
+    return {
+      state: 'saved_local_pending_cloud',
+      message: SUBMISSION_STATUS_MESSAGES.saved_local_pending_cloud
+    };
+  }
+  return {
+    state: 'published_cloud',
+    message: SUBMISSION_STATUS_MESSAGES.published_cloud
+  };
+}
+
+export const MANUAL_OFFLINE_MODE_KEY = 'ghost_protocol_manual_offline_mode_v1';
+export const NETWORK_MODE_CHANGED_EVENT = 'ghost-network-mode-changed';
+
+export function isManualOfflineMode(storage?: StorageLike): boolean {
+  try {
+    const store = getStorage(storage);
+    return store.getItem(MANUAL_OFFLINE_MODE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function setManualOfflineMode(offline: boolean, storage?: StorageLike): void {
+  try {
+    const store = getStorage(storage);
+    if (offline) {
+      store.setItem(MANUAL_OFFLINE_MODE_KEY, 'true');
+    } else {
+      store.removeItem(MANUAL_OFFLINE_MODE_KEY);
+    }
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(
+        new CustomEvent(NETWORK_MODE_CHANGED_EVENT, {
+          detail: { manualOffline: offline, isOffline: isAppCurrentlyOffline(store) }
+        })
+      );
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function isAppCurrentlyOffline(storage?: StorageLike): boolean {
+  const browserOffline =
+    typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
+      ? !navigator.onLine
+      : false;
+  return browserOffline || isManualOfflineMode(storage);
+}
+
 export function gpApiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const baseFetch = nativeWindowFetch || fetch;
   try {
@@ -157,6 +255,13 @@ export function gpApiFetch(input: RequestInfo | URL, init?: RequestInit): Promis
         urlStr.startsWith(`${window.location.origin}/api/`));
 
     if (isSameOriginApi) {
+      const isAuthEndpoint = urlStr.includes('/api/auth/');
+      if (!isAuthEndpoint && isManualOfflineMode()) {
+        return Promise.reject(
+          new Error('OFFLINE_MODE_ACTIVE: App is working offline from local device cache.')
+        );
+      }
+
       const nextInit: RequestInit = { ...init };
       const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
       const token = getStoredSessionToken();
@@ -170,7 +275,20 @@ export function gpApiFetch(input: RequestInfo | URL, init?: RequestInit): Promis
       if (urlStr.includes('/api/auth/me') || urlStr.includes('/api/auth/accounts')) {
         nextInit.cache = 'no-store';
       }
-      return baseFetch(input, nextInit);
+      return baseFetch(input, nextInit).then(resp => {
+        try {
+          const delHeader = resp.headers?.get?.('X-Ghost-Deleted-Ids');
+          if (delHeader) {
+            const parsed = JSON.parse(delHeader);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              recordDeletedId(parsed);
+            }
+          }
+        } catch {
+          // Ignore header parse error
+        }
+        return resp;
+      });
     }
   } catch {
     // Fall through to baseFetch
@@ -996,6 +1114,7 @@ export async function processOfflineQueue(
 ): Promise<number> {
   if (isSyncInProgress) return 0;
   if (typeof navigator !== 'undefined' && !navigator.onLine) return 0;
+  if (isManualOfflineMode()) return 0;
   const queue = getOfflineQueue();
   if (queue.length === 0) return 0;
 
@@ -1494,6 +1613,23 @@ export function generateOfflineJetEngineerResponse(
   stepPhotos?: string[];
   includes: (searchString: string) => boolean;
 } {
+  // Check the versioned Ultraviolette Parts, Labour & Service Cost Knowledge Base first
+  const costKbResult = queryJetEngineerCostKnowledgeBase(query, motorcycleModel);
+  if (costKbResult.handled) {
+    const topMatchTitle = costKbResult.matchedRecordIds[0] || 'Cost Knowledge Base';
+    return {
+      answer: costKbResult.answer,
+      source: costKbResult.source,
+      aiPowered: false,
+      offlineEngine: true,
+      matchedCount: costKbResult.matchedRecordIds.length,
+      topMatchTitle,
+      stepPhotos: undefined,
+      includes: (s: string) =>
+        costKbResult.answer.includes(s) || topMatchTitle.includes(s)
+    };
+  }
+
   const normQuestion = (query || '').trim().toLowerCase();
   const qWords = normQuestion
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -1549,22 +1685,25 @@ export function generateOfflineJetEngineerResponse(
       }
     }
 
-    const itemModel = String(s.motorcycleModel || '').toLowerCase();
-    const targetModel = String(motorcycleModel || '').toLowerCase();
-    if (
-      targetModel &&
-      (itemModel.includes(targetModel) ||
-        targetModel.includes(itemModel) ||
-        itemModel.includes('both') ||
-        targetModel.includes('both'))
-    ) {
-      score += 15;
-    }
+    // Only apply model and approval bonuses if the query actually matched content in this submission
+    if (score > 0) {
+      const itemModel = String(s.motorcycleModel || '').toLowerCase();
+      const targetModel = String(motorcycleModel || '').toLowerCase();
+      if (
+        targetModel &&
+        (itemModel.includes(targetModel) ||
+          targetModel.includes(itemModel) ||
+          itemModel.includes('both') ||
+          targetModel.includes('both'))
+      ) {
+        score += 15;
+      }
 
-    if (s.status === 'Approved') {
-      score += 15;
-    } else if (s.status === 'Submitted') {
-      score += 5;
+      if (s.status === 'Approved') {
+        score += 15;
+      } else if (s.status === 'Submitted') {
+        score += 5;
+      }
     }
 
     if (score > 10) {
@@ -1596,14 +1735,7 @@ export function generateOfflineJetEngineerResponse(
         topProblem.title
     ).trim();
   } else {
-    const isX47 = String(motorcycleModel).includes('X47');
-    answerText = [
-      `Quick solutions for your ${isX47 ? 'X47' : 'F77'}:`,
-      `• Charging / Red Blinking LED: Use a properly grounded 15A wall socket (earth-to-neutral under 2V). After hard riding in hot weather (>38°C), let the bike cool in the shade for 15 minutes before fast charging.`,
-      `• Console / Bluetooth Freeze: Turn the key OFF, switch the kill switch to OFF, wait 45 seconds, then turn it back ON and reconnect.`,
-      `• Belt Noise (45–55 km/h): Adjust the rear carbon drive belt tension to 205–215 Hz.`,
-      `• Wet Road Slip: Set Dynamic Regen to Level 3 or 4 and switch traction control to Rain mode.`
-    ].join('\n');
+    answerText = JET_ENGINEER_UNKNOWN_FALLBACK_MESSAGE;
   }
 
   const topMatch = scoredSubmissions[0]?.item;

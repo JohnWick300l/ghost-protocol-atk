@@ -15,7 +15,10 @@ import {
   getOfflineQueue,
   queueOfflineAction,
   clearOfflineQueue,
-  getDefaultBikeTelemetry
+  getDefaultBikeTelemetry,
+  isManualOfflineMode,
+  setManualOfflineMode,
+  isAppCurrentlyOffline
 } from './telemetryCache.ts';
 
 // Mock in-memory localStorage implementation
@@ -187,3 +190,19 @@ test('telemetryCache: offline action queue operations', () => {
   clearOfflineQueue(storage);
   assert.equal(getOfflineQueue(storage).length, 0);
 });
+
+test('telemetryCache: manual offline mode toggle persists and updates app offline status', () => {
+  const storage = createMockStorage();
+
+  assert.equal(isManualOfflineMode(storage), false);
+  assert.equal(isAppCurrentlyOffline(storage), false);
+
+  setManualOfflineMode(true, storage);
+  assert.equal(isManualOfflineMode(storage), true);
+  assert.equal(isAppCurrentlyOffline(storage), true);
+
+  setManualOfflineMode(false, storage);
+  assert.equal(isManualOfflineMode(storage), false);
+  assert.equal(isAppCurrentlyOffline(storage), false);
+});
+

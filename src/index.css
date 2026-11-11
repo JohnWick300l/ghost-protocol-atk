@@ -142,27 +142,8 @@
 
 .radar-sweep {
   transform-origin: 0px 0px;
-  animation: radar-sweep 2.8s linear infinite;
-}
-
-.radar-ring-reverse {
-  transform-origin: 474.5px 898px;
-  animation: radar-sweep-reverse 16s linear infinite;
-}
-
-.radar-ring-slow {
-  transform-origin: 474.5px 898px;
-  animation: radar-sweep 24s linear infinite;
-}
-
-.radar-wavefront-1 {
-  transform-origin: 474.5px 898px;
-  animation: radar-wavefront-expand 2.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-
-.radar-wavefront-2 {
-  transform-origin: 474.5px 898px;
-  animation: radar-wavefront-expand 2.8s cubic-bezier(0.16, 1, 0.3, 1) 1.4s infinite;
+  animation: radar-sweep 3.6s linear infinite;
+  will-change: transform;
 }
 
 @keyframes radar-sweep {
@@ -171,29 +152,6 @@
   }
   to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes radar-sweep-reverse {
-  from {
-    transform: rotate(360deg);
-  }
-  to {
-    transform: rotate(0deg);
-  }
-}
-
-@keyframes radar-wavefront-expand {
-  0% {
-    transform: scale(0.08);
-    opacity: 0.85;
-  }
-  75% {
-    opacity: 0.3;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 0;
   }
 }
 
@@ -208,18 +166,8 @@
   }
 }
 
-.animate-radar-blip {
-  transform-origin: center;
-  animation: radar-blip-pulse 1.8s ease-in-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .radar-sweep,
-  .radar-ring-reverse,
-  .radar-ring-slow,
-  .radar-wavefront-1,
-  .radar-wavefront-2,
-  .animate-radar-blip {
+  .radar-sweep {
     animation: none !important;
   }
 }
@@ -417,227 +365,59 @@ img.leaflet-tile {
 }
 
 /* ============================================================================
-   TACTICAL COCKPIT HUD INITIALIZATION & LOCK-IN ENTRANCE KEYFRAMES
+   PRO-GRADE 60FPS GPU-COMPOSITED COCKPIT STARTUP & LIGHT-GUIDE CHOREOGRAPHY
    ============================================================================ */
 
-@keyframes hud-scanline-laser {
+@keyframes cockpit-stage-smooth-enter {
   0% {
-    top: -5%;
-    opacity: 0.8;
-  }
-  50% {
-    opacity: 1;
+    opacity: 0;
+    transform: scale3d(0.96, 0.96, 1) translate3d(0, 14px, 0);
   }
   100% {
-    top: 105%;
-    opacity: 0.3;
+    opacity: 1;
+    transform: scale3d(1, 1, 1) translate3d(0, 0, 0);
   }
 }
 
-@keyframes hud-bracket-slide-tl {
+@keyframes cockpit-ignition-veil-fade {
   0% {
-    transform: translate3d(-35px, -35px, 0) scale(1.15);
+    opacity: 0.88;
+    transform: scale3d(0.94, 0.94, 1);
+  }
+  55% {
+    opacity: 0.35;
+    transform: scale3d(1.03, 1.03, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale3d(1.15, 1.15, 1);
+  }
+}
+
+@keyframes cockpit-canopy-hud-enter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -12px, 0) scale3d(0.95, 0.95, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes cockpit-panel-trace-normalized {
+  0% {
+    stroke-dashoffset: 100;
     opacity: 0;
   }
-  70% {
-    transform: translate3d(2px, 2px, 0) scale(1.02);
-    opacity: 0.9;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes hud-bracket-slide-tr {
-  0% {
-    transform: translate3d(35px, -35px, 0) scale(1.15);
-    opacity: 0;
-  }
-  70% {
-    transform: translate3d(-2px, 2px, 0) scale(1.02);
-    opacity: 0.9;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes hud-bracket-slide-bl {
-  0% {
-    transform: translate3d(-35px, 35px, 0) scale(1.15);
-    opacity: 0;
-  }
-  70% {
-    transform: translate3d(2px, -2px, 0) scale(1.02);
-    opacity: 0.9;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes hud-bracket-slide-br {
-  0% {
-    transform: translate3d(35px, 35px, 0) scale(1.15);
-    opacity: 0;
-  }
-  70% {
-    transform: translate3d(-2px, -2px, 0) scale(1.02);
-    opacity: 0.9;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes hud-reticle-calibrate {
-  0% {
-    transform: scale(1.4) rotate(-90deg);
-    opacity: 0.2;
-    filter: blur(4px);
-  }
-  50% {
-    transform: scale(1.1) rotate(15deg);
-    opacity: 0.85;
-    filter: blur(1px);
-  }
-  85% {
-    transform: scale(0.97) rotate(-3deg);
-    opacity: 1;
-    filter: blur(0px);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-    filter: blur(0px);
-  }
-}
-
-@keyframes hud-lock-burst {
-  0% {
-    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
-  }
-  50% {
-    box-shadow: 0 0 35px 8px rgba(56, 189, 248, 0.75), inset 0 0 20px 4px rgba(56, 189, 248, 0.4);
-  }
-  100% {
-    box-shadow: 0 0 12px 2px rgba(56, 189, 248, 0.35);
-  }
-}
-
-@keyframes hud-glitch-text {
-  0%, 100% {
-    transform: translate(0);
-    opacity: 1;
-  }
-  20% {
-    transform: translate(-1.5px, 1px);
-    opacity: 0.9;
-  }
-  40% {
-    transform: translate(1.5px, -1px);
+  12% {
     opacity: 0.95;
   }
-  60% {
-    transform: translate(-1px, -1px);
-    opacity: 0.85;
+  65% {
+    stroke-dashoffset: 0;
+    opacity: 0.9;
   }
   80% {
-    transform: translate(1px, 1px);
-    opacity: 1;
-  }
-}
-
-.animate-hud-scanline {
-  animation: hud-scanline-laser 2.2s ease-in-out infinite;
-}
-
-.animate-hud-bracket-tl {
-  animation: hud-bracket-slide-tl 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.animate-hud-bracket-tr {
-  animation: hud-bracket-slide-tr 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.animate-hud-bracket-bl {
-  animation: hud-bracket-slide-bl 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.animate-hud-bracket-br {
-  animation: hud-bracket-slide-br 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.animate-hud-reticle {
-  animation: hud-reticle-calibrate 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-.animate-hud-lock-burst {
-  animation: hud-lock-burst 0.7s ease-out forwards;
-}
-
-.animate-hud-glitch-text {
-  animation: hud-glitch-text 0.4s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-hud-scanline,
-  .animate-hud-bracket-tl,
-  .animate-hud-bracket-tr,
-  .animate-hud-bracket-bl,
-  .animate-hud-bracket-br,
-  .animate-hud-reticle,
-  .animate-hud-lock-burst,
-  .animate-hud-glitch-text,
-  .animate-cockpit-stage-unfold,
-  .animate-cockpit-conduit,
-  .animate-cockpit-panel-trace,
-  .animate-cockpit-panel-fill,
-  .animate-cockpit-shockwave {
-    animation: none !important;
-  }
-}
-
-/* ============================================================================
-   COCKPIT MULTI-STAGE MECHANICAL TRANSFORMATION & ACTIVATION SEQUENCE
-   ============================================================================ */
-
-@keyframes cockpit-stage-unfold {
-  0% {
-    clip-path: circle(11% at 50.4% 53.7%);
-    transform: perspective(1100px) rotateX(14deg) scale(0.86);
-    filter: brightness(1.55) contrast(1.25) saturate(1.3);
-  }
-  38% {
-    clip-path: circle(36% at 50.4% 53.7%);
-    transform: perspective(1100px) rotateX(6deg) scale(1.03);
-    filter: brightness(1.25) contrast(1.12) saturate(1.15);
-  }
-  75% {
-    clip-path: circle(88% at 50.4% 53.7%);
-    transform: perspective(1100px) rotateX(-1deg) scale(0.995);
-    filter: brightness(1.08) contrast(1.04) saturate(1.05);
-  }
-  100% {
-    clip-path: circle(140% at 50.4% 53.7%);
-    transform: perspective(1100px) rotateX(0deg) scale(1);
-    filter: brightness(1) contrast(1) saturate(1);
-  }
-}
-
-@keyframes cockpit-conduit-charge {
-  0% {
-    stroke-dashoffset: 600;
-    opacity: 0;
-  }
-  20% {
-    opacity: 1;
-  }
-  75% {
     stroke-dashoffset: 0;
     opacity: 0.95;
   }
@@ -647,85 +427,98 @@ img.leaflet-tile {
   }
 }
 
-@keyframes cockpit-panel-laser-trace {
+@keyframes cockpit-boot-group-dissolve {
   0% {
-    stroke-dashoffset: 1200;
-    opacity: 0;
-  }
-  15% {
     opacity: 1;
   }
-  70% {
-    stroke-dashoffset: 0;
+  75% {
     opacity: 1;
   }
   100% {
-    stroke-dashoffset: 0;
     opacity: 0;
   }
 }
 
-@keyframes cockpit-panel-power-ignite {
+@keyframes cockpit-core-ring-expand {
   0% {
+    transform: scale(0.35);
     opacity: 0;
-    transform: scale(0.88);
   }
-  35% {
-    opacity: 0.55;
-    transform: scale(1.02);
-  }
-  70% {
-    opacity: 0.28;
-    transform: scale(1);
+  25% {
+    opacity: 0.7;
   }
   100% {
+    transform: scale(1.45);
     opacity: 0;
-    transform: scale(1);
   }
 }
 
-@keyframes cockpit-core-shockwave {
+@keyframes cockpit-horizon-light-pass {
   0% {
-    transform: scale(0.15);
-    opacity: 0.95;
-    stroke-width: 8px;
+    transform: translate3d(0, -120%, 0);
+    opacity: 0;
   }
-  70% {
-    opacity: 0.55;
-    stroke-width: 3px;
+  18% {
+    opacity: 0.65;
+  }
+  80% {
+    opacity: 0.45;
   }
   100% {
-    transform: scale(2.4);
+    transform: translate3d(0, 950%, 0);
     opacity: 0;
-    stroke-width: 1px;
   }
 }
 
 .animate-cockpit-stage-unfold {
-  animation: cockpit-stage-unfold 1.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+  animation: cockpit-stage-smooth-enter 1.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.animate-cockpit-conduit {
-  stroke-dasharray: 600;
-  stroke-dashoffset: 600;
-  animation: cockpit-conduit-charge 1.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+.animate-cockpit-ignition-veil {
+  will-change: transform, opacity;
+  animation: cockpit-ignition-veil-fade 2.0s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-cockpit-canopy-enter {
+  will-change: transform, opacity;
+  animation: cockpit-canopy-hud-enter 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both;
 }
 
 .animate-cockpit-panel-trace {
-  stroke-dasharray: 1200;
-  stroke-dashoffset: 1200;
-  animation: cockpit-panel-laser-trace 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: cockpit-panel-trace-normalized 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.animate-cockpit-panel-fill {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: cockpit-panel-power-ignite 1.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+.animate-cockpit-boot-group {
+  will-change: opacity;
+  animation: cockpit-boot-group-dissolve 3.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-cockpit-shockwave {
-  transform-origin: 474.5px 898px;
-  animation: cockpit-core-shockwave 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+  transform-origin: 474.5px 900px;
+  animation: cockpit-core-ring-expand 1.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-cockpit-horizon-pass {
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: cockpit-horizon-light-pass 2.0s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-cockpit-stage-unfold,
+  .animate-cockpit-ignition-veil,
+  .animate-cockpit-canopy-enter,
+  .animate-cockpit-panel-trace,
+  .animate-cockpit-boot-group,
+  .animate-cockpit-shockwave,
+  .animate-cockpit-horizon-pass {
+    animation: none !important;
+  }
 }
 
 

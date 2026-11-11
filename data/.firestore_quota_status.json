@@ -1,8 +1,8 @@
 {
   "exhausted": true,
-  "exhaustedAt": "2026-10-31T15:25:48.561Z",
-  "resetAtMs": 1793577600000,
-  "resetAtIso": "2026-11-01T00:00:00.000Z",
+  "exhaustedAt": "2026-11-08T22:37:30.320Z",
+  "resetAtMs": 1794182400000,
+  "resetAtIso": "2026-11-09T00:00:00.000Z",
   "reason": "Quota exceeded for quota metric 'Free daily write units per project (free tier database)' and limit 'Free daily write units per project (free tier database) per day' of service 'firestore.googleapis.com' for consumer 'project_number:214972545002'.",
   "projectId": "fleet-unfolding-p5v9p",
   "databaseId": "ai-studio-ghostprotocol-7dd54263-89ea-448f-9e88-37be2d9f1eb3",

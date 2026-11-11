@@ -41,6 +41,8 @@ interface NavigationProps {
   onClearAllNotifications?: () => void;
   onClearNotification?: (id: string) => void;
   isOffline?: boolean;
+  isSimulatedOffline?: boolean;
+  onToggleSimulateOffline?: () => void;
   cacheAge?: string;
   queuedActionCount?: number;
   onOpenWelcome?: () => void;
@@ -57,6 +59,8 @@ export const Navigation: React.FC<NavigationProps> = ({
   onClearAllNotifications,
   onClearNotification,
   isOffline = false,
+  isSimulatedOffline = false,
+  onToggleSimulateOffline,
   cacheAge = 'Live',
   queuedActionCount = 0,
   onOpenWelcome,
@@ -183,15 +187,26 @@ export const Navigation: React.FC<NavigationProps> = ({
             </div>
           </button>
 
-          {/* Network Mode Cool Icon Indicator */}
-          <div
+          {/* Top-Left Interactive Network Mode Toggle (ONLINE / OFFLINE) */}
+          <button
+            type="button"
             data-testid="network-mode-indicator"
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wider transition-all duration-300 shadow-sm shrink-0 ${
+            data-network-mode={isOffline ? 'offline' : 'online'}
+            aria-pressed={isOffline}
+            onClick={() => {
+              playTacticalClick();
+              onToggleSimulateOffline?.();
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold tracking-wider transition-all duration-300 shadow-sm shrink-0 cursor-pointer active:scale-95 ${
               isOffline
-                ? 'bg-[#1C1203]/90 border-[#F59E0B]/60 text-[#F59E0B] shadow-[0_0_10px_rgba(245,158,11,0.2)]'
-                : 'bg-[#021A1A]/90 border-[#10B981]/60 text-[#10B981] shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                ? 'bg-[#1C1203]/95 border-[#F59E0B]/80 text-[#F59E0B] hover:bg-[#291A04] shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                : 'bg-[#021A1A]/95 border-[#10B981]/80 text-[#10B981] hover:bg-[#042929] shadow-[0_0_12px_rgba(16,185,129,0.25)]'
             }`}
-            title={isOffline ? 'Running in Offline Mode (Cached Telemetry)' : 'Running in Online Mode (Live Network Link)'}
+            title={
+              isOffline
+                ? 'App is Working Offline (Local Cache Active) — Click to switch to Online Mode'
+                : 'App is Online (Live Network Link) — Click to switch to Offline Mode'
+            }
           >
             <span className="relative flex h-2 w-2 shrink-0">
               <span
@@ -206,11 +221,17 @@ export const Navigation: React.FC<NavigationProps> = ({
               />
             </span>
             {isOffline ? (
-              <span className="hidden sm:inline">OFFLINE</span>
+              <>
+                <WifiOff className="w-3 h-3 shrink-0" />
+                <span>OFFLINE</span>
+              </>
             ) : (
-              <span className="hidden sm:inline">ONLINE</span>
+              <>
+                <Wifi className="w-3 h-3 shrink-0" />
+                <span>ONLINE</span>
+              </>
             )}
-          </div>
+          </button>
         </div>
 
         {/* Desktop Navigation Links */}
@@ -548,6 +569,35 @@ export const Navigation: React.FC<NavigationProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Active Offline Mode Status Bar on Operational Sub-Pages */}
+      {isOffline && (
+        <div
+          data-testid="subpage-offline-working-banner"
+          className="bg-[#1C1203]/95 border-t border-[#F59E0B]/40 px-3 sm:px-6 py-1.5 flex items-center justify-between gap-2 font-mono text-[10px] sm:text-[11px] text-[#FDE68A]"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <WifiOff className="w-3.5 h-3.5 text-[#F59E0B] shrink-0 animate-pulse" />
+            <span className="truncate font-bold tracking-wide">
+              WORKING OFFLINE • SERVING LOCAL CACHE ({cacheAge})
+              {queuedActionCount > 0 ? ` • ${queuedActionCount} QUEUED FOR SYNC` : ''}
+            </span>
+          </div>
+          {onToggleSimulateOffline && (
+            <button
+              type="button"
+              data-testid="subpage-switch-online-btn"
+              onClick={() => {
+                playTacticalClick();
+                onToggleSimulateOffline();
+              }}
+              className="px-2.5 py-0.5 rounded-full bg-[#021A1A] hover:bg-[#042929] border border-[#10B981]/80 text-[#10B981] font-bold tracking-wider uppercase shrink-0 cursor-pointer transition-colors"
+            >
+              GO ONLINE
+            </button>
+          )}
+        </div>
+      )}
     </header>
   );
 };

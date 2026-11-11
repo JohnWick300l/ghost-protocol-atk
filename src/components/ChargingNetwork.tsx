@@ -52,6 +52,7 @@ import {
   canModifyChargerRecord,
   isAdminOrOwnerAccount,
   buildChargerNavigationUrl,
+  buildStationCategories,
   resolveChargerSubmitterInfo,
   resolveCommunityChargerTerms,
   calculateChargerReservationCost,
@@ -82,6 +83,7 @@ import {
   enqueueOfflineAction,
   reconcileCollectionWithCache,
   recordDeletedId,
+  getDeletedIds,
   OFFLINE_FALLBACK_CHARGING_STATIONS,
   OFFLINE_FALLBACK_CHARGER_REPORTS,
   OFFLINE_SYNC_EVENT,
@@ -253,11 +255,15 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
 
   useEffect(() => {
     if (currentUser) {
-      setResRiderName(prev => prev || currentUser.fullName || 'Abinav Thejas K');
-      setResRiderPhone(prev => prev || currentUser.mobile || '+91 98450 11099');
-      setResBikeModel(prev => prev || currentUser.motorcycleModel || 'F77');
+      setResRiderName(currentUser.fullName || 'Abinav Thejas K');
+      setResRiderPhone(currentUser.mobile || '+91 98450 11099');
+      setResBikeModel(currentUser.motorcycleModel || 'F77');
+      if (!editingStationId) {
+        setSubmitterName(currentUser.fullName || '');
+        setSubmitterPhone(currentUser.mobile || '');
+      }
     }
-  }, [currentUser]);
+  }, [currentUser, editingStationId]);
 
   useEffect(() => {
     setResError(null);
@@ -277,18 +283,21 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
   const isAdmin = isAdminOrOwnerAccount(currentUser);
 
   const mergeWithMinimalStations = useCallback((list: ChargingStation[]): ChargingStation[] => {
+    const deletedSet = new Set<string>(getDeletedIds());
     const map = new Map<string, ChargingStation>();
     for (const s of list) {
-      if (s && s.id) {
+      if (s && s.id && !deletedSet.has(s.id)) {
         map.set(s.id, s);
       }
     }
     for (const ms of minimalValidStationsRef.current) {
-      if (ms && ms.id && !map.has(ms.id)) {
+      if (ms && ms.id && !map.has(ms.id) && !deletedSet.has(ms.id)) {
         map.set(ms.id, ms);
       }
     }
-    return Array.from(map.values()).filter(s => s.approvalStatus !== 'deleted');
+    return Array.from(map.values()).filter(
+      s => s.approvalStatus !== 'deleted' && !deletedSet.has(s.id)
+    );
   }, []);
 
   const applyStationPayload = useCallback(
@@ -634,6 +643,24 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
     playTacticalClick();
     const submitterInfo = resolveChargerSubmitterInfo(station);
     const commTerms = resolveCommunityChargerTerms(station);
+    const hasSpaceCategory =
+      Array.isArray(station.categories) &&
+      station.categories.some(c => /space\s*station/i.test(String(c || '')));
+    const resolvedInitialSource: ChargerSource =
+      station.chargerSource === 'UV Space Station' || hasSpaceCategory
+        ? 'UV Space Station'
+        : station.chargerSource === 'Supernova' || station.isSupernova
+        ? 'Supernova'
+        : station.chargerSource === '3rd Party Station'
+        ? '3rd Party Station'
+        : station.chargerSource || 'Community Provided Charger';
+    const rawStationPricing = station.pricing || 'Free / Commercial';
+    const cleanedInitialPricing =
+      resolvedInitialSource !== 'Community Provided Charger' &&
+      /community charger|community host|prior reservation/i.test(rawStationPricing)
+        ? 'Free / Commercial Standard'
+        : rawStationPricing;
+
     setEditingStationId(station.id);
     setName(station.name);
     setLocation(station.location);
@@ -645,10 +672,10 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
     setVehicleCompatibility(
       station.vehicleCompatibility || 'F77 MACH 2, F77 Recon, F77 Original'
     );
-    setChargerSource(station.chargerSource || 'Community Provided Charger');
+    setChargerSource(resolvedInitialSource);
     setPowerOutputKw(String(station.powerOutputKw));
     setAccessConditions(station.accessConditions);
-    setPricing(station.pricing || 'Free / Commercial');
+    setPricing(cleanedInitialPricing);
     setPricingType(commTerms.pricingType);
     setChargingCostAmount(String(commTerms.chargingCostAmount || 15));
     setChargingCostUnit(commTerms.chargingCostUnit);
@@ -673,7 +700,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
     });
 
     if (newType === 'Supernova') {
-      if (chargerSource !== 'Community Provided Charger') {
+      if (chargerSource !== 'UV Space Station') {
         setChargerSource('Supernova');
       }
       setPowerOutputKw('30');
@@ -720,23 +747,42 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
 
     setFormErrors({});
     const spec = CHARGER_PLUG_TYPE_SPECS[validation.chargerType];
-    const resolvedSource =
-      validation.chargerType === 'Supernova' && chargerSource !== 'Community Provided Charger'
+    const resolvedSource: ChargerSource =
+      validation.chargerType === 'Supernova' &&
+      chargerSource !== 'UV Space Station' &&
+      chargerSource !== 'Community Provided Charger'
         ? 'Supernova'
         : chargerSource;
 
-    const availText =
-      availabilityDays === '24/7 Anytime'
-        ? '24/7 Anytime (Prior Reservation Required)'
-        : `${availabilityStartTime || '06:00'} – ${availabilityEndTime || '22:00'} (${availabilityDays || 'Daily'})`;
+    const isCommunitySource = resolvedSource === 'Community Provided Charger';
+    const existingStation = editingStationId
+      ? allStations.find(s => s.id === editingStationId)
+      : undefined;
+    const syncedCategories = buildStationCategories(
+      validation.chargerType,
+      resolvedSource,
+      existingStation?.categories
+    );
 
-    const numericCost = pricingType === 'Charged' ? Math.max(1, Number(chargingCostAmount) || 15) : 0;
-    const computedPricing =
-      resolvedSource === 'Community Provided Charger'
-        ? pricingType === 'Charged'
-          ? `Charged • ₹${numericCost} ${chargingCostUnit} (${availText})`
-          : `Free Community Charger (${availText})`
+    const availText = isCommunitySource
+      ? availabilityDays === '24/7 Anytime'
+        ? '24/7 Anytime (Prior Reservation Required)'
+        : `${availabilityStartTime || '06:00'} – ${availabilityEndTime || '22:00'} (${availabilityDays || 'Daily'})`
+      : accessConditions || 'Public 24/7';
+
+    const numericCost =
+      isCommunitySource && pricingType === 'Charged'
+        ? Math.max(1, Number(chargingCostAmount) || 15)
+        : 0;
+    const cleanedNonCommunityPricing =
+      !pricing || /community charger|community host|prior reservation/i.test(pricing)
+        ? 'Free / Commercial Standard'
         : pricing;
+    const computedPricing = isCommunitySource
+      ? pricingType === 'Charged'
+        ? `Charged • ₹${numericCost} ${chargingCostUnit} (${availText})`
+        : `Free Community Charger (${availText})`
+      : cleanedNonCommunityPricing;
 
     const clientRequestId = `chg_req_${Date.now()}`;
     const payload = {
@@ -749,21 +795,26 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
       chargerDetails: validation.sanitizedChargerDetails || spec.requirementSummary,
       vehicleCompatibility: vehicleCompatibility.trim(),
       chargerSource: resolvedSource,
+      categories: syncedCategories,
+      isSupernova: validation.chargerType === 'Supernova' || resolvedSource === 'Supernova',
+      isCommunityReported: isCommunitySource,
       powerOutputKw: Number(powerOutputKw) || 3.3,
       connectorTypes: [spec.defaultConnectorLabel],
       accessConditions,
-      pricingType: pricingType,
+      pricingType: isCommunitySource ? pricingType : 'Free',
       chargingCostAmount: numericCost,
       chargingCostUnit: chargingCostUnit,
       availabilityStartTime: availabilityStartTime || '06:00',
       availabilityEndTime: availabilityEndTime || '22:00',
       availabilityDays: availabilityDays || 'Daily',
       availabilityTimeText: availText,
-      requiresReservation: resolvedSource === 'Community Provided Charger',
+      requiresReservation: isCommunitySource,
       pricing: computedPricing,
       userNotes: userNotes.trim(),
       reportedBy: submitterName.trim() || currentUser?.fullName || 'Community Member',
-      submittedByPhone: submitterPhone.trim() || currentUser?.mobile || '+91 98450 11099',
+      submittedByPhone: isCommunitySource
+        ? submitterPhone.trim() || currentUser?.mobile || '+91 98450 11099'
+        : undefined,
       userId: currentUser?.id,
       clientRequestId
     };
@@ -779,6 +830,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
         headers: {
           'Content-Type': 'application/json',
           'x-client-request-id': clientRequestId,
+          ...getSessionAuthHeaders(),
           ...(currentUser?.id ? { 'x-user-id': currentUser.id } : {})
         },
         body: JSON.stringify(payload)
@@ -797,6 +849,8 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
       playChime();
       setShowAddModal(false);
       resetForm();
+      setSearchQuery('');
+      setFilterType('ALL');
 
       if (data.station) {
         const nextAll = editingStationId
@@ -828,7 +882,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
         : '/api/charging';
       const method = editingStationId ? 'PUT' : 'POST';
       enqueueOfflineAction(endpoint, method, payload, 'Charging Station Submission', clientRequestId);
-      const canPublishOffline = Boolean(isAdmin || resolvedSource === 'Community Provided Charger');
+      const canPublishOffline = true;
       const localStation: any = {
         ...payload,
         id: editingStationId || `cs_local_${Date.now()}`,
@@ -848,6 +902,8 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
       setAllStations(updatedAll);
       setStations(updatedAll.filter(s => isPubliclyPublishedCharger(s)));
       saveToCache(CACHE_KEYS.CHARGING, updatedAll);
+      setSearchQuery('');
+      setFilterType('ALL');
       if (canPublishOffline) {
         setSelectedStation(localStation);
       }
@@ -1042,16 +1098,32 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
     playTacticalClick();
     recordDeletedId(station.id);
     const remaining = allStations.filter(s => s.id !== station.id);
+    const remainingPub = remaining.filter(s => isPubliclyPublishedCharger(s));
     setAllStations(remaining);
-    setStations(remaining.filter(s => isPubliclyPublishedCharger(s)));
+    setStations(remainingPub);
     saveToCache(CACHE_KEYS.CHARGING, remaining);
+    if (selectedStation?.id === station.id) {
+      const nearbyMatch = remainingPub.find(
+        s =>
+          Math.abs(s.latitude - station.latitude) < 0.04 &&
+          Math.abs(s.longitude - station.longitude) < 0.04
+      );
+      setSelectedStation(nearbyMatch || null);
+    }
+    if (editingStationId === station.id) {
+      setShowAddModal(false);
+      resetForm();
+    }
+    setSubmissionNotice(`Removed "${station.name}" from the Charging Map.`);
+    setTimeout(() => setSubmissionNotice(null), 4000);
     try {
       const res = await fetch(
-        `/api/charging/${station.id}?userId=${encodeURIComponent(currentUser?.id || '')}`,
+        `/api/charging/${encodeURIComponent(station.id)}?userId=${encodeURIComponent(currentUser?.id || '')}`,
         {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
+            ...getSessionAuthHeaders(),
             ...(currentUser?.id ? { 'x-user-id': currentUser.id } : {})
           },
           body: JSON.stringify({ userId: currentUser?.id })
@@ -1060,12 +1132,6 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
 
       if (res.ok) {
         playChime();
-        if (selectedStation?.id === station.id) {
-          const nextPub = remaining.filter(s => isPubliclyPublishedCharger(s));
-          setSelectedStation(nextPub[0] || null);
-        }
-        setSubmissionNotice(`Removed "${station.name}" from the Charging Map.`);
-        setTimeout(() => setSubmissionNotice(null), 4000);
       }
     } catch (err) {
       console.error('Error deleting station:', err);
@@ -1080,6 +1146,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          ...getSessionAuthHeaders(),
           ...(currentUser?.id ? { 'x-user-id': currentUser.id } : {})
         },
         body: JSON.stringify({
@@ -1121,7 +1188,11 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
     try {
       const res = await fetch('/api/charging/planning-info', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getSessionAuthHeaders(),
+          ...(currentUser?.id ? { 'x-user-id': currentUser.id } : {})
+        },
         body: JSON.stringify({
           text: planningDraft,
           adminName: currentUser?.fullName
@@ -1196,6 +1267,18 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
   );
 
   const getStationSourceBadge = (cs: ChargingStation) => {
+    const isUvSpace =
+      cs.chargerSource === 'UV Space Station' ||
+      (Array.isArray(cs.categories) &&
+        cs.categories.some(c => /space\s*station/i.test(String(c || ''))));
+    if (isUvSpace) {
+      return (
+        <span className="px-2 py-0.5 rounded bg-[#38BDF8]/20 text-[#38BDF8] border border-[#38BDF8]/40 font-bold inline-flex items-center gap-1.5">
+          <Zap className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
+          <span>UV SPACE STATION</span>
+        </span>
+      );
+    }
     if (cs.chargerSource === 'Supernova' || cs.isSupernova || cs.chargerType === 'Supernova') {
       return (
         <span className="px-2 py-0.5 rounded bg-[#42B883]/20 text-[#42B883] border border-[#42B883]/40 font-bold inline-flex items-center gap-1.5">
@@ -2276,108 +2359,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 {/* SECTION BELOW MAP: ONLY SELECTED CHARGER OR EXPANDABLE ALL CHARGERS */}
                 {/* ========================================================= */}
                 <section aria-label="Charging Station Details and Directory" className="space-y-3">
-                  {selectedStation ? (
-                    <div id="selected-charger-details-anchor" className="space-y-3">
-                      <div className="flex items-center justify-between text-xs font-mono text-[#A0A7B0] pb-1 border-b border-[#282D34]">
-                        <span className="font-bold text-[#42B883] uppercase flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-[#42B883]" />
-                          SELECTED CHARGER DETAILS
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            playTacticalClick();
-                            setSelectedStation(null);
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-[#191D22] hover:bg-[#252A30] text-[#E8AA45] hover:text-white border border-[#E8AA45]/40 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
-                        >
-                          <span>Deselect / View All Chargers</span>
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      {/* Display ONLY the selected charger card */}
-                      {(() => {
-                        const cs = selectedStation;
-                        const plugType =
-                          cs.rawChargerType !== undefined
-                            ? formatMinimalChargerType(cs.rawChargerType)
-                            : cs.chargerType || (cs.isSupernova ? 'Supernova' : 'Socket');
-                        const submitterInfo = resolveChargerSubmitterInfo(cs);
-                        const cardTerms = resolveCommunityChargerTerms(cs);
-                        const navUrl = buildChargerNavigationUrl(cs as any, null);
-                        const exactCoordsDisplay =
-                          cs.exactLocationCoordinates ||
-                          `${Number(cs.latitude).toFixed(6)}, ${Number(cs.longitude).toFixed(6)}`;
-
-                        return (
-                          <div className="p-4 rounded-xl border bg-[#13171F] border-[#E8AA45] shadow-xl space-y-3 font-mono text-xs">
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between text-[11px]">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  {getStationSourceBadge(cs)}
-                                  {plugType.toLowerCase() !== 'supernova' && (
-                                    <span className="px-2 py-0.5 rounded bg-[#191D22] border border-[#E8AA45]/50 text-[#E8AA45] font-bold">
-                                      {plugType}
-                                    </span>
-                                  )}
-                                  {isChargerAddedInLast24Hours(cs) && (
-                                    <span className="px-2 py-0.5 rounded bg-[#42B883]/20 border border-[#42B883]/50 text-[#42B883] font-bold">
-                                      NEW
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-[#42B883] font-bold text-sm">{cs.powerOutputKw} kW</span>
-                              </div>
-
-                              <div className="text-base sm:text-lg font-bold text-[#F8FAFC]">
-                                {cs.referenceName || cs.name}
-                              </div>
-                              <div className="text-xs text-[#38BDF8]">
-                                GPS: {exactCoordsDisplay}
-                              </div>
-                              <div className="text-xs text-[#A0A7B0] font-sans">
-                                {cs.location}
-                              </div>
-
-                              {submitterInfo.isCommunityProvided && (
-                                <div className="pt-2 border-t border-[#282D34] flex flex-wrap items-center justify-between gap-2 text-xs text-[#D4D8DE]">
-                                  <span>
-                                    Host: <strong className="text-[#F1F3F5]">{submitterInfo.submitterName}</strong>
-                                  </span>
-                                  <span className="px-2 py-0.5 rounded font-bold border bg-[#E8AA45]/15 border-[#E8AA45]/40 text-[#E8AA45]">
-                                    {cardTerms.formattedPricingBadge}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="pt-2 border-t border-[#282D34]">
-                              {renderSelectedChargerReservationAndIntel()}
-                            </div>
-
-                            <div className="flex items-center gap-2 pt-2 border-t border-[#282D34]">
-                              <a
-                                href={navUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  playTacticalClick();
-                                }}
-                                className="flex-1 py-2.5 px-4 rounded-lg bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold text-xs flex items-center justify-center gap-2 transition-colors"
-                              >
-                                <NavIcon className="w-4 h-4" />
-                                <span>Navigate to Charger</span>
-                              </a>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    /* When NO charger is selected, show "View All Chargers" section (collapsible/expandable style) */
-                    <div className="space-y-3">
+                  <div className="space-y-3">
                       <button
                         type="button"
                         data-testid="toggle-view-all-chargers-btn"
@@ -2485,7 +2467,7 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                                       )}
                                     </div>
 
-                                    <div className="flex items-center gap-2 pt-2 border-t border-[#282D34] font-mono">
+                                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#282D34] font-mono">
                                       <a
                                         href={navUrl}
                                         target="_blank"
@@ -2515,6 +2497,37 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                                           <span>Reserve</span>
                                         </button>
                                       )}
+
+                                      {canModifyChargerRecord(cs, currentUser) && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            data-testid={`directory-edit-btn-${cs.id}`}
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              handleOpenEditModal(cs);
+                                            }}
+                                            className="py-2 px-2.5 rounded-lg bg-[#191D22] hover:bg-[#252A30] text-[#E8AA45] border border-[#414851] font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                            title="Edit Charger"
+                                          >
+                                            <Edit3 className="w-3 h-3" />
+                                            <span>Edit</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            data-testid={`directory-delete-btn-${cs.id}`}
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              void handleDeleteStation(cs);
+                                            }}
+                                            className="py-2 px-2.5 rounded-lg bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 text-[#E04F5F] border border-[#E04F5F]/50 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                            title="Delete Charger"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                            <span>Delete</span>
+                                          </button>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
                                 );
@@ -2524,7 +2537,6 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                         </div>
                       )}
                     </div>
-                  )}
                 </section>
 
                 {/* ========================================================= */}
@@ -3132,20 +3144,40 @@ export const ChargingNetwork: React.FC<ChargingNetworkProps> = ({ initialMode })
                 />
               </div>
 
-              <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#282D34]">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-3 py-1.5 rounded bg-[#191D22] text-[#A0A7B0]"
-                >
-                  CANCEL
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold cursor-pointer"
-                >
-                  {editingStationId ? 'SAVE CHANGES' : 'SUBMIT LOCATION'}
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#282D34]">
+                <div>
+                  {editingStationId && (
+                    <button
+                      type="button"
+                      data-testid="modal-delete-charger-btn"
+                      onClick={() => {
+                        const target = allStations.find(s => s.id === editingStationId);
+                        if (target) {
+                          void handleDeleteStation(target);
+                        }
+                      }}
+                      className="px-3 py-2 rounded bg-[#E04F5F]/15 hover:bg-[#E04F5F]/25 text-[#E04F5F] border border-[#E04F5F]/50 font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>DELETE CHARGER</span>
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="px-3 py-1.5 rounded bg-[#191D22] text-[#A0A7B0] cursor-pointer"
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded bg-[#E8AA45] hover:bg-[#d89b38] text-[#08090B] font-bold cursor-pointer"
+                  >
+                    {editingStationId ? 'SAVE CHANGES' : 'SUBMIT LOCATION'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

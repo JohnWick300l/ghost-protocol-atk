@@ -19,6 +19,7 @@ import {
   DEDICATED_COCKPIT_CONTROLS,
   resolveJetEngineerAction,
   extractMarketplaceItemImages,
+  repairBase64JpegIfTruncated,
   isValidChargerPlugType,
   validateAndSanitizeUrl,
   validateChargingPlugSubmission,
@@ -2472,5 +2473,414 @@ test('AutoPilot Multi-Route Engine: discovers multiple routes (including Bengalu
   const salemChargerIds = salemRoute.planResult.eligibleCorridorChargers.map(c => c.station.id);
   assert.ok(salemChargerIds.includes('st_salem_1'));
 });
+
+test('repairBase64JpegIfTruncated: restores truncated JPEG streams missing EOI markers or padding', () => {
+  // 1. Valid intact JPEG with FF D8 (SOI) and FF D9 (EOI)
+  const validJpegBuf = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9]);
+  const validDataUrl = 'data:image/jpeg;base64,' + validJpegBuf.toString('base64');
+  const result1 = repairBase64JpegIfTruncated(validDataUrl);
+  assert.equal(result1, validDataUrl);
+
+  // 2. Truncated JPEG sliced mid-stream (missing FF D9)
+  const slicedJpegBuf = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x01, 0x02]);
+  const slicedDataUrl = 'data:image/jpeg;base64,' + slicedJpegBuf.toString('base64');
+  const repairedResult = repairBase64JpegIfTruncated(slicedDataUrl);
+  assert.notEqual(repairedResult, slicedDataUrl);
+  assert.ok(repairedResult.startsWith('data:image/jpeg;base64,'));
+
+  const repairedBuf = Buffer.from(repairedResult.replace('data:image/jpeg;base64,', ''), 'base64');
+  assert.equal(repairedBuf[0], 0xff);
+  assert.equal(repairedBuf[1], 0xd8);
+  assert.equal(repairedBuf[repairedBuf.length - 2], 0xff);
+  assert.equal(repairedBuf[repairedBuf.length - 1], 0xd9);
+
+  // 3. String cut off at arbitrary byte boundary causing base64 length % 4 === 1
+  const rawSliced = slicedJpegBuf.toString('base64').slice(0, -1);
+  const oddSlicedDataUrl = 'data:image/jpeg;base64,' + rawSliced;
+  const repairedOddResult = repairBase64JpegIfTruncated(oddSlicedDataUrl);
+  assert.ok(repairedOddResult.startsWith('data:image/jpeg;base64,'));
+  const repairedOddBuf = Buffer.from(repairedOddResult.replace('data:image/jpeg;base64,', ''), 'base64');
+  assert.equal(repairedOddBuf[repairedOddBuf.length - 2], 0xff);
+  assert.equal(repairedOddBuf[repairedOddBuf.length - 1], 0xd9);
+
+  // 4. Non-JPEG strings or SVGs are passed through untouched
+  const svgDataUrl = 'data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C/svg%3E';
+  assert.equal(repairBase64JpegIfTruncated(svgDataUrl), svgDataUrl);
+  assert.equal(repairBase64JpegIfTruncated(''), '');
+  assert.equal(repairBase64JpegIfTruncated(null as any), null);
+});
+
+test('Master Charging Network Database: exactly 207 records, 26 DMS conversions, UV Space Stations filter, and permission boundaries', () => {
+  const masterJsonPath = path.resolve(process.cwd(), 'public/data/charging_stations_master.json');
+  assert.ok(fs.existsSync(masterJsonPath), 'public/data/charging_stations_master.json must exist');
+
+  const stations: any[] = JSON.parse(fs.readFileSync(masterJsonPath, 'utf-8'));
+  assert.equal(stations.length, 207, 'Must have exactly 207 master stations');
+
+  const dmsStations = stations.filter(s => s.isDmsConverted);
+  assert.equal(dmsStations.length, 26, 'Must have exactly 26 DMS converted stations');
+
+  // Verify India boundaries and valid non-empty fields
+  for (const st of stations) {
+    assert.ok(st.id && st.id.startsWith('master_cs_'), 'ID must start with master_cs_');
+    assert.ok(st.name && st.name.trim().length > 1, 'Name must be present');
+    assert.ok(st.latitude >= 8.0 && st.latitude <= 36.0, `Latitude ${st.latitude} within India`);
+    assert.ok(st.longitude >= 68.0 && st.longitude <= 96.0, `Longitude ${st.longitude} within India`);
+    assert.ok(Array.isArray(st.categories) && st.categories.length > 0, 'Categories must be non-empty');
+    assert.equal(st.isMasterStation, true, 'Must be marked as master station');
+    assert.equal(st.verifiedByAdmin, true, 'Must be verified by admin');
+    assert.equal(st.approvalStatus, 'approved', 'Must be approved');
+    assert.equal(st.published, true, 'Must be published');
+  }
+
+  // Verify UV Space Stations category filter
+  const uvStations = stations.filter(s => matchesChargingStationFilter(s, 'UV_SPACE_STATIONS'));
+  assert.equal(uvStations.length, 10, 'Must have exactly 10 UV Space Stations');
+
+  // Verify multi-category matching (e.g. Socket + UV Space Stations)
+  const multiCatStation = stations.find(s => s.categories.includes('Socket') && s.categories.includes('UV Space Stations'));
+  assert.ok(multiCatStation, 'Must find a station with Socket and UV Space Stations');
+  assert.equal(matchesChargingStationFilter(multiCatStation, 'SOCKET'), true);
+  assert.equal(matchesChargingStationFilter(multiCatStation, 'UV_SPACE_STATIONS'), true);
+  assert.equal(matchesChargingStationFilter(multiCatStation, 'ALL'), true);
+
+  // Verify permissions
+  const normalUser = { id: 'u_pilot99', role: 'user' };
+  const adminUser = { id: 'u_admin', role: 'admin' };
+  const userOwnStation = { id: 'cs_custom_1', isMasterStation: false, submittedByUserId: 'u_pilot99' };
+
+  // Normal user CANNOT modify master station
+  assert.equal(canModifyChargerRecord(stations[0], normalUser), false);
+  // Admin CAN modify master station
+  assert.equal(canModifyChargerRecord(stations[0], adminUser), true);
+  // Normal user CAN modify their own station
+  assert.equal(canModifyChargerRecord(userOwnStation, normalUser), true);
+  // Normal user CANNOT modify another user station
+  assert.equal(canModifyChargerRecord({ ...userOwnStation, submittedByUserId: 'u_other' }, normalUser), false);
+});
+
+test('clusterChargingStations & searchAndFilterChargingStations: never merges distant stations sharing generic location labels (Kolar CCD regression)', () => {
+  const kolarMaster = {
+    id: 'master_cs_047',
+    name: 'Ultraviolette Automotive Charging Station',
+    location: 'Ultraviolette Automotive Charging Station, India',
+    latitude: 13.135654,
+    longitude: 78.015465,
+    chargerType: 'Supernova',
+    isSupernova: true,
+    verified: true,
+    approvalStatus: 'approved',
+    published: true
+  };
+  const gujaratMaster = {
+    id: 'master_cs_170',
+    name: 'Ultraviolette Automotive Charging Station',
+    location: 'Ultraviolette Automotive Charging Station, India',
+    latitude: 23.007148,
+    longitude: 72.501524,
+    chargerType: 'Supernova',
+    isSupernova: true,
+    verified: true,
+    approvalStatus: 'approved',
+    published: true
+  };
+  const delhiMaster = {
+    id: 'master_cs_172',
+    name: 'Ultraviolette Automotive Charging Station',
+    location: 'Ultraviolette Automotive Charging Station, India',
+    latitude: 28.407964,
+    longitude: 77.109139,
+    chargerType: 'Supernova',
+    isSupernova: true,
+    verified: true,
+    approvalStatus: 'approved',
+    published: true
+  };
+  const bengaluruStation = {
+    id: 'cs_blr_1',
+    name: 'UV Hangar Indiranagar',
+    location: 'Indiranagar, Bengaluru, Karnataka',
+    latitude: 12.9784,
+    longitude: 77.6408,
+    chargerType: 'Supernova',
+    isSupernova: true,
+    verified: true,
+    approvalStatus: 'approved',
+    published: true
+  };
+  const ccdKolarUserStation = {
+    id: 'cs_1794297991778',
+    name: 'Café Coffee Day (CCD) — Narasapura Highway Plaza',
+    referenceName: 'Kolar Supernova',
+    location: 'Kolar District, Karnataka 563133',
+    latitude: 13.1412,
+    longitude: 78.0114,
+    chargerType: 'Supernova',
+    isSupernova: true,
+    verified: true,
+    approvalStatus: 'approved',
+    published: true
+  };
+
+  const stations: any[] = [kolarMaster, gujaratMaster, delhiMaster, bengaluruStation, ccdKolarUserStation];
+
+  // At zoom 14, Kolar stations (0.75 km apart) co-locate in Kolar (~13.14, 78.01), never pulled toward Gujarat or Delhi
+  const zoom14Clusters = clusterChargingStations(stations, 14);
+  assert.equal(zoom14Clusters.length, 4, 'Expected 4 distinct clusters (Kolar, Bengaluru, Gujarat, Delhi)');
+  const kolarCluster14 = zoom14Clusters.find(c => c.stations.some(s => s.id === 'cs_1794297991778'))!;
+  assert.ok(kolarCluster14, 'Kolar cluster must exist');
+  assert.ok(
+    calculateDistanceKm(kolarCluster14.latitude, kolarCluster14.longitude, 13.1412, 78.0114) < 2,
+    `Kolar cluster must stay in Kolar, got (${kolarCluster14.latitude}, ${kolarCluster14.longitude})`
+  );
+  assert.equal(
+    kolarCluster14.locationLabel,
+    'Kolar District, Karnataka 563133',
+    'Cluster label should prefer user geographical location over generic master label'
+  );
+
+  // At default India zoom (zoom = 5), Kolar (~43 km from Bengaluru) remains its own visible cluster and is not swallowed by Bengaluru
+  const zoom5Clusters = clusterChargingStations(stations, 5);
+  assert.equal(zoom5Clusters.length, 4, 'Kolar must remain separate from Bengaluru even at zoom 5');
+
+  // Multi-token search for "ccd kolar" finds the CCD Kolar station
+  const searchMatches = searchAndFilterChargingStations(stations, 'ccd kolar', 'ALL');
+  assert.equal(searchMatches.length, 1);
+  assert.equal(searchMatches[0].id, 'cs_1794297991778');
+});
+
+test('UV Space Station + Type 6 category classification: never becomes Community Provided Charger or displays reservation features', async () => {
+  const {
+    isValidChargerSource,
+    buildStationCategories,
+    calculateChargingNetworkComposition
+  } = await import('./rules.ts');
+
+  // 1. All 4 network sources are valid (including UV Space Station)
+  assert.equal(isValidChargerSource('Supernova'), true);
+  assert.equal(isValidChargerSource('UV Space Station'), true);
+  assert.equal(isValidChargerSource('3rd Party Station'), true);
+  assert.equal(isValidChargerSource('Community Provided Charger'), true);
+  assert.equal(isValidChargerSource('Unknown'), false);
+
+  // 2. buildStationCategories synchronizes both Type 6 and UV Space Stations while stripping stale Community tags
+  const uvType6Categories = buildStationCategories('Type 6', 'UV Space Station', ['Community Provided Chargers']);
+  assert.ok(uvType6Categories.includes('Type 6'));
+  assert.ok(uvType6Categories.includes('UV Space Stations'));
+  assert.equal(uvType6Categories.some(c => c.toLowerCase().includes('community')), false);
+
+  // 3. Even if a station was previously saved with legacy isCommunityReported: true or requiresReservation: true,
+  // setting chargerSource to 'UV Space Station' strictly suppresses community classification and reservations
+  const editedToUvSpaceStation = {
+    id: 'cs_uv_type6_test',
+    name: 'Ultraviolette Space Station Hangar',
+    chargerType: 'Type 6',
+    chargerSource: 'UV Space Station' as const,
+    categories: uvType6Categories,
+    powerOutputKw: 6,
+    isSupernova: false,
+    isCommunityReported: true, // stale flag from before edit
+    requiresReservation: true, // stale flag from before edit
+    submittedByPhone: '+91 98450 12345',
+    reservations: [{ id: 'res_stale_1', status: 'Requested' as const }]
+  };
+
+  const submitterInfo = resolveChargerSubmitterInfo(editedToUvSpaceStation);
+  assert.equal(submitterInfo.isCommunityProvided, false, 'UV Space Station must never be classified as community owned');
+  assert.equal(submitterInfo.submitterPhone, '', 'UV Space Station must not expose personal host phone');
+  assert.equal(submitterInfo.telHref, '');
+
+  const communityTerms = resolveCommunityChargerTerms(editedToUvSpaceStation as any);
+  assert.equal(communityTerms.isCommunityProvided, false);
+  assert.equal(communityTerms.requiresReservation, false, 'UV Space Station must never require or show reservation');
+  assert.equal(communityTerms.reservations.length, 0, 'UV Space Station must not return community reservations');
+
+  // 4. Filter matching: matches UV_SPACE_STATIONS and BOLT_TYPE_6, and strictly excludes Community Provided Chargers
+  assert.equal(matchesChargingStationFilter(editedToUvSpaceStation, 'UV_SPACE_STATIONS'), true);
+  assert.equal(matchesChargingStationFilter(editedToUvSpaceStation, 'BOLT_TYPE_6'), true);
+  assert.equal(matchesChargingStationFilter(editedToUvSpaceStation, 'Community Provided Chargers'), false);
+
+  // 5. Network composition counts it as Type 6 and NOT as an owner's community charger
+  const composition = calculateChargingNetworkComposition([editedToUvSpaceStation]);
+  assert.equal(composition.totalCount, 1);
+  assert.equal(composition.segments.boltType6.count, 1);
+  assert.equal(composition.segments.ownersChargers.count, 0);
+});
+
+test('Mobile Number-Based Direct UPI Payment System: TEST A through TEST I verification suite', async () => {
+  const {
+    ACTIVE_RECIPIENT_UPI_NUMBER,
+    ACTIVE_RECIPIENT_COUNTRY_CODE,
+    DEFAULT_CONTRIBUTION_CONFIG,
+    sanitizeContributionConfig,
+    maskUpiMobileNumber,
+    isValidUpiVpaAddress,
+    generateUpiTransactionRef,
+    resolveActiveUpiNumberToDestination,
+    buildUpiPaymentUri,
+    buildUpiIntentUri,
+    buildUpiAppLaunchIntentUri,
+    openUpiAppForNumberLookup,
+    getUpiNumberLookupInstructions,
+    validateUpiUtrNumber,
+    validateContributionSubmission,
+    isConfirmedContributionRecord,
+    redactContributionForPublicWall
+  } = await import('./rules.ts');
+
+  // TEST A & TEST B: Existing QR Code and Existing UPI ID Preservation
+  assert.equal(DEFAULT_CONTRIBUTION_CONFIG.upiId, 'abinavthejas2001-1@okaxis');
+  assert.equal(DEFAULT_CONTRIBUTION_CONFIG.recipientMobileNumber, '9019884970');
+  assert.equal(DEFAULT_CONTRIBUTION_CONFIG.recipientCountryCode, '+91');
+  assert.equal(DEFAULT_CONTRIBUTION_CONFIG.recipientIdentifierType, 'ACTIVE_UPI_NUMBER');
+  assert.equal(DEFAULT_CONTRIBUTION_CONFIG.upiNumberRegistrations?.gpay, 'Active');
+  assert.equal(DEFAULT_CONTRIBUTION_CONFIG.upiNumberRegistrations?.phonepe, 'Active');
+  assert.equal(DEFAULT_CONTRIBUTION_CONFIG.upiNumberRegistrations?.paytm, 'Active');
+
+  const preservedQrAndUpi = sanitizeContributionConfig({
+    customQrUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    upiId: 'abinavthejas2001-1@okaxis'
+  });
+  assert.equal(preservedQrAndUpi.upiId, 'abinavthejas2001-1@okaxis');
+  assert.ok(preservedQrAndUpi.customQrUrl.startsWith('data:image/png;base64,'));
+  assert.equal(preservedQrAndUpi.recipientMobileNumber, '9019884970');
+
+  // Masking helper and VPA validation
+  assert.equal(maskUpiMobileNumber('9019884970', '+91'), '+91 ••••••4970');
+  assert.equal(isValidUpiVpaAddress('9019884970'), false, 'Raw mobile number is NOT a valid VPA for pa=');
+  assert.equal(isValidUpiVpaAddress('abinavthejas2001-1@okaxis'), true);
+
+  // TEST C: Local Configuration Lookup for 9019884970 (explicitly labeled LOCAL_CONFIG_LOOKUP, not live NPCI)
+  const resolved9019884970 = resolveActiveUpiNumberToDestination({
+    mobileNumber: ACTIVE_RECIPIENT_UPI_NUMBER,
+    countryCode: ACTIVE_RECIPIENT_COUNTRY_CODE,
+    targetApp: 'gpay',
+    config: DEFAULT_CONTRIBUTION_CONFIG
+  });
+  assert.equal(resolved9019884970.resolved, true);
+  assert.equal(resolved9019884970.recipientMobileNumber, '9019884970');
+  assert.equal(resolved9019884970.recipientCountryCode, '+91');
+  assert.equal(resolved9019884970.recipientIdentifierType, 'ACTIVE_UPI_NUMBER');
+  assert.equal(resolved9019884970.resolvedUpiId, 'abinavthejas2001-1@okaxis');
+  assert.equal(resolved9019884970.appRegistrationStatus, 'Active');
+  assert.equal(resolved9019884970.resolutionMode, 'LOCAL_CONFIG_LOOKUP');
+  assert.equal(resolved9019884970.isLiveNpciResolution, false);
+
+  // Unregistered number fails local lookup cleanly
+  const unresolvedOther = resolveActiveUpiNumberToDestination({
+    mobileNumber: '9876543210'
+  });
+  assert.equal(unresolvedOther.resolved, false);
+  assert.equal(unresolvedOther.resolvedUpiId, '');
+  assert.equal(unresolvedOther.resolutionMode, 'LOCAL_CONFIG_LOOKUP');
+  assert.equal(unresolvedOther.isLiveNpciResolution, false);
+
+  // TEST D, E, F: Mobile-Number Lookup App Launchers (no unsigned personal-VPA intent launched by default)
+  const gpayLaunchUri = buildUpiAppLaunchIntentUri('gpay');
+  assert.equal(
+    gpayLaunchUri,
+    'intent://upi-app-launch#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.google.android.apps.nbu.paisa.user;end'
+  );
+  assert.ok(!gpayLaunchUri.includes('pa='), 'Default app launch must NOT pass unsigned personal-VPA pa=');
+  assert.equal(openUpiAppForNumberLookup('gpay', 'Mozilla/5.0 (X11; Linux x86_64)'), gpayLaunchUri);
+
+  const phonepeLaunchUri = buildUpiAppLaunchIntentUri('phonepe');
+  assert.equal(
+    phonepeLaunchUri,
+    'intent://upi-app-launch#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.phonepe.app;end'
+  );
+  assert.ok(!phonepeLaunchUri.includes('pa='));
+
+  const paytmLaunchUri = buildUpiAppLaunchIntentUri('paytm');
+  assert.equal(
+    paytmLaunchUri,
+    'intent://upi-app-launch#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=net.one97.paytm;end'
+  );
+  assert.ok(!paytmLaunchUri.includes('pa='));
+
+  // Verify step-by-step Mobile-Number Lookup instructions for GPay, PhonePe, and Paytm
+  const gpayGuide = getUpiNumberLookupInstructions('gpay', '9019884970', 200);
+  assert.ok(gpayGuide.steps.some(s => s.includes('9019884970')));
+  assert.ok(gpayGuide.steps.some(s => s.includes('₹200 Rs')));
+  assert.ok(gpayGuide.manualEntryNotice.includes('does not auto-populate'));
+
+  // Preserved QR URI builder & fallback intent helpers still work for QR generation
+  const txRef = generateUpiTransactionRef('GP');
+  assert.ok(/^GP[A-Z0-9]+$/.test(txRef));
+  const upiUri = buildUpiPaymentUri({
+    upiId: '9019884970',
+    recipientName: 'Ghost Protocol (Squadron)',
+    amountInr: 20,
+    note: 'Get us a chai (Ghost Protocol)',
+    transactionRef: txRef
+  });
+  assert.ok(!upiUri.includes('pa=9019884970'), 'Must NEVER insert raw mobile number into pa parameter');
+  assert.ok(upiUri.includes('pa=abinavthejas2001-1%40okaxis') || upiUri.includes('pa=abinavthejas2001-1@okaxis'));
+  assert.ok(upiUri.includes('am=20.00'));
+  assert.ok(upiUri.includes('cu=INR'));
+  assert.ok(upiUri.includes(`tr=${txRef}`));
+  assert.ok(!upiUri.includes('(') && !upiUri.includes(')'));
+
+  const raw200Uri = buildUpiPaymentUri({
+    upiId: resolved9019884970.resolvedUpiId,
+    amountInr: 200,
+    transactionRef: txRef
+  });
+  assert.ok(buildUpiIntentUri(raw200Uri, 'gpay').includes('package=com.google.android.apps.nbu.paisa.user'));
+  assert.ok(buildUpiIntentUri(raw200Uri, 'phonepe').includes('package=com.phonepe.app'));
+  assert.ok(buildUpiIntentUri(raw200Uri, 'paytm').includes('package=net.one97.paytm'));
+
+  // TEST G, H, I: UTR Validation, Amount Validation, and Confirmed-Only Squadron Backers Filtering
+  assert.equal(validateUpiUtrNumber('412345678901').valid, true);
+  assert.equal(validateUpiUtrNumber('4123 4567 8901').valid, true);
+  assert.equal(validateUpiUtrNumber('12345').valid, false, 'Short UTR must be rejected');
+  assert.equal(validateUpiUtrNumber('000000000000').valid, false, 'All-identical digits UTR must be rejected');
+  assert.equal(validateUpiUtrNumber('4123456789AB').valid, false, 'Non-numeric UTR must be rejected');
+
+  // Reject zero, negative, and decimal amounts
+  assert.equal(validateContributionSubmission({ contributorName: 'Pilot', amountInr: 0 }).valid, false);
+  assert.equal(validateContributionSubmission({ contributorName: 'Pilot', amountInr: -50 }).valid, false);
+  assert.equal(validateContributionSubmission({ contributorName: 'Pilot', amountInr: 20.55 }).valid, false);
+
+  // Valid contribution submission with 12-digit UTR and UPI Number method
+  const validSubmission = validateContributionSubmission({
+    contributorName: 'Commander Vikram',
+    amountInr: 200,
+    paymentMethod: 'UPI Number (GPay)',
+    utrNumber: '412389012345',
+    transactionReference: txRef,
+    note: 'Sponsoring Biryani for the Squadron!'
+  });
+  assert.equal(validSubmission.valid, true);
+  assert.equal(validSubmission.value?.utrNumber, '412389012345');
+  assert.equal(validSubmission.value?.paymentMethod, 'UPI Number (GPay)');
+
+  // Unverified, Pending, Failed, and Cancelled records NEVER appear in confirmed Squadron Backers
+  assert.equal(isConfirmedContributionRecord({ transactionStatus: 'INITIATED' }), false);
+  assert.equal(isConfirmedContributionRecord({ transactionStatus: 'PENDING' }), false);
+  assert.equal(isConfirmedContributionRecord({ transactionStatus: 'UNVERIFIED' }), false);
+  assert.equal(isConfirmedContributionRecord({ transactionStatus: 'FAILED' }), false);
+  assert.equal(isConfirmedContributionRecord({ transactionStatus: 'CANCELLED' }), false);
+  assert.equal(isConfirmedContributionRecord({ transactionStatus: 'SUCCESS' }), true);
+  assert.equal(isConfirmedContributionRecord({ transactionStatus: undefined }), true, 'Legacy pre-existing backer preserved');
+
+  // Public wall redaction strips amountInr and utrNumber
+  const redacted = redactContributionForPublicWall({
+    id: 'contrib_test_1',
+    contributorName: 'Commander Vikram',
+    contributorModel: 'F77 MACH 2',
+    amountInr: 200,
+    paymentMethod: 'UPI Number (GPay)',
+    note: 'Fly safe!',
+    utrNumber: '412389012345',
+    transactionStatus: 'SUCCESS',
+    createdAt: new Date().toISOString()
+  });
+  assert.equal((redacted as any).amountInr, undefined);
+  assert.equal((redacted as any).utrNumber, undefined);
+  assert.equal(redacted.contributorName, 'Commander Vikram');
+});
+
+
 
 

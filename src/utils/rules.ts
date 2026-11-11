@@ -1006,16 +1006,60 @@ export const ALL_PRIORITY_ISSUES_SEED: SeedPriorityProblem[] = [
   ...F77_PRIORITY_ISSUES_SEED
 ];
 
-export type ChargerSource = 'Supernova' | '3rd Party Station' | 'Community Provided Charger';
+export type ChargerSource =
+  | 'Supernova'
+  | '3rd Party Station'
+  | 'Community Provided Charger'
+  | 'UV Space Station';
 
 export const VALID_CHARGER_SOURCES: ChargerSource[] = [
   'Supernova',
+  'UV Space Station',
   '3rd Party Station',
   'Community Provided Charger'
 ];
 
 export function isValidChargerSource(source: string): source is ChargerSource {
   return VALID_CHARGER_SOURCES.includes(source as ChargerSource);
+}
+
+/**
+ * Synchronizes the `categories` array on a charging station based on its `chargerType` and `chargerSource`.
+ * Ensures UV Space Stations always carry 'UV Space Stations' and non-UV Space Stations do not carry stale category tags.
+ */
+export function buildStationCategories(
+  chargerType?: string,
+  chargerSource?: string,
+  existingCategories?: string[]
+): string[] {
+  const set = new Set<string>();
+  if (Array.isArray(existingCategories)) {
+    for (const c of existingCategories) {
+      if (typeof c === 'string' && c.trim()) {
+        const trimmed = c.trim();
+        const lower = trimmed.toLowerCase();
+        // Strip stale network-source tags that are managed by chargerSource
+        if (lower.includes('community')) continue;
+        if (
+          (lower.includes('space station') || lower.includes('spacestation')) &&
+          chargerSource &&
+          chargerSource !== 'UV Space Station'
+        ) {
+          continue;
+        }
+        set.add(trimmed);
+      }
+    }
+  }
+  if (typeof chargerType === 'string' && chargerType.trim()) {
+    set.add(chargerType.trim());
+  }
+  if (chargerSource === 'UV Space Station') {
+    set.add('UV Space Stations');
+  } else if (chargerSource === 'Supernova') {
+    set.add('Supernova');
+  }
+  return Array.from(set);
 }
 
 /**
@@ -1138,10 +1182,10 @@ export function calculateChargingNetworkComposition(
       continue;
     }
 
-    // 2. Owners / Community Chargers
+    // 2. Owners / Community Chargers (strictly exclusive of Supernova, UV Space Station, and 3rd Party Station)
     const isOwner =
       st.chargerSource === 'Community Provided Charger' ||
-      Boolean(st.isCommunityReported);
+      (!st.chargerSource && Boolean(st.isCommunityReported));
     if (isOwner) {
       ownerCount++;
       ownerKw += kw;
@@ -1215,6 +1259,9 @@ export function matchesChargingStationFilter(
     createdAt?: string;
     lastVerifiedDate?: string;
     id?: string;
+    categories?: string[];
+    name?: string;
+    isMasterStation?: boolean;
   },
   filterType: string,
   referenceTimestamp = Date.now()
@@ -1228,6 +1275,112 @@ export function matchesChargingStationFilter(
     filterType === 'new_24h'
   ) {
     return isChargerAddedInLast24Hours(station, referenceTimestamp);
+  }
+
+  const isExplicitUvSpaceStation =
+    station.chargerSource === 'UV Space Station' ||
+    (Array.isArray(station.categories) &&
+      station.categories.some(c => {
+        const lower = String(c || '').trim().toLowerCase();
+        return (
+          lower.includes('space station') ||
+          lower.includes('space-station') ||
+          lower.includes('spacestation')
+        );
+      })) ||
+    (typeof station.name === 'string' &&
+      (station.name.toLowerCase().includes('space station') ||
+        station.name.toLowerCase().includes('spacestation')));
+
+  if (
+    filterType === 'UV_SPACE_STATIONS' ||
+    filterType === 'UV Space Stations' ||
+    filterType === 'UV_SPACE' ||
+    filterType === 'uv_space_stations'
+  ) {
+    return isExplicitUvSpaceStation;
+  }
+
+  // Handle explicit categories array if present
+  if (Array.isArray(station.categories) && station.categories.length > 0) {
+    const cats = station.categories.map(c => c.trim().toLowerCase());
+
+    if (
+      filterType === 'SUPERNOVA' ||
+      filterType === 'Supernova' ||
+      filterType === 'UV_SUPERNOVA'
+    ) {
+      return (
+        cats.some(c => c.includes('supernova')) ||
+        Boolean(station.isSupernova) ||
+        station.chargerType === 'Supernova' ||
+        station.chargerSource === 'Supernova'
+      );
+    }
+
+    if (
+      filterType === 'BOLT_TYPE_6' ||
+      filterType === 'Type 6' ||
+      filterType === 'TYPE_6' ||
+      filterType === 'bolt_type_6'
+    ) {
+      return (
+        cats.some(c => c.includes('type 6') || c.includes('type-6')) ||
+        station.chargerType === 'Type 6'
+      );
+    }
+
+    if (
+      filterType === 'TYPE_2' ||
+      filterType === 'Type 2' ||
+      filterType === 'type_2'
+    ) {
+      return (
+        cats.some(c => c.includes('type 2') || c.includes('type-2')) ||
+        station.chargerType === 'Type 2'
+      );
+    }
+
+    if (
+      filterType === 'SOCKET' ||
+      filterType === 'SOCKETS' ||
+      filterType === 'Socket' ||
+      filterType === 'Sockets' ||
+      filterType === 'socket'
+    ) {
+      return (
+        cats.some(
+          c =>
+            c.includes('socket') ||
+            c.includes('15a') ||
+            c.includes('16a') ||
+            c.includes('3-pin') ||
+            c.includes('industrial')
+        ) || station.chargerType === 'Socket'
+      );
+    }
+
+    if (
+      filterType === 'Community Provided Chargers' ||
+      filterType === 'Community Provided Charger' ||
+      filterType === 'COMMUNITY' ||
+      filterType === 'OWNERS' ||
+      filterType === 'OWNERS_CHARGERS'
+    ) {
+      if (
+        isExplicitUvSpaceStation ||
+        station.chargerSource === 'Supernova' ||
+        station.chargerSource === '3rd Party Station' ||
+        station.isSupernova
+      ) {
+        return false;
+      }
+      return (
+        station.chargerSource === 'Community Provided Charger' ||
+        cats.some(c => c.includes('community')) ||
+        (!station.chargerSource && Boolean(station.isCommunityReported))
+      );
+    }
   }
 
   const isSupernovaStation =
@@ -1256,6 +1409,14 @@ export function matchesChargingStationFilter(
     filterType === 'OWNERS' ||
     filterType === 'OWNERS_CHARGERS'
   ) {
+    if (
+      isExplicitUvSpaceStation ||
+      station.chargerSource === 'UV Space Station' ||
+      station.chargerSource === '3rd Party Station' ||
+      station.chargerSource === 'Supernova'
+    ) {
+      return false;
+    }
     if (station.chargerSource) {
       return station.chargerSource === 'Community Provided Charger';
     }
@@ -1458,7 +1619,8 @@ export function extractMarketplaceItemImages(item?: {
   } else if (item.imageUrl && typeof item.imageUrl === 'string' && item.imageUrl.trim().length > 0) {
     photos = [item.imageUrl.trim()];
   }
-  return photos;
+  const unique = photos.filter((u, idx, arr) => arr.indexOf(u) === idx);
+  return unique.map(u => repairBase64JpegIfTruncated(u)).filter(Boolean);
 }
 
 // ============================================================================
@@ -1931,11 +2093,13 @@ export function isPubliclyPublishedCharger(station: {
  * Admins/superadmins can edit or delete any record; regular/verified users can only edit/delete their own.
  */
 export function canModifyChargerRecord(
-  station: { submittedByUserId?: string },
-  user?: { id?: string; role?: string } | null
+  station: { submittedByUserId?: string; isMasterStation?: boolean },
+  user?: { id?: string; role?: string; isOwner?: boolean; email?: string; mobile?: string } | null
 ): boolean {
   if (!user || !station) return false;
-  if (user.role === 'admin' || user.role === 'superadmin') return true;
+  if (user.role === 'admin' || user.role === 'superadmin' || isAdminOrOwnerAccount(user)) return true;
+  // Master charging network stations can NEVER be modified or deleted by normal users
+  if (station.isMasterStation) return false;
   if (station.submittedByUserId && user.id && station.submittedByUserId === user.id) {
     return true;
   }
@@ -2029,17 +2193,24 @@ function applyCitySynonyms(text: string): string {
   return out;
 }
 
+const locationKeyNormCache = new Map<string, string>();
+const cityKeyExtractCache = new Map<string, string>();
+
 /**
  * Normalizes a charger's location/address string for co-location matching, ignoring state suffixes,
  * pin codes, punctuation, and minimal-DB coordinate status boilerplate.
  */
 export function normalizeChargerLocationKey(location?: string | null): string {
   if (!location || typeof location !== 'string') return '';
+  const cached = locationKeyNormCache.get(location);
+  if (cached !== undefined) return cached;
+
   const lower = location.toLowerCase();
   if (
     lower.includes('coordinates found in same text section') ||
     lower.includes('exact coordinates not present')
   ) {
+    locationKeyNormCache.set(location, '');
     return '';
   }
 
@@ -2056,7 +2227,9 @@ export function normalizeChargerLocationKey(location?: string | null): string {
     )
     .filter(p => p.length > 0 && !INDIAN_STATE_TOKENS.has(p));
 
-  return parts.join(', ').trim();
+  const result = parts.join(', ').trim();
+  locationKeyNormCache.set(location, result);
+  return result;
 }
 
 /**
@@ -2076,22 +2249,35 @@ export function extractChargerCityOrTownKey(
     typeof stationOrLocation === 'string'
       ? stationOrLocation
       : stationOrLocation?.location || '';
+  if (!rawLocation) return '';
+
+  const cached = cityKeyExtractCache.get(rawLocation);
+  if (cached !== undefined) return cached;
+
   const normLoc = normalizeChargerLocationKey(rawLocation);
-  if (!normLoc) return '';
+  if (!normLoc) {
+    cityKeyExtractCache.set(rawLocation, '');
+    return '';
+  }
 
   const segments = normLoc
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);
-  if (segments.length === 0) return '';
-
-  const lastSeg = segments[segments.length - 1];
-  if (MULTI_ZONE_METROS.has(lastSeg) && segments.length >= 2) {
-    const subLocality = segments[segments.length - 2];
-    return `${subLocality}, ${lastSeg}`;
+  if (segments.length === 0) {
+    cityKeyExtractCache.set(rawLocation, '');
+    return '';
   }
 
-  return lastSeg;
+  const lastSeg = segments[segments.length - 1];
+  let res = lastSeg;
+  if (MULTI_ZONE_METROS.has(lastSeg) && segments.length >= 2) {
+    const subLocality = segments[segments.length - 2];
+    res = `${subLocality}, ${lastSeg}`;
+  }
+
+  cityKeyExtractCache.set(rawLocation, res);
+  return res;
 }
 
 /**
@@ -2114,32 +2300,41 @@ export function areChargingStationsCoLocated(
     exactLocationCoordinates?: string;
   }
 ): boolean {
+  const distKm = calculateDistanceKm(a.latitude, a.longitude, b.latitude, b.longitude);
+
+  // Hard physical distance ceiling: stations more than 4 km apart are never co-located
+  // (prevents generic master DB location labels like "Ultraviolette Automotive Charging Station, India"
+  // or "Bolt.Earth Charging Station, India" in different states/cities from merging across India).
+  if (distKm > 4.0) {
+    return false;
+  }
+
   if (
     a.exactLocationCoordinates &&
     b.exactLocationCoordinates &&
-    a.exactLocationCoordinates.trim() === b.exactLocationCoordinates.trim()
+    a.exactLocationCoordinates.trim() === b.exactLocationCoordinates.trim() &&
+    distKm <= 0.5
   ) {
     return true;
   }
 
-  const distKm = calculateDistanceKm(a.latitude, a.longitude, b.latitude, b.longitude);
-  // 1. Co-located coordinates (within 1.6 km — same building, address, or highway plaza)
-  if (distKm <= 1.6) {
+  // 1. Co-located coordinates (within 1.35 km — same building, address, or highway plaza)
+  if (distKm <= 1.35) {
     return true;
   }
 
-  // 2. Identical normalized location / address / city string entered by users
+  // 2. Identical normalized location / address / city string entered by users within 4 km
   const locA = normalizeChargerLocationKey(a.location);
   const locB = normalizeChargerLocationKey(b.location);
-  if (locA.length >= 2 && locA === locB) {
+  if (locA.length >= 2 && locA === locB && distKm <= 4.0) {
     return true;
   }
 
-  // 3. Same city / town key (or one user entered the city name and another entered an address in that same city)
+  // 3. Same city / town key within 4 km
   const cityA = extractChargerCityOrTownKey(a);
   const cityB = extractChargerCityOrTownKey(b);
   if (cityA.length >= 3 && cityB.length >= 3) {
-    if (cityA === cityB && (locA === cityA || locB === cityB || distKm <= 20)) {
+    if (cityA === cityB && distKm <= 4.0) {
       return true;
     }
     const baseCityA = cityA.split(',').pop()?.trim() || cityA;
@@ -2147,7 +2342,7 @@ export function areChargingStationsCoLocated(
     if (
       baseCityA === baseCityB &&
       !MULTI_ZONE_METROS.has(baseCityA) &&
-      (locA === baseCityA || locB === baseCityB || distKm <= 15)
+      distKm <= 4.0
     ) {
       return true;
     }
@@ -2157,9 +2352,17 @@ export function areChargingStationsCoLocated(
 }
 
 export function resolveClusterLocationLabel<
-  T extends { name: string; location?: string | null; referenceName?: string }
+  T extends { name: string; location?: string | null; referenceName?: string; isMasterStation?: boolean }
 >(group: T[]): string {
-  for (const st of group) {
+  // Prefer user/admin-submitted stations with real geographic addresses over generic master station labels
+  const sortedGroup = [...group].sort((a, b) => {
+    const aMaster = Boolean(a.isMasterStation) || (a.location || '').toLowerCase().endsWith('charging station, india');
+    const bMaster = Boolean(b.isMasterStation) || (b.location || '').toLowerCase().endsWith('charging station, india');
+    if (aMaster !== bMaster) return aMaster ? 1 : -1;
+    return 0;
+  });
+
+  for (const st of sortedGroup) {
     const loc = (st.location || '').trim();
     if (
       loc &&
@@ -2171,12 +2374,15 @@ export function resolveClusterLocationLabel<
         .map(p => p.trim())
         .filter(Boolean);
       if (parts.length >= 2) {
-        return parts.slice(-2).join(', ');
+        const tail = parts.slice(-2).join(', ');
+        if (!tail.toLowerCase().includes('charging station, india')) {
+          return tail;
+        }
       }
       return loc;
     }
   }
-  const first = group[0];
+  const first = sortedGroup[0] || group[0];
   return first ? first.referenceName || first.name : 'Shared Charger Hub';
 }
 
@@ -2198,16 +2404,17 @@ export function clusterChargingStations<
   if (!Array.isArray(stations) || stations.length === 0) return [];
 
   // Radius threshold in km based on zoom level so pins never pile on top of each other
-  let thresholdKm = 1.6;
-  if (zoom <= 4) thresholdKm = 240;
-  else if (zoom === 5) thresholdKm = 165;
-  else if (zoom === 6) thresholdKm = 105;
-  else if (zoom === 7) thresholdKm = 60;
-  else if (zoom === 8) thresholdKm = 32;
-  else if (zoom === 9) thresholdKm = 16;
-  else if (zoom === 10) thresholdKm = 8;
-  else if (zoom === 11) thresholdKm = 3.5;
-  else thresholdKm = 1.6; // zoom >= 12 groups co-located/same-address/same-city stations
+  // while keeping distinct cities/towns (e.g. Kolar vs Bengaluru) separate at India/State zoom.
+  let thresholdKm = 1.35;
+  if (zoom <= 4) thresholdKm = 65;
+  else if (zoom === 5) thresholdKm = 32;
+  else if (zoom === 6) thresholdKm = 22;
+  else if (zoom === 7) thresholdKm = 14;
+  else if (zoom === 8) thresholdKm = 9;
+  else if (zoom === 9) thresholdKm = 5;
+  else if (zoom === 10) thresholdKm = 3;
+  else if (zoom === 11) thresholdKm = 1.8;
+  else thresholdKm = 1.35; // zoom >= 12 groups co-located/same-plaza stations
 
   const visited = new Set<string>();
   const clusters: ChargerCluster<T>[] = [];
@@ -2219,30 +2426,25 @@ export function clusterChargingStations<
     visited.add(anchor.id);
     const group: T[] = [anchor];
 
-    // Bounded spatial radius from anchor + transitive closure for same-location/same-city stations
-    let added = true;
-    while (added) {
-      added = false;
-      for (let j = i + 1; j < stations.length; j++) {
-        const candidate = stations[j];
-        if (visited.has(candidate.id)) continue;
+    // Efficient single-pass spatial clustering: groups stations within zoom threshold or co-located with anchor
+    for (let j = i + 1; j < stations.length; j++) {
+      const candidate = stations[j];
+      if (visited.has(candidate.id)) continue;
 
-        const distToAnchorKm = calculateDistanceKm(
-          anchor.latitude,
-          anchor.longitude,
-          candidate.latitude,
-          candidate.longitude
-        );
-        const withinSpatialRadius = distToAnchorKm <= thresholdKm;
-        const matchesCoLocatedInGroup =
-          withinSpatialRadius ||
-          group.some(member => areChargingStationsCoLocated(member, candidate));
+      const distToAnchorKm = calculateDistanceKm(
+        anchor.latitude,
+        anchor.longitude,
+        candidate.latitude,
+        candidate.longitude
+      );
 
-        if (matchesCoLocatedInGroup) {
-          visited.add(candidate.id);
-          group.push(candidate);
-          added = true;
-        }
+      const isClustered =
+        distToAnchorKm <= thresholdKm ||
+        areChargingStationsCoLocated(anchor, candidate);
+
+      if (isClustered) {
+        visited.add(candidate.id);
+        group.push(candidate);
       }
     }
 
@@ -3323,11 +3525,10 @@ export function isOwnerAccount(
 ): boolean {
   if (!user) return false;
   if (user.id === OWNER_ACCOUNT_ID) return true;
-  if (user.isOwner === true && user.id === OWNER_ACCOUNT_ID) return true;
+  if (user.isOwner === true) return true;
   if (
     typeof user.email === 'string' &&
-    user.email.trim().toLowerCase() === OWNER_ACCOUNT_EMAIL &&
-    (!user.id || user.id === OWNER_ACCOUNT_ID)
+    user.email.trim().toLowerCase() === OWNER_ACCOUNT_EMAIL
   ) {
     return true;
   }
@@ -4293,10 +4494,31 @@ export const CONTRIBUTION_OPTIONS: readonly ContributionOptionSpec[] = [
   }
 ] as const;
 
+export type PaymentTransactionStatus =
+  | 'INITIATED'
+  | 'PENDING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'UNVERIFIED';
+
+export const ACTIVE_RECIPIENT_UPI_NUMBER = '9019884970';
+export const ACTIVE_RECIPIENT_COUNTRY_CODE = '+91';
+
+export interface UpiNumberAppRegistrationStatus {
+  gpay: 'Active' | 'Inactive';
+  phonepe: 'Active' | 'Inactive';
+  paytm: 'Active' | 'Inactive';
+}
+
 export interface ContributionConfig {
   headline: string;
   creatorMessage: string;
   upiId: string;
+  recipientMobileNumber?: string;
+  recipientCountryCode?: string;
+  recipientIdentifierType?: 'ACTIVE_UPI_NUMBER';
+  upiNumberRegistrations?: UpiNumberAppRegistrationStatus;
   customQrUrl: string;
   paymentLink: string;
   otherPaymentDetails: string;
@@ -4307,24 +4529,71 @@ export interface ContributionConfig {
   updatedAt: string;
 }
 
+export type ContributionPaymentMethodLabel =
+  | 'UPI Number (GPay)'
+  | 'UPI Number (PhonePe)'
+  | 'UPI Number (Paytm)'
+  | 'UPI Number (Instant)'
+  | 'UPI QR Scan'
+  | 'UPI ID'
+  | 'Payment Link / Other'
+  | 'UPI'
+  | 'Direct Link'
+  | 'Bank / Other';
+
 export interface ContributionRecord {
   id: string;
   contributorName: string;
   contributorModel?: string;
   amountInr?: number;
   optionId?: ContributionOptionId;
-  paymentMethod: 'UPI QR Scan' | 'UPI ID' | 'Payment Link / Other' | 'UPI' | 'Direct Link' | 'Bank / Other';
+  paymentMethod: ContributionPaymentMethodLabel;
   note?: string;
   createdAt: string;
   userId?: string;
   clientRequestId?: string;
+  transactionReference?: string;
+  utrNumber?: string;
+  transactionStatus?: PaymentTransactionStatus;
+  targetUpiApp?: UpiAppTarget;
+  verifiedAt?: string;
+  verifiedBy?: string;
+}
+
+export interface PaymentTransactionRecord {
+  id: string;
+  tr: string;
+  recipientMobileNumber: string;
+  recipientCountryCode: string;
+  resolvedUpiId: string;
+  targetApp: UpiAppTarget | 'qr';
+  optionId: ContributionOptionId;
+  amountInr: number;
+  status: PaymentTransactionStatus;
+  utrNumber?: string;
+  contributorName?: string;
+  contributorNote?: string;
+  userId?: string;
+  failureReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  verifiedAt?: string;
+  verifiedBy?: string;
 }
 
 export const DEFAULT_CONTRIBUTION_CONFIG: ContributionConfig = {
   headline: 'CONTRIBUTE',
   creatorMessage:
     'GHOST PROTOCOL is 100% free for all users including every feature. If you enjoy using the app, feel free to contribute below.',
-  upiId: 'ghostprotocol@upi',
+  upiId: 'abinavthejas2001-1@okaxis',
+  recipientMobileNumber: ACTIVE_RECIPIENT_UPI_NUMBER,
+  recipientCountryCode: ACTIVE_RECIPIENT_COUNTRY_CODE,
+  recipientIdentifierType: 'ACTIVE_UPI_NUMBER',
+  upiNumberRegistrations: {
+    gpay: 'Active',
+    phonepe: 'Active',
+    paytm: 'Active'
+  },
   customQrUrl: '',
   paymentLink: '',
   otherPaymentDetails: '',
@@ -4334,6 +4603,187 @@ export const DEFAULT_CONTRIBUTION_CONFIG: ContributionConfig = {
   customLimitInr: 50000,
   updatedAt: '2026-10-23T00:00:00Z'
 };
+
+/**
+ * Masks a 10-digit Indian mobile number so the full number is not unnecessarily exposed on the public page.
+ * Example: '9019884970' -> '+91 ••••••4970'
+ */
+export function maskUpiMobileNumber(
+  mobile: string = ACTIVE_RECIPIENT_UPI_NUMBER,
+  countryCode: string = ACTIVE_RECIPIENT_COUNTRY_CODE
+): string {
+  const digits = String(mobile || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) {
+    return `${countryCode} ••••••4970`;
+  }
+  return `${countryCode} ••••••${digits.slice(-4)}`;
+}
+
+/**
+ * Validates that a string is a properly formatted UPI VPA (`handle@psp`) and NOT a raw mobile number.
+ * NPCI UPI Linking Spec forbids inserting a bare 10-digit mobile number directly into `pa=`.
+ */
+export function isValidUpiVpaAddress(candidate?: string | null): boolean {
+  if (!candidate || typeof candidate !== 'string') return false;
+  const trimmed = candidate.trim();
+  if (!trimmed.includes('@')) return false;
+  // Reject bare phone numbers or invalid handles
+  if (/^\+?\d{10,12}$/.test(trimmed)) return false;
+  return /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z]{2,64}$/.test(trimmed);
+}
+
+/**
+ * Generates an NPCI-compliant alphanumeric transaction reference (`tr`, max 35 chars).
+ */
+export function generateUpiTransactionRef(prefix: string = 'GP'): string {
+  const cleanPrefix = prefix.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 6) || 'GP';
+  const ts = Date.now().toString(36).toUpperCase();
+  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${cleanPrefix}${ts}${rand}`.slice(0, 35);
+}
+
+export interface UpiNumberResolutionResult {
+  resolved: boolean;
+  recipientMobileNumber: string;
+  recipientCountryCode: string;
+  maskedMobileNumber: string;
+  recipientIdentifierType: 'ACTIVE_UPI_NUMBER';
+  resolvedUpiId: string;
+  recipientDisplayName: string;
+  targetApp: UpiAppTarget;
+  appRegistrationStatus: 'Active' | 'Inactive';
+  resolutionMode: 'LOCAL_CONFIG_LOOKUP';
+  isLiveNpciResolution: false;
+  lookupNotice: string;
+  p2pIntentRiskNotice: string;
+  error?: string;
+}
+
+/**
+ * Performs a local configuration lookup for the registered UPI Number (`9019884970`, `+91`).
+ * NOTE: This is a local configuration lookup (not a live NPCI Central Mapper query).
+ */
+export function resolveActiveUpiNumberToDestination(params?: {
+  mobileNumber?: string;
+  countryCode?: string;
+  targetApp?: UpiAppTarget;
+  config?: Partial<ContributionConfig> | null;
+}): UpiNumberResolutionResult {
+  const targetApp: UpiAppTarget = params?.targetApp || 'upi';
+  const configuredMobile = (
+    params?.config?.recipientMobileNumber || ACTIVE_RECIPIENT_UPI_NUMBER
+  )
+    .replace(/\D/g, '')
+    .slice(-10);
+  const inputDigits = String(params?.mobileNumber || configuredMobile)
+    .replace(/\D/g, '')
+    .slice(-10);
+  const countryCode = (
+    params?.countryCode ||
+    params?.config?.recipientCountryCode ||
+    ACTIVE_RECIPIENT_COUNTRY_CODE
+  ).trim();
+
+  const fallbackUpiId =
+    params?.config?.upiId && isValidUpiVpaAddress(params.config.upiId)
+      ? params.config.upiId.trim()
+      : DEFAULT_CONTRIBUTION_CONFIG.upiId;
+
+  if (inputDigits.length !== 10 || inputDigits !== configuredMobile) {
+    return {
+      resolved: false,
+      recipientMobileNumber: inputDigits,
+      recipientCountryCode: countryCode,
+      maskedMobileNumber: maskUpiMobileNumber(inputDigits, countryCode),
+      recipientIdentifierType: 'ACTIVE_UPI_NUMBER',
+      resolvedUpiId: '',
+      recipientDisplayName: 'GHOST PROTOCOL',
+      targetApp,
+      appRegistrationStatus: 'Inactive',
+      resolutionMode: 'LOCAL_CONFIG_LOOKUP',
+      isLiveNpciResolution: false,
+      lookupNotice: 'Local configuration lookup only (not a live NPCI mapper query).',
+      p2pIntentRiskNotice: '',
+      error: 'Unrecognized mobile number in local configuration. Only 9019884970 is configured.'
+    };
+  }
+
+  const registrations = params?.config?.upiNumberRegistrations || {
+    gpay: 'Active',
+    phonepe: 'Active',
+    paytm: 'Active'
+  };
+  const appStatus =
+    targetApp === 'gpay'
+      ? registrations.gpay
+      : targetApp === 'phonepe'
+      ? registrations.phonepe
+      : targetApp === 'paytm'
+      ? registrations.paytm
+      : 'Active';
+
+  return {
+    resolved: true,
+    recipientMobileNumber: configuredMobile,
+    recipientCountryCode: countryCode,
+    maskedMobileNumber: maskUpiMobileNumber(configuredMobile, countryCode),
+    recipientIdentifierType: 'ACTIVE_UPI_NUMBER',
+    resolvedUpiId: fallbackUpiId,
+    recipientDisplayName: 'GHOST PROTOCOL',
+    targetApp,
+    appRegistrationStatus: appStatus,
+    resolutionMode: 'LOCAL_CONFIG_LOOKUP',
+    isLiveNpciResolution: false,
+    lookupNotice:
+      'Local configuration lookup: 9019884970 is copied to your clipboard. Search this number in your UPI app (Pay Phone / UPI Number) so the app resolves the recipient directly via NPCI.',
+    p2pIntentRiskNotice:
+      'Unsigned personal-VPA deep links are not launched by default. Paste the copied UPI Number 9019884970 in your UPI app, verify the recipient name, and enter the selected amount manually.'
+  };
+}
+
+/**
+ * Validates a 12-digit numeric UPI UTR / RRN reference number.
+ */
+export function validateUpiUtrNumber(utrInput?: unknown): {
+  valid: boolean;
+  utr?: string;
+  error?: string;
+} {
+  const raw = typeof utrInput === 'string' || typeof utrInput === 'number' ? String(utrInput).trim() : '';
+  const digitsOnly = raw.replace(/\s+/g, '');
+  if (!digitsOnly) {
+    return {
+      valid: false,
+      error: 'Please enter your 12-digit UPI UTR / Reference Number from Google Pay, PhonePe, or Paytm to submit for verification.'
+    };
+  }
+  if (!/^\d{12}$/.test(digitsOnly)) {
+    return {
+      valid: false,
+      error: 'Invalid UTR format. A standard UPI UTR / Reference Number must be exactly 12 digits (e.g. 431512345678).'
+    };
+  }
+  if (/^(\d)\1{11}$/.test(digitsOnly)) {
+    return {
+      valid: false,
+      error: 'Invalid UTR number. Please enter the actual 12-digit UPI transaction reference from your payment app.'
+    };
+  }
+  return { valid: true, utr: digitsOnly };
+}
+
+/**
+ * Determines whether a contribution record is confirmed/verified and eligible to appear on the
+ * public Squadron Backers wall. Unverified, pending, failed, or cancelled transactions are excluded.
+ */
+export function isConfirmedContributionRecord(record?: Partial<ContributionRecord> | null): boolean {
+  if (!record) return false;
+  if (!record.transactionStatus) {
+    // Preserve pre-existing legacy backer records that were stored prior to transactionStatus tracking
+    return true;
+  }
+  return record.transactionStatus === 'SUCCESS';
+}
 
 /**
  * Determines whether a user is authorized to edit payment modes, UPI ID, QR code,
@@ -4409,6 +4859,11 @@ export function sanitizeContributionConfig(
       ? DEFAULT_CONTRIBUTION_CONFIG.upiId
       : rawUpiId;
 
+  const rawMobile =
+    typeof src.recipientMobileNumber === 'string' && src.recipientMobileNumber.replace(/\D/g, '').length >= 10
+      ? src.recipientMobileNumber.replace(/\D/g, '').slice(-10)
+      : fallback.recipientMobileNumber || ACTIVE_RECIPIENT_UPI_NUMBER;
+
   const customQrUrl =
     typeof src.customQrUrl === 'string' ? src.customQrUrl.trim() : fallback.customQrUrl;
   const paymentLink =
@@ -4438,6 +4893,14 @@ export function sanitizeContributionConfig(
     headline,
     creatorMessage,
     upiId,
+    recipientMobileNumber: rawMobile,
+    recipientCountryCode: ACTIVE_RECIPIENT_COUNTRY_CODE,
+    recipientIdentifierType: 'ACTIVE_UPI_NUMBER',
+    upiNumberRegistrations: src.upiNumberRegistrations || {
+      gpay: 'Active',
+      phonepe: 'Active',
+      paytm: 'Active'
+    },
     customQrUrl,
     paymentLink,
     otherPaymentDetails,
@@ -4458,38 +4921,66 @@ export function sanitizeContributionConfig(
  */
 export function redactContributionForPublicWall(
   record: ContributionRecord
-): Omit<ContributionRecord, 'amountInr'> {
+): Omit<ContributionRecord, 'amountInr' | 'utrNumber'> {
   return {
     id: record.id,
     contributorName: record.contributorName,
     contributorModel: record.contributorModel,
     paymentMethod: record.paymentMethod,
     note: record.note || 'Contributed to GHOST PROTOCOL',
-    createdAt: record.createdAt
+    createdAt: record.createdAt,
+    transactionStatus: record.transactionStatus || 'SUCCESS'
   };
 }
 
 /**
  * Builds a standard NPCI UPI deep-link payment URI (`upi://pay?...`) without personal names.
+ * Enforces that a bare mobile number is NEVER inserted directly into `pa=`; if a mobile number
+ * is supplied, it is resolved through `resolveActiveUpiNumberToDestination` first.
  */
 export function buildUpiPaymentUri(params: {
   upiId: string;
   recipientName?: string;
   amountInr?: number;
   note?: string;
+  transactionRef?: string;
 }): string {
-  const pa = (params.upiId || DEFAULT_CONTRIBUTION_CONFIG.upiId).trim();
-  const pn = (params.recipientName || 'GHOST PROTOCOL').trim();
+  const rawInput = (params.upiId || DEFAULT_CONTRIBUTION_CONFIG.upiId).trim();
+  let resolvedPa = rawInput;
+  if (!isValidUpiVpaAddress(rawInput)) {
+    const resolution = resolveActiveUpiNumberToDestination({
+      mobileNumber: rawInput
+    });
+    resolvedPa = resolution.resolved
+      ? resolution.resolvedUpiId
+      : DEFAULT_CONTRIBUTION_CONFIG.upiId;
+  }
+
+  const pn = (params.recipientName || 'GHOST PROTOCOL')
+    .replace(/[^a-zA-Z0-9 ._-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const queryParts: string[] = [
-    `pa=${encodeURIComponent(pa)}`,
+    `pa=${encodeURIComponent(resolvedPa)}`,
     `pn=${encodeURIComponent(pn)}`
   ];
+
+  if (params.transactionRef) {
+    const cleanTr = params.transactionRef.replace(/[^a-zA-Z0-9]/g, '').slice(0, 35);
+    if (cleanTr) {
+      queryParts.push(`tr=${encodeURIComponent(cleanTr)}`);
+    }
+  }
+
   const amt = Number(params.amountInr);
   if (Number.isFinite(amt) && amt > 0) {
     queryParts.push(`am=${amt.toFixed(2)}`);
   }
   queryParts.push('cu=INR');
-  const tn = (params.note || 'Ghost Protocol Contribution').trim();
+  const tn = (params.note || 'Ghost Protocol Contribution')
+    .replace(/[()]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (tn) {
     queryParts.push(`tn=${encodeURIComponent(tn.slice(0, 80))}`);
   }
@@ -4508,7 +4999,7 @@ export const UPI_APP_PACKAGE_MAP: Record<Exclude<UpiAppTarget, 'upi'>, string> =
  * Normalizes any UPI payment URI (`upi://pay?...`, `tez://upi/pay?...`, `phonepe://pay?...`,
  * `paytmmp://pay?...`, or `intent://pay?...`) into an Android `intent://pay?...#Intent;scheme=upi;...;end`
  * URI that is intercepted by Android WebView (`MainActivity.java` `url.startsWith("intent://")` ->
- * `Intent.parseUri(url, Intent.URI_INTENT_SCHEME)` -> `startActivity(intent)`) and Android Chrome
+ * clean native `Intent.ACTION_VIEW` without `CATEGORY_BROWSABLE` -> `upiResultLauncher.launch`)
  * without ever triggering `net::ERR_UNKNOWN_URL_SCHEME`.
  */
 export function buildUpiIntentUri(
@@ -4536,7 +5027,7 @@ export function buildUpiIntentUri(
 /**
  * Launches the requested UPI app ('upi' chooser, 'gpay', 'phonepe', or 'paytm') using
  * `buildUpiIntentUri` on Android WebViews/browsers so `MainActivity.java` intercepts `intent://`
- * via `Intent.parseUri` and opens the native UPI app directly without `net::ERR_UNKNOWN_URL_SCHEME`.
+ * and launches the native UPI app via `ActivityResultLauncher` without `net::ERR_UNKNOWN_URL_SCHEME`.
  */
 export function openInUpiApp(
   rawUpiUri: string,
@@ -4556,6 +5047,94 @@ export function openInUpiApp(
   }
 
   return targetUrl;
+}
+
+/**
+ * Builds a clean Android application-launch `intent://` URI that opens Google Pay, PhonePe, or Paytm
+ * directly via standard Android package launching (`ACTION_MAIN` / `CATEGORY_LAUNCHER` / `getLaunchIntentForPackage`
+ * in `MainActivity.java`) WITHOUT passing an unsigned personal-VPA `upi://pay` deep link and WITHOUT
+ * fabricating unsupported app-specific deep links.
+ */
+export function buildUpiAppLaunchIntentUri(app: Exclude<UpiAppTarget, 'upi'>): string {
+  const pkg = UPI_APP_PACKAGE_MAP[app];
+  return `intent://upi-app-launch#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${pkg};end`;
+}
+
+/**
+ * Opens Google Pay, PhonePe, or Paytm on Android for the Mobile-Number Lookup workflow (`9019884970`)
+ * without launching an unsigned personal-VPA payment intent.
+ */
+export function openUpiAppForNumberLookup(
+  app: Exclude<UpiAppTarget, 'upi'>,
+  userAgentOverride?: string
+): string {
+  const targetUrl = buildUpiAppLaunchIntentUri(app);
+  const ua =
+    userAgentOverride !== undefined
+      ? userAgentOverride
+      : typeof navigator !== 'undefined'
+      ? navigator.userAgent || ''
+      : '';
+
+  if (typeof window !== 'undefined' && /Android/i.test(ua)) {
+    window.location.assign(targetUrl);
+  }
+
+  return targetUrl;
+}
+
+/**
+ * Returns honest, step-by-step instructions for paying via the Mobile-Number Lookup workflow in
+ * Google Pay, PhonePe, or Paytm after `9019884970` has been copied to the clipboard.
+ * Explicitly states that neither the mobile number nor the amount is auto-populated into the app.
+ */
+export function getUpiNumberLookupInstructions(
+  app: Exclude<UpiAppTarget, 'upi'>,
+  mobileNumber: string = ACTIVE_RECIPIENT_UPI_NUMBER,
+  amountInr: number = 20
+): {
+  appName: string;
+  packageId: string;
+  searchActionLabel: string;
+  steps: string[];
+  manualEntryNotice: string;
+} {
+  const cleanAmt = Math.max(1, Math.round(Number(amountInr) || 20));
+  const map: Record<
+    Exclude<UpiAppTarget, 'upi'>,
+    { appName: string; packageId: string; searchActionLabel: string }
+  > = {
+    gpay: {
+      appName: 'Google Pay (GPay)',
+      packageId: UPI_APP_PACKAGE_MAP.gpay,
+      searchActionLabel: 'Pay phone number (or Pay anyone / Search)'
+    },
+    phonepe: {
+      appName: 'PhonePe',
+      packageId: UPI_APP_PACKAGE_MAP.phonepe,
+      searchActionLabel: 'To Mobile Number'
+    },
+    paytm: {
+      appName: 'Paytm',
+      packageId: UPI_APP_PACKAGE_MAP.paytm,
+      searchActionLabel: 'To Mobile / UPI Number'
+    }
+  };
+
+  const info = map[app];
+  return {
+    appName: info.appName,
+    packageId: info.packageId,
+    searchActionLabel: info.searchActionLabel,
+    steps: [
+      `1. UPI Number ${mobileNumber} (+91) has been copied to your clipboard.`,
+      `2. In ${info.appName}, tap "${info.searchActionLabel}" and paste ${mobileNumber}.`,
+      `3. Verify the recipient's bank-registered name resolved by ${info.appName}.`,
+      `4. Manually enter the exact selected amount: ₹${cleanAmt.toLocaleString('en-IN')} Rs.`,
+      `5. Authorize with your UPI PIN, then return here to submit your 12-digit UTR.`
+    ],
+    manualEntryNotice: `Note: ${info.appName} does not auto-populate the phone number or amount from external websites. You must paste ${mobileNumber} and enter ₹${cleanAmt.toLocaleString('en-IN')} Rs inside ${info.appName}.`
+  };
 }
 
 /**
@@ -4728,6 +5307,9 @@ export function validateContributionSubmission(input: {
   paymentMethod?: unknown;
   note?: unknown;
   contributorModel?: unknown;
+  utrNumber?: unknown;
+  requireUtr?: boolean;
+  transactionReference?: unknown;
 }): {
   valid: boolean;
   error?: string;
@@ -4736,8 +5318,10 @@ export function validateContributionSubmission(input: {
     contributorModel: string;
     amountInr: number;
     optionId: ContributionOptionId;
-    paymentMethod: 'UPI QR Scan' | 'UPI ID' | 'Payment Link / Other';
+    paymentMethod: ContributionPaymentMethodLabel;
     note: string;
+    utrNumber?: string;
+    transactionReference?: string;
   };
 } {
   const rawName = typeof input.contributorName === 'string' ? input.contributorName.trim() : '';
@@ -4767,12 +5351,47 @@ export function validateContributionSubmission(input: {
     return { valid: false, error: 'Please enter a valid contribution amount (minimum 1 Rs).' };
   }
 
-  const allowedMethods = ['UPI QR Scan', 'UPI ID', 'Payment Link / Other'] as const;
-  const paymentMethod: 'UPI QR Scan' | 'UPI ID' | 'Payment Link / Other' = allowedMethods.includes(
+  // Reject invalid decimal formatting (only whole INR amounts allowed)
+  if (!Number.isInteger(numAmount) && Math.abs(numAmount - Math.round(numAmount)) > 0.001) {
+    return { valid: false, error: 'Contribution amount must be a whole INR value without invalid decimals.' };
+  }
+
+  let validatedUtr: string | undefined;
+  const hasRawUtr =
+    input.utrNumber !== undefined &&
+    input.utrNumber !== null &&
+    String(input.utrNumber).trim().length > 0;
+  if (input.requireUtr || hasRawUtr) {
+    const utrCheck = validateUpiUtrNumber(input.utrNumber);
+    if (!utrCheck.valid || !utrCheck.utr) {
+      return { valid: false, error: utrCheck.error };
+    }
+    validatedUtr = utrCheck.utr;
+  }
+
+  const allowedMethods: readonly ContributionPaymentMethodLabel[] = [
+    'UPI Number (GPay)',
+    'UPI Number (PhonePe)',
+    'UPI Number (Paytm)',
+    'UPI Number (Instant)',
+    'UPI QR Scan',
+    'UPI ID',
+    'Payment Link / Other',
+    'UPI',
+    'Direct Link',
+    'Bank / Other'
+  ] as const;
+
+  const paymentMethod: ContributionPaymentMethodLabel = allowedMethods.includes(
     input.paymentMethod as any
   )
-    ? (input.paymentMethod as 'UPI QR Scan' | 'UPI ID' | 'Payment Link / Other')
+    ? (input.paymentMethod as ContributionPaymentMethodLabel)
     : 'UPI QR Scan';
+
+  const transactionReference =
+    typeof input.transactionReference === 'string' && input.transactionReference.trim()
+      ? input.transactionReference.replace(/[^a-zA-Z0-9]/g, '').slice(0, 35)
+      : undefined;
 
   return {
     valid: true,
@@ -4788,7 +5407,9 @@ export function validateContributionSubmission(input: {
       note:
         typeof input.note === 'string' && input.note.trim()
           ? input.note.trim().slice(0, 400)
-          : 'Supported GHOST PROTOCOL!'
+          : 'Supported GHOST PROTOCOL!',
+      ...(validatedUtr ? { utrNumber: validatedUtr } : {}),
+      ...(transactionReference ? { transactionReference } : {})
     }
   };
 }
@@ -5837,6 +6458,86 @@ export function selectAuctionWinner(
 }
 
 /**
+ * Repairs truncated JPEG base64 Data URLs where network truncation, string caps,
+ * or sync slicing omitted the standard JPEG End-Of-Image marker (FF D9) or base64 padding.
+ * Guarantees that valid JPEG byte streams decode cleanly in all browsers without blackouts.
+ */
+export function repairBase64JpegIfTruncated(str: string): string {
+  if (typeof str !== 'string' || !str.startsWith('data:image/jpeg;base64,')) return str;
+  let rawBase64 = str.slice('data:image/jpeg;base64,'.length).trim();
+  try {
+    // If cut off with an odd dangling 6-bit char (length % 4 === 1), trim the single incomplete char
+    if (rawBase64.length % 4 === 1) {
+      rawBase64 = rawBase64.slice(0, -1);
+    }
+    const padLen = (4 - (rawBase64.length % 4)) % 4;
+    const padded = rawBase64 + '='.repeat(padLen);
+
+    let buf: Uint8Array;
+    if (typeof Buffer !== 'undefined') {
+      buf = new Uint8Array(Buffer.from(padded, 'base64'));
+    } else if (typeof atob === 'function') {
+      const binary = atob(padded);
+      buf = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        buf[i] = binary.charCodeAt(i);
+      }
+    } else {
+      return str;
+    }
+
+    if (buf.length < 4) return str;
+    // Check Start of Image (FF D8)
+    if (buf[0] !== 0xff || buf[1] !== 0xd8) return str;
+
+    const hadEoi = buf[buf.length - 2] === 0xff && buf[buf.length - 1] === 0xd9;
+    let mutated = false;
+
+    // Locate SOF0/SOF2 marker (FF C0 or FF C2) to inspect declared height vs actual byte stream
+    for (let i = 2; i < Math.min(buf.length - 9, 4096); i++) {
+      if (buf[i] === 0xff && (buf[i + 1] === 0xc0 || buf[i + 1] === 0xc2)) {
+        const height = (buf[i + 5] << 8) | buf[i + 6];
+        const width = (buf[i + 7] << 8) | buf[i + 8];
+        // If JPEG was sliced around the legacy 45,000-char limit (~33,730 bytes) with a tall header height,
+        // calibrate the SOF0 height to the decoded scanline boundary so browsers never render a gray bottom half
+        if (width >= 400 && height > 600 && (!hadEoi || (buf.length >= 33700 && buf.length <= 33800))) {
+          const safeHeight = Math.max(240, Math.min(height, Math.floor((height * 392) / 1000 / 8) * 8));
+          if (safeHeight < height) {
+            buf[i + 5] = (safeHeight >> 8) & 0xff;
+            buf[i + 6] = safeHeight & 0xff;
+            mutated = true;
+          }
+        }
+        break;
+      }
+    }
+
+    if (hadEoi && !mutated) return str;
+
+    const finalBuf = hadEoi ? buf : (() => {
+      const next = new Uint8Array(buf.length + 2);
+      next.set(buf);
+      next[buf.length] = 0xff;
+      next[buf.length + 1] = 0xd9;
+      return next;
+    })();
+
+    if (typeof Buffer !== 'undefined') {
+      return 'data:image/jpeg;base64,' + Buffer.from(finalBuf).toString('base64');
+    } else {
+      let binaryStr = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < finalBuf.length; i += chunkSize) {
+        binaryStr += String.fromCharCode.apply(null, finalBuf.subarray(i, i + chunkSize) as any);
+      }
+      return 'data:image/jpeg;base64,' + btoa(binaryStr);
+    }
+  } catch {
+    return str;
+  }
+}
+
+/**
  * Generates crisp inline SVG data URLs for Marketplace preset product illustrations
  * so listings always render with zero external image dependencies.
  */
@@ -5931,6 +6632,7 @@ export function resolveChargerSubmitterInfo(station?: {
   name?: string;
   powerOutputKw?: number;
   chargerSource?: string;
+  categories?: string[];
   isSupernova?: boolean;
   isCommunityReported?: boolean;
   isCommunityCharger?: boolean;
@@ -5951,21 +6653,28 @@ export function resolveChargerSubmitterInfo(station?: {
         /shell|tata power|zeon|statiq|relux|fortum|chargezone/i.test(station.name || ''))
   );
 
-  const isPublicSupernovaOrThirdParty = Boolean(
+  const hasUvSpaceCategory = Boolean(
+    station &&
+      Array.isArray(station.categories) &&
+      station.categories.some(c => /space\s*station/i.test(String(c || '')))
+  );
+
+  const isPublicNetworkStation = Boolean(
     station &&
       (station.isSupernova ||
         station.chargerSource === 'Supernova' ||
+        station.chargerSource === 'UV Space Station' ||
         station.chargerSource === '3rd Party Station' ||
         station.chargerType === 'Supernova' ||
+        hasUvSpaceCategory ||
         isLegacyThirdPartyFastStation)
   );
 
   const isCommunityProvided = Boolean(
     station &&
-      !isPublicSupernovaOrThirdParty &&
+      !isPublicNetworkStation &&
       (station.chargerSource === 'Community Provided Charger' ||
-        station.isCommunityCharger ||
-        station.isCommunityReported)
+        (!station.chargerSource && (station.isCommunityCharger || station.isCommunityReported)))
   );
 
   const isUserSubmitted = Boolean(
@@ -5982,7 +6691,7 @@ export function resolveChargerSubmitterInfo(station?: {
       ? 'Community Squadron Pilot'
       : 'Ultraviolette Hangar Registry');
 
-  // Only expose uploader phone number for Community Provided Chargers (never for public Supernova or 3rd Party chargers)
+  // Only expose uploader phone number for Community Provided Chargers (never for UV Space Stations, Supernova, or 3rd Party chargers)
   if (!isCommunityProvided) {
     return {
       isCommunityProvided: false,
@@ -6170,12 +6879,14 @@ export function resolveCommunityChargerTerms(station?: Record<string, any> | nul
       ? '24/7 Anytime (Prior Reservation Required)'
       : `${availabilityStartTime} – ${availabilityEndTime} (${availabilityDays})`;
 
-  const requiresReservation =
-    typeof station?.requiresReservation === 'boolean'
+  const requiresReservation = isCommunityProvided
+    ? typeof station?.requiresReservation === 'boolean'
       ? station.requiresReservation
-      : isCommunityProvided;
+      : true
+    : false;
 
-  const rawReservations = Array.isArray(station?.reservations) ? station.reservations : [];
+  const rawReservations =
+    isCommunityProvided && Array.isArray(station?.reservations) ? station.reservations : [];
   const reservations: ChargerReservation[] = rawReservations
     .filter((r: any) => Boolean(r && typeof r === 'object' && r.id))
     .sort((a: ChargerReservation, b: ChargerReservation) => {
@@ -8056,10 +8767,15 @@ export function searchAndFilterChargingStations<
     chargerSource?: ChargerSource;
     createdAt?: string;
     lastVerifiedDate?: string;
+    userNotes?: string;
+    reportedBy?: string;
   }
 >(stations: T[], searchQuery: string, filterType = 'ALL'): T[] {
   if (!Array.isArray(stations)) return [];
   const q = (searchQuery || '').trim().toLowerCase();
+  const rawTokens = q
+    .split(/[\s,.-]+/)
+    .filter(t => t.length > 0 && !PLACE_QUERY_STOP_WORDS.has(t));
 
   return stations.filter(st => {
     if (filterType && filterType !== 'ALL') {
@@ -8071,6 +8787,7 @@ export function searchAndFilterChargingStations<
     if (!q) return true;
 
     const refName = (st.referenceName || st.name || '').toLowerCase();
+    const stName = (st.name || '').toLowerCase();
     const rawType = formatMinimalChargerType(st.rawChargerType ?? st.chargerDetails ?? st.chargerType).toLowerCase();
     const plugCategory = (st.chargerType || '').toLowerCase();
     const coordsText = (
@@ -8080,15 +8797,45 @@ export function searchAndFilterChargingStations<
     const connectorsText = Array.isArray(st.connectorTypes)
       ? st.connectorTypes.join(' ').toLowerCase()
       : '';
+    const notesText = (st.userNotes || '').toLowerCase();
+    const reporterText = (st.reportedBy || '').toLowerCase();
 
-    return (
+    if (
       refName.includes(q) ||
+      stName.includes(q) ||
       rawType.includes(q) ||
       plugCategory.includes(q) ||
       coordsText.includes(q) ||
       locText.includes(q) ||
       connectorsText.includes(q)
-    );
+    ) {
+      return true;
+    }
+
+    // Multi-token search across combined station fields (e.g., "ccd kolar" where "CCD" is in name and "Kolar" is in location)
+    if (rawTokens.length > 0) {
+      const combined = `${refName} ${stName} ${locText} ${rawType} ${plugCategory} ${coordsText} ${connectorsText} ${notesText} ${reporterText}`
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+
+      const allTokensMatched = rawTokens.every(token => {
+        const normToken = token.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (combined.includes(normToken)) return true;
+        const expansions = INDIAN_PLACE_ABBREVIATIONS[normToken] || [];
+        return expansions.some(exp =>
+          combined.includes(
+            exp
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+          )
+        );
+      });
+
+      if (allTokensMatched) return true;
+    }
+
+    return false;
   });
 }
 
@@ -8748,7 +9495,7 @@ export async function processUploadedDevicePhoto(file: File): Promise<string> {
     sh: number
   ): string => {
     try {
-      const MAX_DIM = 1200;
+      const MAX_DIM = 960;
       let width = sw || 800;
       let height = sh || 600;
       if (width > MAX_DIM || height > MAX_DIM) {
@@ -8766,7 +9513,11 @@ export async function processUploadedDevicePhoto(file: File): Promise<string> {
       const ctx = canvas.getContext('2d');
       if (!ctx) return '';
       ctx.drawImage(source as CanvasImageSource, 0, 0, width, height);
-      return canvas.toDataURL('image/jpeg', 0.82);
+      let dataUrl = canvas.toDataURL('image/jpeg', 0.76);
+      if (dataUrl.length > 95000) {
+        dataUrl = canvas.toDataURL('image/jpeg', 0.62);
+      }
+      return dataUrl;
     } catch {
       return '';
     }
